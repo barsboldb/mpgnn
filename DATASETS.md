@@ -94,6 +94,69 @@ task: graph
 **Recommended layers:** ≥ 4 layers to cover the p99 diameter of 7.
 With fewer layers the model cannot propagate information across the full graph.
 
+**⚠️ Local shortcut:** Near the threshold `log(n)/n`, disconnection is almost
+always caused by an *isolated vertex*. The rule "connected ⇔ min degree ≥ 1"
+already scores ~98%, so a model can hit 90%+ without any global reasoning — it
+just detects a degree-0 node. Use **Connectedness Hard** below to remove this
+shortcut (see CHANGELOG 2026-06-19).
+
+---
+
+## Connectedness Hard (`--dataset connectedness_hard`)
+
+**Task:** Graph classification (`task: graph`)  
+**Source:** Synthetic — `dataset.py:make_connectedness_hard_dataset`  
+**Cache:** `data/connectedness_hard.pt`
+
+Connectedness without the local degree shortcut. Every graph is **two dense,
+internally-connected blobs** (each built from a random Hamiltonian cycle plus
+chords, so every node has degree ≥ 2). Connectivity is flipped by a single edge:
+
+- **label 1 (connected):** one *bridge* edge joins the two blobs.
+- **label 0 (disconnected):** no bridge; instead one extra *intra*-blob edge, so
+  the total edge count and degree distribution match the connected class.
+
+The only difference between the classes is whether one cross-component edge
+exists — so telling them apart requires tracing reachability across the whole
+graph, i.e. genuine global reasoning.
+
+| Property | Value |
+|---|---|
+| Graphs | 1000 |
+| Node features | 1 (normalised degree: `deg / (n-1)`) |
+| Classes | 2 (connected / disconnected) |
+| Class balance | Exactly 500 / 500 (alternating) |
+| Node range | 12 – 24 |
+| Min degree (all graphs) | 2 – 4 (never 0) |
+| Edges per graph | 14 – 89, mean ~40 (matched across classes) |
+| Split | Fixed 800 train / 200 test |
+
+**Shortcuts removed:** Both "min degree ≥ 1" and "mean degree threshold"
+predictors sit at ~chance (0.50). The number of connected components is 1
+(connected) vs 2 (disconnected), so structure alone determines the label.
+
+**Config:**
+```yaml
+in_channels: 1
+out_channels: 2
+task: graph
+```
+
+**Observed behaviour** (single `global_attn` + mean-pool + degree features):
+
+| Setup | Best test acc |
+|---|---|
+| hidden=2, `lpe_dim: 0` | 0.50 (chance) |
+| hidden=64, `lpe_dim: 0` | ~0.55 (chance) |
+| hidden=64, `lpe_dim: 16` | 1.00 |
+
+**⚠️ LPE leaks the label:** The multiplicity of eigenvalue 0 of the Laplacian
+equals the number of connected components (verified: 1 vs 2 here, with no
+exceptions). Laplacian positional encoding therefore hands the model an exact
+connectivity signal computed *outside* the network. Run with `lpe_dim: 0` if you
+want to measure the architecture's own reasoning ability rather than its ability
+to read a precomputed spectral feature.
+
 ---
 
 ## Isomorphism (`--dataset isomorphism`)
