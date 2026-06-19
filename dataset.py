@@ -2,6 +2,7 @@ import os
 import torch
 import numpy as np
 from torch_geometric.data import Data
+from features import laplacian_positional_encoding
 
 
 def _is_connected(num_nodes: int, edge_index: torch.Tensor) -> bool:
@@ -31,6 +32,7 @@ def make_connectedness_dataset(
     min_nodes: int = 5,
     max_nodes: int = 20,
     seed: int = 42,
+    lpe_dim: int = 0,
 ) -> list[Data]:
     """
     Generates random Erdos-Renyi graphs labeled by connectedness.
@@ -73,10 +75,107 @@ def make_connectedness_dataset(
         label = int(_is_connected(n, edge_index))
         counts[label] += 1
 
+        pe = laplacian_positional_encoding(edge_index, n, lpe_dim) if lpe_dim > 0 else None
         data_list.append(Data(
             x=x,
             edge_index=edge_index,
             y=torch.tensor([label], dtype=torch.long),
+            pe=pe,
+        ))
+
+    print(f"Generated {num_graphs} graphs  |  connected: {counts[1]}  disconnected: {counts[0]}")
+    return data_list
+
+
+def _connected_component_edges(
+    nodes: list[int], rng: np.random.Generator, extra_p: float = 0.3
+) -> list[tuple[int, int]]:
+    """A connected graph over `nodes` with minimum degree >= 2.
+
+    Built as a random Hamiltonian cycle (guarantees connectivity and min degree 2)
+    plus random chords. This removes any degree-0 / low-degree signal, so the
+    presence of a disconnected component can NOT be detected from local degree.
+    """
+    perm = list(rng.permutation(nodes))
+    edges: set[tuple[int, int]] = set()
+    for i in range(len(perm)):
+        u, v = perm[i], perm[(i + 1) % len(perm)]
+        edges.add((min(u, v), max(u, v)))
+    for a_idx in range(len(perm)):
+        for b_idx in range(a_idx + 1, len(perm)):
+            if rng.random() < extra_p:
+                u, v = perm[a_idx], perm[b_idx]
+                edges.add((min(u, v), max(u, v)))
+    return list(edges)
+
+
+def make_connectedness_hard_dataset(
+    num_graphs: int = 1000,
+    min_nodes: int = 12,
+    max_nodes: int = 24,
+    seed: int = 42,
+    lpe_dim: int = 0,
+) -> list[Data]:
+    """
+    Connectedness without the local degree shortcut.
+
+    Every graph is two dense, internally-connected blobs (each min degree >= 2).
+    - label 1 (connected):    one bridge edge joins the two blobs.
+    - label 0 (disconnected): no bridge; instead one extra intra-blob edge so the
+                              total edge count (and degree sequence distribution)
+                              matches the connected class.
+
+    There is NO isolated node in either class and the degree statistics are
+    matched, so "min degree == 0" and "mean degree" are both useless. The only way
+    to tell the classes apart is to trace reachability across the whole graph —
+    genuine global reasoning. A lossy bottleneck (e.g. hidden=2) should fail here.
+
+    Node features: normalised degree, same as `make_connectedness`.
+    """
+    rng = np.random.default_rng(seed)
+    data_list = []
+    counts = [0, 0]
+
+    for i in range(num_graphs):
+        label = i % 2  # balanced
+        n = int(rng.integers(min_nodes, max_nodes + 1))
+        na = int(rng.integers(3, n - 2))  # each blob has >= 3 nodes
+        a_nodes = list(range(na))
+        b_nodes = list(range(na, n))
+
+        edges: set[tuple[int, int]] = set(_connected_component_edges(a_nodes, rng))
+        edges |= set(_connected_component_edges(b_nodes, rng))
+
+        if label == 1:
+            # bridge the two blobs -> connected
+            u, v = int(rng.choice(a_nodes)), int(rng.choice(b_nodes))
+            edges.add((min(u, v), max(u, v)))
+        else:
+            # keep disconnected, but add one intra-blob edge so edge counts match
+            for _ in range(100):
+                blob = a_nodes if rng.random() < 0.5 else b_nodes
+                u, v = (int(x) for x in rng.choice(blob, size=2, replace=False))
+                e = (min(u, v), max(u, v))
+                if e not in edges:
+                    edges.add(e)
+                    break
+
+        all_edges: list[list[int]] = []
+        for a, b in edges:
+            all_edges += [[a, b], [b, a]]
+        edge_index = torch.tensor(all_edges, dtype=torch.long).t().contiguous()
+
+        deg = torch.zeros(n, dtype=torch.float)
+        deg.scatter_add_(0, edge_index[0], torch.ones(edge_index.size(1)))
+        x = (deg / (n - 1)).unsqueeze(1)
+
+        counts[label] += 1
+        pe = laplacian_positional_encoding(edge_index, n, lpe_dim) if lpe_dim > 0 else None
+        data_list.append(Data(
+            x=x,
+            edge_index=edge_index,
+            y=torch.tensor([label], dtype=torch.long),
+            pe=pe,
         ))
 
     print(f"Generated {num_graphs} graphs  |  connected: {counts[1]}  disconnected: {counts[0]}")
@@ -100,6 +199,7 @@ def make_isomorphism_dataset(
     min_nodes: int = 6,
     max_nodes: int = 15,
     seed: int = 42,
+    lpe_dim: int = 0,
 ) -> list[Data]:
     """
     Each sample is a pair of graphs (G1, G2) encoded as one disconnected graph.
@@ -157,10 +257,13 @@ def make_isomorphism_dataset(
         ])
 
         counts[label] += 1
+        # LPE for combined graph (both components together)
+        pe = laplacian_positional_encoding(edge_index, 2 * n, lpe_dim) if lpe_dim > 0 else None
         data_list.append(Data(
             x=x,
             edge_index=edge_index,
             y=torch.tensor([label], dtype=torch.long),
+            pe=pe,
         ))
 
     print(f"Generated {num_graphs} graph pairs  |  isomorphic: {counts[1]}  non-isomorphic: {counts[0]}")
@@ -196,6 +299,7 @@ def load_or_create(
 
 
 GENERATORS = {
-    "connectedness": make_connectedness_dataset,
-    "isomorphism":   make_isomorphism_dataset,
+    "connectedness":      make_connectedness_dataset,
+    "connectedness_hard": make_connectedness_hard_dataset,
+    "isomorphism":        make_isomorphism_dataset,
 }
