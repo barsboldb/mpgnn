@@ -1,0 +1,32 @@
+# Message-passing GNN preset — standard local neighbourhood aggregation.
+# Each layer aggregates over edges in edge_index, so structure is seen directly
+# and no positional encoding is needed. BatchNorm between layers, no residual.
+# Swap the layer 'type' (gcn | sage | gat | gin) to compare aggregators.
+#
+# Run: python main.py --config configs/mpgnn.yaml --dataset connectedness
+#   connectedness -> in_channels: 1   |   isomorphism -> in_channels: 2
+
+in_channels: 1        # 1 for connectedness (degree), 2 for isomorphism (one-hot graph id)
+out_channels: 2
+hidden_channels: 64
+lpe_dim: 0            # message passing reads structure from edges; no LPE needed
+
+task: graph
+pooling: mean
+dropout: 0.5
+
+# mpGNN path
+input_embedding: null     # first conv layer takes raw features
+norm_type: batch          # BatchNorm1d
+residual: false
+
+# training
+epochs: 200
+lr: 0.01
+weight_decay: 0.0005
+batch_size: 32
+
+layers:
+  - type: gin
+  - type: gin
+  - type: gin

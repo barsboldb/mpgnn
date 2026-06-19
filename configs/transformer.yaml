@@ -1,0 +1,35 @@
+# Transformer preset — global attention with structural encodings.
+# Every node attends to every other node (ignores edge_index), so positional
+# information must come from features: a linear input embedding plus Laplacian
+# positional encodings. Pre-norm residual blocks keep deep stacks trainable.
+#
+# Run: python main.py --config configs/transformer.yaml --dataset connectedness
+#   connectedness -> in_channels: 1   |   isomorphism -> in_channels: 2
+
+in_channels: 1        # 1 for connectedness (degree), 2 for isomorphism (one-hot graph id)
+out_channels: 2
+hidden_channels: 64
+lpe_dim: 16           # Laplacian eigenvectors concatenated to node features
+
+task: graph
+pooling: mean
+dropout: 0.5
+
+# transformer path
+input_embedding: linear   # project (in_channels + lpe_dim) -> hidden_channels
+norm_type: layer          # LayerNorm
+residual: true
+
+# training
+epochs: 200
+lr: 0.001
+weight_decay: 0.0005
+batch_size: 32
+
+layers:
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4
