@@ -18,7 +18,13 @@ from dataset import GENERATORS, load_or_create
 from logger import RunLogger, print_results_table
 
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    DEVICE = torch.device("mps")
+else:
+    DEVICE = torch.device("cpu")
+print(f"Device: {DEVICE}")
 
 
 def make_default_config(layer: str, task: str) -> GNNConfig:
