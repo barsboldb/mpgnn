@@ -147,7 +147,8 @@ class GlobalAttnConv(nn.Module):
 
     out_channels must be divisible by heads.
     """
-    def __init__(self, in_channels: int, out_channels: int, heads: int = 1, dropout: float = 0.0):
+    def __init__(self, in_channels: int, out_channels: int, heads: int = 1,
+                 dropout: float = 0.0, spd_max_dist: int = 0):
         super().__init__()
         assert out_channels % heads == 0, f"out_channels ({out_channels}) must be divisible by heads ({heads})"
         self.heads = heads
@@ -155,13 +156,19 @@ class GlobalAttnConv(nn.Module):
         self.out_channels = out_channels
         self.scale = self.head_dim ** -0.5
         self.dropout = dropout
+        self.spd_max_dist = spd_max_dist
 
         self.W_q = nn.Linear(in_channels, out_channels, bias=False)
         self.W_k = nn.Linear(in_channels, out_channels, bias=False)
         self.W_v = nn.Linear(in_channels, out_channels, bias=False)
         self.bias = nn.Parameter(torch.zeros(out_channels))
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, batch: torch.Tensor | None = None) -> torch.Tensor:
+        # learnable per-head bias for each SPD bucket (0, 1, ..., max_dist)
+        # spd_max_dist=0 disables SPD bias entirely
+        self.spd_bias = nn.Embedding(spd_max_dist + 1, heads) if spd_max_dist > 0 else None
+
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor,
+                batch: torch.Tensor | None = None) -> torch.Tensor:
         N, H, D = x.size(0), self.heads, self.head_dim
 
         Q = self.W_q(x).view(N, H, D)  # [N, H, D]
@@ -170,6 +177,12 @@ class GlobalAttnConv(nn.Module):
 
         # all-pairs attention scores: Q_i · K_j / sqrt(d)  →  [N, N, H]
         attn = torch.einsum('ihd,jhd->ijh', Q, K) * self.scale
+
+        # add learned shortest-path distance bias before softmax (Graphormer-style)
+        if self.spd_bias is not None:
+            from features import spd_batch
+            spd = spd_batch(edge_index, batch, N, self.spd_max_dist)  # [N, N]
+            attn = attn + self.spd_bias(spd)                          # [N, N, H]
 
         # mask out cross-graph pairs so graphs in a batch don't attend to each other
         if batch is not None:

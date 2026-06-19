@@ -35,7 +35,6 @@ def make_default_config(layer: str, task: str) -> GNNConfig:
             hidden_channels=64,
             task="node",
             dropout=0.5,
-            batch_norm=False,
             layers=[{"type": layer}, {"type": layer}],
         )
     else:
@@ -46,7 +45,7 @@ def make_default_config(layer: str, task: str) -> GNNConfig:
             task="graph",
             pooling="mean",
             dropout=0.5,
-            batch_norm=True,
+            norm_type="batch",
             layers=[{"type": layer}, {"type": layer}, {"type": layer}],
         )
 
@@ -69,7 +68,7 @@ def node_experiment(config: GNNConfig, dataset_name: str):
 
 def graph_experiment(config: GNNConfig, dataset_name: str):
     if dataset_name in GENERATORS:
-        data_list = load_or_create(dataset_name)
+        data_list = load_or_create(dataset_name, lpe_dim=config.lpe_dim)
         n = len(data_list)
         train_ds = data_list[:int(0.8 * n)]
         test_ds  = data_list[int(0.8 * n):]
