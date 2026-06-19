@@ -12,7 +12,7 @@ from torch_geometric.datasets import Planetoid, TUDataset
 from torch_geometric.loader import DataLoader
 
 from config import GNNConfig
-from model import GNN
+from model import GNN, build_model
 from train import run_node_experiment, run_graph_experiment
 from dataset import GENERATORS, load_or_create
 from logger import RunLogger, print_results_table
@@ -84,7 +84,7 @@ def graph_experiment(config: GNNConfig, dataset_name: str):
     train_loader = DataLoader(train_ds, batch_size=config.batch_size, shuffle=True)
     test_loader  = DataLoader(test_ds,  batch_size=config.batch_size)
 
-    model = GNN(config).to(DEVICE)
+    model = build_model(config).to(DEVICE)
     print(f"Model params: {model.num_parameters():,}\n")
     print(config.describe())
     print()

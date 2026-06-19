@@ -1,0 +1,36 @@
+# Sanford-style token transformer — vertices + edges + task token.
+# Edges are first-class tokens (not an attention bias), so the model must compute
+# reachability itself. No LPE, no SPD: this is the "honest" connectivity setup for
+# reproducing the depth-vs-task curve. Connectivity is parallelizable, so accuracy
+# is expected to rise with depth (Sanford et al. 2024a, ~log n layers).
+#
+# Run: python main.py --config configs/token_transformer.yaml --dataset connectedness_hard
+# Sweep depth by adding/removing global_attn entries under `layers`.
+
+in_channels: 1        # 1 for connectedness (degree), 2 for isomorphism (one-hot graph id)
+out_channels: 2
+hidden_channels: 64
+
+tokenization: node_edge
+node_id_dim: 16       # random per-node identities so edge tokens can name their endpoints
+lpe_dim: 0            # keep 0 for honest connectivity; turn on for isomorphism
+
+task: graph           # readout is via the task token (pooling field is unused here)
+dropout: 0.1
+
+# training
+epochs: 200
+lr: 0.0005
+weight_decay: 0.0005
+batch_size: 32
+
+# depth sweep: number of entries = number of transformer layers
+layers:
+  - type: global_attn   # 'type' is required by config validation but ignored by the token model
+    heads: 4
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4

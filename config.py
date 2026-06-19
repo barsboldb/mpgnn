@@ -43,6 +43,15 @@ class GNNConfig:
     # structural encodings
     # lpe_dim: number of Laplacian eigenvectors concatenated to node features (0 = disabled)
     lpe_dim: int = 0
+    # tokenization (graph task only):
+    # 'node'      — vertices are the only tokens; edges enter via message passing
+    #               (GCN/GIN/GAT) or, for global_attn, via SPD bias / LPE. -> model.GNN
+    # 'node_edge' — Sanford-style: tokens = vertices + edges + a task token; edges are
+    #               first-class tokens the transformer reasons over. -> GraphTokenTransformer
+    tokenization: str = "node"
+    # node_id_dim: random per-node identity dim for the node_edge transformer, so edge
+    # tokens can reference their endpoints. Combined with lpe_dim as the node identity.
+    node_id_dim: int = 0
     # training
     epochs: int = 200
     lr: float = 0.01
@@ -56,6 +65,12 @@ class GNNConfig:
             f"unknown input_embedding '{self.input_embedding}'"
         assert self.norm_type in (None, "batch", "layer"), \
             f"norm_type must be 'batch', 'layer', or null — got '{self.norm_type}'"
+        assert self.tokenization in ("node", "node_edge"), \
+            f"tokenization must be 'node' or 'node_edge' — got '{self.tokenization}'"
+        if self.tokenization == "node_edge":
+            assert self.node_id_dim + self.lpe_dim > 0, \
+                "node_edge tokenization needs node_id_dim > 0 (or lpe_dim > 0) so edge " \
+                "tokens can reference their endpoints; otherwise edges are anonymous"
         for i, layer in enumerate(self.layers):
             assert "type" in layer, f"layer {i} is missing 'type'"
             assert layer["type"] in ("gcn", "sage", "gat", "gin", "global_attn"), \
@@ -75,6 +90,8 @@ class GNNConfig:
         emb = self.input_embedding or "none"
         lpe = f"LPE({self.lpe_dim})" if self.lpe_dim > 0 else "no LPE"
         lines = [
+            f"Tokenization: {self.tokenization}"
+            + (f"  |  node_id_dim: {self.node_id_dim}" if self.tokenization == "node_edge" else ""),
             f"Task: {self.task}  |  Pooling: {self.pooling if self.task == 'graph' else '-'}",
             f"In: {self.in_channels}  +{lpe}  ->  [{emb} emb]  ->  Hidden: {self.hidden_channels}  ->  Out: {self.out_channels}",
             f"Dropout: {self.dropout}  |  Norm: {self.norm_type or 'none'}  |  Residual: {self.residual}",

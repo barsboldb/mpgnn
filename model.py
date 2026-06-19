@@ -153,3 +153,15 @@ class GNN(nn.Module):
 
     def num_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+
+def build_model(config: GNNConfig) -> nn.Module:
+    """Pick the model from config.tokenization.
+
+    'node'      -> GNN (message passing, or node-only global attention)
+    'node_edge' -> GraphTokenTransformer (Sanford-style edge tokens + task token)
+    """
+    if getattr(config, "tokenization", "node") == "node_edge":
+        from token_model import GraphTokenTransformer
+        return GraphTokenTransformer(config)
+    return GNN(config)
