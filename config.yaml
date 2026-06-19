@@ -1,0 +1,30 @@
+# Connectedness experiment: can the GNN tell if a graph is connected?
+# Run: python main.py --config config.yaml --dataset connectedness
+
+in_channels: 1       # constant feature (all ones) — structure only
+out_channels: 2      # connected vs disconnected
+hidden_channels: 24
+task: graph
+pooling: mean
+dropout: 0.5
+batch_norm: false
+
+# training
+epochs: 200
+lr: 0.01
+weight_decay: 0.0005
+batch_size: 32
+
+layers:
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4
+
+# layers:
+#   - type: gat
+#   - type: gat
+#   - type: gat
+#   - type: gat
