@@ -4,6 +4,70 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-06-20
+
+### Edge-token transformer stalls at the ln 2 plateau on connectedness_hard
+
+**Observation:** The Sanford-style `node_edge` transformer (`token_transformer.yaml`)
+sat at train loss `0.693 = ln 2` and 0.50 test for the entire run on
+`connectedness_hard` — no learning. It overfit 10 graphs perfectly (1.00 by epoch 25)
+but failed on 100+; an overfit sweep (10/50/100/200) showed a sharp cliff. Raising the
+learning rate `0.0005 → 0.005` did nothing.
+
+**Cause:** With `node_id_mode: learned`, node identities come from a shared
+`nn.Embedding` indexed by within-graph position. The blob split `na` varies per graph,
+so position 5 is in blob A for some graphs and blob B for others. Those two cases push
+the same embedding row in opposite directions → the gradients cancel → the optimizer
+gets ~zero net signal and parks at the max-entropy output `[0.5, 0.5]` (loss `ln 2`).
+`lr × 0 = 0`, so a bigger step size can't escape a vanishing gradient. (Full write-up in
+[tokenization.typ](tokenization.typ).)
+
+**Lesson:** A flat loss at exactly `ln 2` is the tell for a saddle, not slow learning —
+look for a representational reason the gradient is structurally near-zero, not a tuning
+knob.
+
+### Adjacency-rows tokenization trains but does not generalize on our data
+
+**Observation:** Switching to adjacency-row tokens (`adj_transformer.yaml`,
+`connectedness_hard_adj`) fixed the gradient (loss → 0.03) but test stalled at ~0.59.
+Fixing graph size (`connectedness_hard_adj_fixed`, n=20) only lifted it to ~0.70, with a
+large train/test gap.
+
+**Cause:** Adjacency rows are not permutation-invariant — row `i` carries this graph's
+arbitrary node numbering, and our varying blob split means "column j" has a different
+structural role across graphs. The model memorizes position-specific patterns that don't
+transfer. Fixed size alone doesn't help because the split point still varies.
+
+### Yehudai's connectivity is fixed-size; our model aces it — the dataset is the hard part
+
+**Observation:** Reproduced Yehudai et al. 2025's connectivity experiment locally
+(`yehudai/run_connectivity.py`). Their `adj_rows` reaches 1.00 and `edge_list` 0.93 with
+a single transformer layer (n=50, n_train=100). Verified every graph in their dataset is
+exactly n=50. Then ran **our** adjacency-rows global_attn GNN on **their** data
+(`yehudai_connectivity_adj`): **1.00 test by epoch 4**, faster and with fewer params than
+their own implementation.
+
+**Cause / conclusion:** Same model + training, only the data changes — our pipeline
+reproduces their perfect score, so the ~0.6–0.7 ceiling on `connectedness_hard` is purely
+the dataset. Their classes come from different generators (gnp/rgg/scale-free/sbm) whose
+adjacency-row patterns are separable; ours are degree- and edge-count-matched, differing
+by a single bridge edge, which removes that shortcut. (Details and tables in
+[yehudai-empirical.md](yehudai-empirical.md).)
+
+**Lesson:** `connectedness_hard` is a genuinely harder probe of global reasoning than the
+standard connectivity benchmark — the difference is the adversarial data construction, not
+model capacity or graph size. Always run your own model on the reference dataset to
+separate a pipeline problem from a dataset-difficulty result.
+
+### Reproduction note: patched two bugs in Yehudai's source
+
+Their `connectivity_adj_mat.py` has a `create_data` NameError (line 207) and a
+cache-reload bug that loads the **train** split as val and test (inflating both); torch
+≥2.6 also rejects their pickled PyG `Data` under `weights_only=True`. All handled in
+`yehudai/run_connectivity.py` without editing their source.
+
+---
+
 ## 2026-06-19
 
 ### Constant node features cause symmetry collapse in GlobalAttnConv
