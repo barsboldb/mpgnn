@@ -6,6 +6,11 @@ supplementary code (`yehudai/`), and a side-by-side with our own setup.
 Run locally via `yehudai/run_connectivity.py` (a wrapper that stubs unused deps and
 patches two bugs in their source — see [Reproduction notes](#reproduction-notes)).
 
+> For a visual, broad-spectrum comparison of the two datasets — how each is built and
+> visualized, the measured bulk statistics, how graphs become tokens, and exactly what
+> information our data hides that theirs leaks — see
+> [`dataset-comparison.typ`](dataset-comparison.typ) (compiled: `dataset-comparison.pdf`).
+
 ---
 
 ## 1. What they test
