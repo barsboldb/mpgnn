@@ -5,14 +5,15 @@
 # variable-size connectedness_hard_adj plateaued at ~0.59, then fixed size (not the
 # tokenization) was the blocker.
 #
-# Run: python main.py --config configs/adj_transformer_fixed.yaml --dataset connectedness_hard_adj_fixed
+# Run: python main.py --config configs/adj_transformer_fixed.yaml --dataset connectedness_hard_fixed
 
 in_channels: 20       # adjacency-row width = n (fixed at 20), no padding
 out_channels: 2
 hidden_channels: 64
 
-tokenization: node    # GNN path — no edge tokens, no task token
-input_embedding: linear  # project adj row (20) -> hidden (64)
+node_features: adj_rows
+tokenization: node
+input_embedding: linear
 norm_type: layer
 residual: true
 lpe_dim: 0

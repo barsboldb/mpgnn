@@ -68,7 +68,9 @@ def node_experiment(config: GNNConfig, dataset_name: str):
 
 def graph_experiment(config: GNNConfig, dataset_name: str, overfit: int = 0):
     if dataset_name in GENERATORS:
-        data_list = load_or_create(dataset_name, lpe_dim=config.lpe_dim)
+        data_list = load_or_create(dataset_name,
+                                   node_features=config.node_features,
+                                   lpe_dim=config.lpe_dim)
         if overfit > 0:
             # balanced: take equal numbers from each class
             class0 = [d for d in data_list if d.y.item() == 0][:overfit // 2]

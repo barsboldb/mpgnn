@@ -94,9 +94,35 @@ class GNN(nn.Module):
             )
             in_ch = out_ch
 
-        self.pool = POOL_MAP[config.pooling] if config.task == "graph" else None
-        self.classifier = nn.Linear(in_ch, config.out_channels)
+        self.pool = POOL_MAP.get(config.pooling) if config.task == "graph" else None
+        # pair pooling: pool G1 and G2 nodes separately → concat → classify
+        # classifier input doubles because we concatenate two pooled vectors
+        classifier_in = (2 * in_ch) if config.pooling == "pair" else in_ch
+        self.classifier = nn.Linear(classifier_in, config.out_channels)
         self.dropout_p = config.dropout
+
+    def _pair_pool(self, x: torch.Tensor, batch: torch.Tensor, n1_per_graph: torch.Tensor) -> torch.Tensor:
+        """Pool G1 and G2 nodes of each graph separately, return [B, 2*hidden].
+
+        n1_per_graph[i] = number of G1 nodes in graph i (G2 nodes follow immediately).
+        Builds a split_batch where G1 nodes of graph i map to slot 2*i and
+        G2 nodes to slot 2*i+1, then mean-pools to get one vector per component.
+        """
+        B = n1_per_graph.size(0)
+        device = x.device
+
+        node_counts = torch.bincount(batch, minlength=B)          # [B] total nodes per graph
+        offsets = torch.zeros(B, dtype=torch.long, device=device)
+        offsets[1:] = node_counts[:-1].cumsum(0)                  # start index of each graph
+
+        within_idx = torch.arange(x.size(0), device=device) - offsets[batch]
+        is_g2 = within_idx >= n1_per_graph[batch]
+
+        split_batch = batch * 2
+        split_batch[is_g2] += 1                                    # G2 nodes → odd slots
+
+        pooled = global_mean_pool(x, split_batch)                  # [2*B, hidden]
+        return pooled.view(B, -1)                                   # [B, 2*hidden]
 
     def _prepare_input(self, data) -> torch.Tensor:
         x = data.x
@@ -128,7 +154,9 @@ class GNN(nn.Module):
             x = F.relu(conv_out)
             x = F.dropout(x, p=self.dropout_p, training=self.training)
 
-        if self.pool is not None:
+        if self.config.pooling == "pair":
+            x = self._pair_pool(x, batch, data.n1)
+        elif self.pool is not None:
             x = self.pool(x, batch)
 
         return self.classifier(x)

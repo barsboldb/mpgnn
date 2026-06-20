@@ -27,23 +27,22 @@ def _is_connected(num_nodes: int, edge_index: torch.Tensor) -> bool:
     return len(visited) == num_nodes
 
 
+# ── Raw graph generators ──────────────────────────────────────────────────────
+# Generators produce only structural data: edge_index, y, and any metadata
+# (e.g. n1 for isomorphism pairs).  Node features (x) and positional encodings
+# (pe) are applied separately by tokenize_dataset() after loading, so the same
+# cached graphs can be re-tokenized without regenerating.
+
 def make_connectedness_dataset(
     num_graphs: int = 1000,
     min_nodes: int = 5,
     max_nodes: int = 20,
     seed: int = 42,
-    lpe_dim: int = 0,
 ) -> list[Data]:
-    """
-    Generates random Erdos-Renyi graphs labeled by connectedness.
+    """Random Erdős–Rényi graphs labeled by connectedness.
 
-    Edge probability is sampled around the connectivity threshold log(n)/n,
-    which gives a natural mix of connected and disconnected graphs.
-
-    Node features: normalised degree of each node [degree / (n-1)].
-    Pure constant features (all ones) cause global attention to produce
-    identical outputs for every node regardless of graph structure, making
-    the task unsolvable. Degree gives each node a structural identity.
+    Edge probability sampled around the connectivity threshold log(n)/n.
+    Stores only edge_index and y — node features applied by tokenize_dataset.
     """
     rng = np.random.default_rng(seed)
     data_list = []
@@ -61,27 +60,13 @@ def make_connectedness_dataset(
                     edges.append([i, j])
                     edges.append([j, i])
 
-        if edges:
-            edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
-        else:
-            edge_index = torch.zeros((2, 0), dtype=torch.long)
-
-        # degree of each node, normalised by max possible degree (n-1)
-        deg = torch.zeros(n, dtype=torch.float)
-        if edge_index.size(1) > 0:
-            deg.scatter_add_(0, edge_index[0], torch.ones(edge_index.size(1)))
-        x = (deg / (n - 1)).unsqueeze(1)  # [n, 1]
-
+        edge_index = (
+            torch.tensor(edges, dtype=torch.long).t().contiguous()
+            if edges else torch.zeros((2, 0), dtype=torch.long)
+        )
         label = int(_is_connected(n, edge_index))
         counts[label] += 1
-
-        pe = laplacian_positional_encoding(edge_index, n, lpe_dim) if lpe_dim > 0 else None
-        data_list.append(Data(
-            x=x,
-            edge_index=edge_index,
-            y=torch.tensor([label], dtype=torch.long),
-            pe=pe,
-        ))
+        data_list.append(Data(edge_index=edge_index, y=torch.tensor([label], dtype=torch.long)))
 
     print(f"Generated {num_graphs} graphs  |  connected: {counts[1]}  disconnected: {counts[0]}")
     return data_list
@@ -114,10 +99,8 @@ def make_connectedness_hard_dataset(
     min_nodes: int = 12,
     max_nodes: int = 24,
     seed: int = 42,
-    lpe_dim: int = 0,
 ) -> list[Data]:
-    """
-    Connectedness without the local degree shortcut.
+    """Connectedness without the local degree shortcut.
 
     Every graph is two dense, internally-connected blobs (each min degree >= 2).
     - label 1 (connected):    one bridge edge joins the two blobs.
@@ -128,76 +111,7 @@ def make_connectedness_hard_dataset(
     There is NO isolated node in either class and the degree statistics are
     matched, so "min degree == 0" and "mean degree" are both useless. The only way
     to tell the classes apart is to trace reachability across the whole graph —
-    genuine global reasoning. A lossy bottleneck (e.g. hidden=2) should fail here.
-
-    Node features: normalised degree, same as `make_connectedness`.
-    """
-    rng = np.random.default_rng(seed)
-    data_list = []
-    counts = [0, 0]
-
-    for i in range(num_graphs):
-        label = i % 2  # balanced
-        n = int(rng.integers(min_nodes, max_nodes + 1))
-        na = int(rng.integers(3, n - 2))  # each blob has >= 3 nodes
-        a_nodes = list(range(na))
-        b_nodes = list(range(na, n))
-
-        edges: set[tuple[int, int]] = set(_connected_component_edges(a_nodes, rng))
-        edges |= set(_connected_component_edges(b_nodes, rng))
-
-        if label == 1:
-            # bridge the two blobs -> connected
-            u, v = int(rng.choice(a_nodes)), int(rng.choice(b_nodes))
-            edges.add((min(u, v), max(u, v)))
-        else:
-            # keep disconnected, but add one intra-blob edge so edge counts match
-            for _ in range(100):
-                blob = a_nodes if rng.random() < 0.5 else b_nodes
-                u, v = (int(x) for x in rng.choice(blob, size=2, replace=False))
-                e = (min(u, v), max(u, v))
-                if e not in edges:
-                    edges.add(e)
-                    break
-
-        all_edges: list[list[int]] = []
-        for a, b in edges:
-            all_edges += [[a, b], [b, a]]
-        edge_index = torch.tensor(all_edges, dtype=torch.long).t().contiguous()
-
-        deg = torch.zeros(n, dtype=torch.float)
-        deg.scatter_add_(0, edge_index[0], torch.ones(edge_index.size(1)))
-        x = (deg / (n - 1)).unsqueeze(1)
-
-        counts[label] += 1
-        pe = laplacian_positional_encoding(edge_index, n, lpe_dim) if lpe_dim > 0 else None
-        data_list.append(Data(
-            x=x,
-            edge_index=edge_index,
-            y=torch.tensor([label], dtype=torch.long),
-            pe=pe,
-        ))
-
-    print(f"Generated {num_graphs} graphs  |  connected: {counts[1]}  disconnected: {counts[0]}")
-    return data_list
-
-
-def make_connectedness_hard_adj_dataset(
-    num_graphs: int = 1000,
-    min_nodes: int = 12,
-    max_nodes: int = 24,
-    seed: int = 42,
-    lpe_dim: int = 0,
-) -> list[Data]:
-    """
-    Same graphs as make_connectedness_hard_dataset but with adjacency rows as
-    node features instead of normalised degree.
-
-    Node features: x[i] = i-th row of the adjacency matrix, zero-padded to
-    max_nodes. This gives each node a structural identity derived purely from
-    its neighbourhood — no learned position embeddings needed. Two nodes in
-    the same blob share common neighbours; the bridge endpoints are the only
-    nodes with a non-zero entry pointing across the gap.
+    genuine global reasoning.
     """
     rng = np.random.default_rng(seed)
     data_list = []
@@ -230,20 +144,8 @@ def make_connectedness_hard_adj_dataset(
             all_edges += [[a, b], [b, a]]
         edge_index = torch.tensor(all_edges, dtype=torch.long).t().contiguous()
 
-        # adjacency row for each node, padded to max_nodes
-        x = torch.zeros(n, max_nodes)
-        for a, b in edges:
-            x[a, b] = 1.0
-            x[b, a] = 1.0
-
         counts[label] += 1
-        pe = laplacian_positional_encoding(edge_index, n, lpe_dim) if lpe_dim > 0 else None
-        data_list.append(Data(
-            x=x,
-            edge_index=edge_index,
-            y=torch.tensor([label], dtype=torch.long),
-            pe=pe,
-        ))
+        data_list.append(Data(edge_index=edge_index, y=torch.tensor([label], dtype=torch.long)))
 
     print(f"Generated {num_graphs} graphs  |  connected: {counts[1]}  disconnected: {counts[0]}")
     return data_list
@@ -252,35 +154,10 @@ def make_connectedness_hard_adj_dataset(
 def make_connectedness_hard_fixed_dataset(
     num_graphs: int = 1000,
     seed: int = 42,
-    lpe_dim: int = 0,
 ) -> list[Data]:
-    """connectedness_hard with a FIXED graph size (n=20 for every graph).
-
-    Identical hard two-blob construction, but every graph has exactly 20 nodes.
-    This isolates the effect of variable size: Yehudai's connectivity benchmark
-    is fixed-size (all graphs n=50) and a 1-layer transformer solves it, whereas
-    our variable-size connectedness_hard defeats the same tokenizations. Note the
-    blob split point `na` still varies, so this fixes size but NOT per-position
-    blob membership.
-    """
+    """connectedness_hard with a FIXED graph size (n=20 for every graph)."""
     return make_connectedness_hard_dataset(
-        num_graphs=num_graphs, min_nodes=20, max_nodes=20, seed=seed, lpe_dim=lpe_dim
-    )
-
-
-def make_connectedness_hard_adj_fixed_dataset(
-    num_graphs: int = 1000,
-    seed: int = 42,
-    lpe_dim: int = 0,
-) -> list[Data]:
-    """Adjacency-rows tokenization on a FIXED-size (n=20) hard connectivity set.
-
-    The direct apples-to-apples with Yehudai's adj_rows (which is fixed-size and
-    solves connectivity with a 1-layer transformer). Every graph has 20 nodes, so
-    each token is a full 20-dim adjacency row with no padding ambiguity.
-    """
-    return make_connectedness_hard_adj_dataset(
-        num_graphs=num_graphs, min_nodes=20, max_nodes=20, seed=seed, lpe_dim=lpe_dim
+        num_graphs=num_graphs, min_nodes=20, max_nodes=20, seed=seed,
     )
 
 
@@ -301,46 +178,34 @@ def make_isomorphism_dataset(
     min_nodes: int = 6,
     max_nodes: int = 15,
     seed: int = 42,
-    lpe_dim: int = 0,
 ) -> list[Data]:
-    """
-    Each sample is a pair of graphs (G1, G2) encoded as one disconnected graph.
-    Label: 1 if G1 ≅ G2 (isomorphic), 0 otherwise.
+    """Graph pairs labeled by isomorphism.
 
-    Isomorphic pairs are created by randomly permuting node labels of G1.
-    Non-isomorphic pairs are generated independently and verified to have
-    different degree sequences (which is a necessary condition for isomorphism).
-
-    Node features: [1, 0] for G1 nodes, [0, 1] for G2 nodes — the only way
-    the GNN can tell the two components apart. Structure must do the rest.
-
-    This directly probes WL-test expressiveness: GIN (sum aggregation) is
-    as powerful as 1-WL, but 1-WL still fails on some non-isomorphic pairs
-    that share the same degree sequence at every iteration.
+    Each sample encodes (G1, G2) as one disconnected graph: G1 at nodes 0..n-1,
+    G2 at nodes n..2n-1. Stores n1=n so tokenize_dataset can split the pair.
+    - label 1: G2 is a random permutation of G1 (isomorphic)
+    - label 0: G2 generated independently with a different degree sequence
     """
     rng = np.random.default_rng(seed)
     data_list = []
     counts = [0, 0]
 
     for i in range(num_graphs):
-        label = i % 2  # strictly alternating for balanced classes
+        label = i % 2
         n = int(rng.integers(min_nodes, max_nodes + 1))
 
         edges1 = _random_undirected_edges(n, rng.uniform(0.2, 0.5), rng)
 
         if label == 1:
-            # isomorphic: permute node labels — structure is identical
             perm = rng.permutation(n)
             edges2 = [(int(perm[a]), int(perm[b])) for a, b in edges1]
         else:
-            # non-isomorphic: generate independently, ensure degree sequences differ
             edges2 = _random_undirected_edges(n, rng.uniform(0.2, 0.5), rng)
             for _ in range(200):
                 if _degree_sequence(n, edges1) != _degree_sequence(n, edges2):
                     break
                 edges2 = _random_undirected_edges(n, rng.uniform(0.2, 0.5), rng)
 
-        # combine into one disconnected graph: G2 node indices are offset by n
         all_edges: list[list[int]] = []
         for a, b in edges1:
             all_edges += [[a, b], [b, a]]
@@ -352,34 +217,24 @@ def make_isomorphism_dataset(
             if all_edges else torch.zeros((2, 0), dtype=torch.long)
         )
 
-        # one-hot graph membership as node features
-        x = torch.cat([
-            torch.tensor([[1., 0.]] * n),   # G1 nodes
-            torch.tensor([[0., 1.]] * n),   # G2 nodes
-        ])
-
         counts[label] += 1
-        # LPE for combined graph (both components together)
-        pe = laplacian_positional_encoding(edge_index, 2 * n, lpe_dim) if lpe_dim > 0 else None
         data_list.append(Data(
-            x=x,
             edge_index=edge_index,
             y=torch.tensor([label], dtype=torch.long),
-            pe=pe,
+            n1=torch.tensor(n, dtype=torch.long),  # G1 = nodes 0..n-1, G2 = nodes n..2n-1
         ))
 
     print(f"Generated {num_graphs} graph pairs  |  isomorphic: {counts[1]}  non-isomorphic: {counts[0]}")
     return data_list
 
 
-# ── Yehudai et al. 2025 connectivity data, loaded into our pipeline ─────────────
+# ── Yehudai et al. 2025 connectivity data ────────────────────────────────────
 
 _YEHUDAI_DIR = "yehudai/connectivity_dataset"
-_YEHUDAI_N = 50  # their graphs are fixed-size n=50
+_YEHUDAI_N = 50
 
 
 def _load_yehudai_pool(num_graphs: int) -> list[Data]:
-    """Balanced subset of Yehudai's connectivity graphs (their train+test pools)."""
     paths = [f"{_YEHUDAI_DIR}/{_YEHUDAI_N}connectivity_{s}_data.pt" for s in ("train", "test")]
     for p in paths:
         if not os.path.exists(p):
@@ -396,76 +251,120 @@ def _load_yehudai_pool(num_graphs: int) -> list[Data]:
 
 
 def make_yehudai_connectivity_dataset(
-    num_graphs: int = 1000, seed: int = 42, lpe_dim: int = 0,
+    num_graphs: int = 1000, seed: int = 42,
 ) -> list[Data]:
-    """Yehudai's connectivity graphs, raw — x = constant (in_channels=1), edges intact.
-
-    For our node_edge token transformer (which consumes x + edge_index directly).
-    """
+    """Yehudai's connectivity graphs — raw edge_index + y only."""
     graphs = _load_yehudai_pool(num_graphs)
-    out = []
-    for g in graphs:
-        pe = laplacian_positional_encoding(g.edge_index, _YEHUDAI_N, lpe_dim) if lpe_dim > 0 else None
-        out.append(Data(x=g.x.float(), edge_index=g.edge_index, y=g.y.view(1), pe=pe))
+    out = [Data(edge_index=g.edge_index, y=g.y.view(1)) for g in graphs]
     print(f"Loaded {len(out)} Yehudai connectivity graphs (raw, n={_YEHUDAI_N})")
     return out
 
 
-def make_yehudai_connectivity_adj_dataset(
-    num_graphs: int = 1000, seed: int = 42, lpe_dim: int = 0,
-) -> list[Data]:
-    """Yehudai's connectivity graphs with adjacency-row features (in_channels=50).
+# ── Tokenization ──────────────────────────────────────────────────────────────
 
-    Replicates Yehudai's winning adj_rows tokenization, but fed through OUR model
-    and training code. If our global_attn GNN also reaches ~1.0 here, the pipeline
-    is sound and the only thing separating us from their result is the dataset.
+def tokenize_dataset(
+    data_list: list[Data],
+    node_features: str = "degree",
+    lpe_dim: int = 0,
+) -> list[Data]:
+    """Apply node features and LPE to a list of raw Data objects in memory.
+
+    node_features options:
+      "degree"     — normalised degree [n, 1].  Safe default; breaks symmetry
+                     without encoding global structure.
+      "constant"   — ones [n, 1].  No structural signal; useful as an ablation
+                     or when LPE/edge-tokens carry all the structure.
+      "adj_rows"   — each node's adjacency row, zero-padded to the largest
+                     num_nodes across the dataset [n, max_nodes].
+      "membership" — one-hot component flag [n, 2]: [1,0] for G1 nodes,
+                     [0,1] for G2 nodes.  Requires data.n1 (isomorphism dataset).
+
+    lpe_dim > 0 appends Laplacian eigenvectors as data.pe.
     """
-    from torch_geometric.utils import to_dense_adj
-    graphs = _load_yehudai_pool(num_graphs)
-    out = []
-    for g in graphs:
-        adj = to_dense_adj(g.edge_index, max_num_nodes=_YEHUDAI_N).squeeze(0)  # [50,50]
-        pe = laplacian_positional_encoding(g.edge_index, _YEHUDAI_N, lpe_dim) if lpe_dim > 0 else None
-        out.append(Data(x=adj.float(), edge_index=g.edge_index, y=g.y.view(1), pe=pe))
-    print(f"Loaded {len(out)} Yehudai connectivity graphs (adj-rows, n={_YEHUDAI_N})")
-    return out
+    max_n = max(g.num_nodes for g in data_list)
+
+    for g in data_list:
+        n = g.num_nodes
+
+        if node_features == "degree":
+            deg = torch.zeros(n, dtype=torch.float)
+            if g.edge_index.size(1) > 0:
+                deg.scatter_add_(0, g.edge_index[0], torch.ones(g.edge_index.size(1)))
+            g.x = (deg / max(n - 1, 1)).unsqueeze(1)
+
+        elif node_features == "constant":
+            g.x = torch.ones(n, 1)
+
+        elif node_features == "adj_rows":
+            x = torch.zeros(n, max_n)
+            if g.edge_index.size(1) > 0:
+                row, col = g.edge_index
+                # clamp col to max_n in case a graph's node indices exceed the padded width
+                valid = col < max_n
+                x[row[valid], col[valid]] = 1.0
+            g.x = x
+
+        elif node_features == "membership":
+            n1 = int(g.n1.item())
+            g.x = torch.cat([
+                torch.tensor([[1., 0.]] * n1),
+                torch.tensor([[0., 1.]] * (n - n1)),
+            ])
+
+        else:
+            raise ValueError(f"Unknown node_features: '{node_features}'. "
+                             f"Choose from: degree, constant, adj_rows, membership")
+
+        g.pe = laplacian_positional_encoding(g.edge_index, n, lpe_dim) if lpe_dim > 0 else None
+
+    return data_list
+
+
+# ── Dataset registry and caching ─────────────────────────────────────────────
+
+GENERATORS: dict[str, object] = {
+    "connectedness":           make_connectedness_dataset,
+    "connectedness_hard":      make_connectedness_hard_dataset,
+    "connectedness_hard_fixed": make_connectedness_hard_fixed_dataset,
+    "isomorphism":             make_isomorphism_dataset,
+    "yehudai_connectivity":    make_yehudai_connectivity_dataset,
+}
 
 
 def load_or_create(
     name: str,
+    node_features: str = "degree",
+    lpe_dim: int = 0,
     cache_dir: str = "data",
-    **kwargs,
+    **structural_kwargs,
 ) -> list[Data]:
-    """
-    Load dataset from disk if it exists, otherwise generate and save it.
-    This ensures all experiments run on the exact same graphs.
+    """Load (or generate) a dataset, then tokenize in memory.
+
+    The on-disk cache stores only raw graph structure — edge_index, y, and
+    any metadata (e.g. n1 for isomorphism).  Node features and LPE are applied
+    after loading, so changing node_features or lpe_dim never requires a re-run
+    of the (potentially slow) graph generation step.
+
+    Cache key = name + structural_kwargs only.  node_features and lpe_dim are
+    intentionally excluded from the filename.
     """
     os.makedirs(cache_dir, exist_ok=True)
-    # encode key params into filename so different configs don't collide
-    suffix = "_".join(f"{k}{v}" for k, v in sorted(kwargs.items()))
+    suffix = "_".join(f"{k}{v}" for k, v in sorted(structural_kwargs.items()))
     path = os.path.join(cache_dir, f"{name}_{suffix}.pt" if suffix else f"{name}.pt")
 
     if os.path.exists(path):
         data_list = torch.load(path, weights_only=False)
-        labels = [d.y.item() for d in data_list]
-        n_classes = len(set(labels))
-        dist = "  ".join(f"class {c}: {labels.count(c)}" for c in range(n_classes))
-        print(f"Loaded {len(data_list)} samples from {path}  |  {dist}")
-        return data_list  # type: ignore[return-value]
+        print(f"Loaded {len(data_list)} raw graphs from {path}")
+    else:
+        generator = GENERATORS[name]
+        data_list = generator(**structural_kwargs)  # type: ignore[operator]
+        torch.save(data_list, path)
+        print(f"Saved raw graphs to {path}")
 
-    data_list = GENERATORS[name](**kwargs)
-    torch.save(data_list, path)
-    print(f"Saved to {path}")
+    data_list = tokenize_dataset(data_list, node_features=node_features, lpe_dim=lpe_dim)
+
+    labels = [d.y.item() for d in data_list]
+    n_classes = len(set(labels))
+    dist = "  ".join(f"class {c}: {labels.count(c)}" for c in range(n_classes))
+    print(f"{len(data_list)} samples  |  {dist}")
     return data_list
-
-
-GENERATORS = {
-    "connectedness":          make_connectedness_dataset,
-    "connectedness_hard":       make_connectedness_hard_dataset,
-    "connectedness_hard_fixed": make_connectedness_hard_fixed_dataset,
-    "connectedness_hard_adj":       make_connectedness_hard_adj_dataset,
-    "connectedness_hard_adj_fixed": make_connectedness_hard_adj_fixed_dataset,
-    "yehudai_connectivity":         make_yehudai_connectivity_dataset,
-    "yehudai_connectivity_adj":     make_yehudai_connectivity_adj_dataset,
-    "isomorphism":            make_isomorphism_dataset,
-}

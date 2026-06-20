@@ -1,0 +1,39 @@
+# Isomorphism task with adjacency-row tokenization.
+#
+# Each node's token is its row in the combined (G1 ⊔ G2) adjacency matrix,
+# zero-padded to 2*max_nodes = 30. G1 nodes have non-zeros in columns 0..n-1
+# only; G2 nodes in columns n..2n-1 only — graph membership is implicit.
+#
+# 'pair' pooling pools G1 and G2 nodes separately then concatenates [h_G1 | h_G2]
+# so the classifier compares the two components rather than averaging them together.
+#
+# Run: python main.py --config configs/iso_adj.yaml --dataset isomorphism
+
+in_channels: 30       # 2 * max_nodes (max_nodes=15); set by adj_rows tokenization
+out_channels: 2
+hidden_channels: 64
+
+node_features: adj_rows  # adjacency row padded to 2*max_nodes per node
+tokenization: node
+input_embedding: linear
+norm_type: layer
+residual: true
+lpe_dim: 16
+
+task: graph
+pooling: pair
+dropout: 0.1
+
+# training
+epochs: 300
+lr: 0.001
+weight_decay: 0.0005
+batch_size: 32
+
+layers:
+  - type: global_attn
+    heads: 4
+  # - type: global_attn
+  #   heads: 4
+  # - type: global_attn
+  #   heads: 4

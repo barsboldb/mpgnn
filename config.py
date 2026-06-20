@@ -40,7 +40,12 @@ class GNNConfig:
     # 'lookup'  — nn.Embedding for discrete integer node types; in_channels = num_node_types
     # null/None — no embedding; first conv layer takes raw in_channels directly
     input_embedding: str | None = None
-    # structural encodings
+    # node_features: how raw graph structure becomes node feature vectors x
+    #   "degree"     — normalised degree [n, 1]; safe default
+    #   "constant"   — ones [n, 1]; ablation / when structure comes from LPE or edge tokens
+    #   "adj_rows"   — adjacency row padded to max dataset node count [n, max_n]
+    #   "membership" — one-hot component flag [n, 2] for isomorphism pairs (needs data.n1)
+    node_features: str = "degree"
     # lpe_dim: number of Laplacian eigenvectors concatenated to node features (0 = disabled)
     lpe_dim: int = 0
     # tokenization (graph task only):
@@ -71,7 +76,9 @@ class GNNConfig:
 
     def __post_init__(self):
         assert self.task in ("node", "graph"), f"task must be 'node' or 'graph', got '{self.task}'"
-        assert self.pooling in ("mean", "add", "max"), f"unknown pooling '{self.pooling}'"
+        assert self.pooling in ("mean", "add", "max", "pair"), f"unknown pooling '{self.pooling}'"
+        assert self.node_features in ("degree", "constant", "adj_rows", "membership"), \
+            f"unknown node_features '{self.node_features}'"
         assert self.input_embedding in (None, "linear", "mlp", "lookup"), \
             f"unknown input_embedding '{self.input_embedding}'"
         assert self.norm_type in (None, "batch", "layer"), \

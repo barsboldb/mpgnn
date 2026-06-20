@@ -9,18 +9,18 @@
 # the final representations for graph-level classification. No edge tokens,
 # no task token — just nodes described by who they're connected to.
 #
-# Requires dataset variant that sets x = adj_row (padded to max_nodes=24).
-# Run: python main.py --config configs/adj_transformer.yaml --dataset connectedness_hard_adj
+# Run: python main.py --config configs/adj_transformer.yaml --dataset connectedness_hard
 
-in_channels: 24       # max_nodes for connectedness_hard — the adj row dimension
+in_channels: 24       # max_nodes for connectedness_hard (adj_rows pads to dataset max)
 out_channels: 2
-hidden_channels: 64
+hidden_channels: 8
 
-tokenization: node    # uses GNN — no edge tokens, no task token
-input_embedding: linear  # project adj row (24) -> hidden_channels (64)
+node_features: adj_rows
+tokenization: node
+input_embedding: linear
 norm_type: layer
 residual: true
-lpe_dim: 0
+lpe_dim: 4
 
 task: graph
 pooling: mean
@@ -36,9 +36,9 @@ batch_size: 32
 layers:
   - type: global_attn
     heads: 4
-  - type: global_attn
-    heads: 4
-  - type: global_attn
-    heads: 4
-  - type: global_attn
-    heads: 4
+  # - type: global_attn
+  #   heads: 4
+  # - type: global_attn
+  #   heads: 4
+  # - type: global_attn
+  #   heads: 4

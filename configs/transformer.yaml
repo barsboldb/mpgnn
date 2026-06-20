@@ -6,10 +6,10 @@
 # Run: python main.py --config configs/transformer.yaml --dataset connectedness
 #   connectedness -> in_channels: 1   |   isomorphism -> in_channels: 2
 
-in_channels: 1        # 1 for connectedness (degree), 2 for isomorphism (one-hot graph id)
+in_channels: 2        # 1 for connectedness (degree), 2 for isomorphism (one-hot graph id)
 out_channels: 2
-hidden_channels: 32
-lpe_dim: 0           # Laplacian eigenvectors concatenated to node features
+hidden_channels: 64
+lpe_dim: 16           # Laplacian eigenvectors concatenated to node features
 
 task: graph
 pooling: mean
@@ -28,17 +28,10 @@ batch_size: 32
 
 layers:
   - type: global_attn
-    spd_max_dist: 1
     heads: 4
   - type: global_attn
-    spd_max_dist: 1
     heads: 4
   - type: global_attn
-    spd_max_dist: 1
     heads: 4
   - type: global_attn
-    spd_max_dist: 1
-    heads: 4
-  - type: global_attn
-    spd_max_dist: 1
     heads: 4

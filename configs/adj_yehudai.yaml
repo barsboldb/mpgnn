@@ -5,13 +5,14 @@
 # and the only thing separating us from their result is the dataset (our
 # connectedness_hard is genuinely harder), not the model.
 #
-# Run: python main.py --config configs/adj_yehudai.yaml --dataset yehudai_connectivity_adj
+# Run: python main.py --config configs/adj_yehudai.yaml --dataset yehudai_connectivity
 
 in_channels: 50       # adjacency-row width = their fixed n=50
 out_channels: 2
 hidden_channels: 64
 
-tokenization: node    # GNN path with global attention
+node_features: adj_rows
+tokenization: node
 input_embedding: linear
 norm_type: layer
 residual: true
