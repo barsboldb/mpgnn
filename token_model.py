@@ -58,7 +58,14 @@ class GraphTokenTransformer(nn.Module):
         self.config = config
         d = config.hidden_channels
         self.node_id_dim = config.node_id_dim
+        self.node_id_mode = config.node_id_mode
         id_dim = config.node_id_dim + config.lpe_dim  # per-node identity width
+
+        # 'learned' identities: an embedding indexed by within-graph node position
+        self.node_pos_emb = (
+            nn.Embedding(config.max_nodes, config.node_id_dim)
+            if config.node_id_dim > 0 and config.node_id_mode == "learned" else None
+        )
 
         self.vert_proj = nn.Linear(config.in_channels + id_dim, d)
         self.edge_proj = nn.Linear(id_dim, d)          # from summed endpoint identities
@@ -73,15 +80,26 @@ class GraphTokenTransformer(nn.Module):
         self.norm = nn.LayerNorm(d)
         self.classifier = nn.Linear(d, config.out_channels)
 
-    def _node_identities(self, n: int, pe: torch.Tensor | None, device) -> torch.Tensor:
+    def _within_graph_position(self, batch: torch.Tensor, N: int, device) -> torch.Tensor:
+        """Rank of each node inside its own graph (PyG batches nodes contiguously)."""
+        B = int(batch.max().item()) + 1
+        counts = torch.zeros(B, device=device).scatter_add_(
+            0, batch, torch.ones(N, device=device))
+        offsets = torch.cat([torch.zeros(1, device=device), counts.cumsum(0)[:-1]])
+        return (torch.arange(N, device=device) - offsets[batch]).long()
+
+    def _node_identities(self, batch: torch.Tensor, N: int,
+                         pe: torch.Tensor | None, device) -> torch.Tensor:
         parts = []
         if self.node_id_dim > 0:
-            # fresh random identities each forward -> relabeling-invariant in expectation,
-            # forces the model to use structure rather than memorize node positions.
-            parts.append(torch.randn(n, self.node_id_dim, device=device))
+            if self.node_pos_emb is not None:            # learned, deterministic
+                pos = self._within_graph_position(batch, N, device)
+                parts.append(self.node_pos_emb(pos))
+            else:                                        # fresh random each forward
+                parts.append(torch.randn(N, self.node_id_dim, device=device))
         if self.config.lpe_dim > 0 and pe is not None:
             parts.append(pe)
-        return torch.cat(parts, dim=-1) if parts else torch.zeros(n, 0, device=device)
+        return torch.cat(parts, dim=-1) if parts else torch.zeros(N, 0, device=device)
 
     def forward(self, data):
         x = data.x
@@ -93,7 +111,7 @@ class GraphTokenTransformer(nn.Module):
             batch = torch.zeros(N, dtype=torch.long, device=device)
         B = int(batch.max().item()) + 1
 
-        ident = self._node_identities(N, getattr(data, "pe", None), device)  # [N, id_dim]
+        ident = self._node_identities(batch, N, getattr(data, "pe", None), device)  # [N, id_dim]
 
         # undirected edges only (each stored as both directions in edge_index)
         und = edge_index[0] < edge_index[1]

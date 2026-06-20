@@ -49,9 +49,20 @@ class GNNConfig:
     # 'node_edge' — Sanford-style: tokens = vertices + edges + a task token; edges are
     #               first-class tokens the transformer reasons over. -> GraphTokenTransformer
     tokenization: str = "node"
-    # node_id_dim: random per-node identity dim for the node_edge transformer, so edge
+    # node_id_dim: per-node identity dim for the node_edge transformer, so edge
     # tokens can reference their endpoints. Combined with lpe_dim as the node identity.
     node_id_dim: int = 0
+    # node_id_mode: how those identities are produced (node_edge only)
+    #   'learned' — nn.Embedding indexed by within-graph node position. Deterministic
+    #               and trainable; breaks permutation invariance like an absolute
+    #               positional encoding, but actually optimizes. (default)
+    #   'random'  — fresh Gaussian vectors each forward. Permutation-invariant in
+    #               expectation, but SGD has no stable signal to bind edges to nodes,
+    #               so the model tends to ignore them and stalls at chance.
+    node_id_mode: str = "learned"
+    # max_nodes: size of the learned node-position embedding table (must exceed the
+    # largest single-graph node count in the dataset).
+    max_nodes: int = 128
     # training
     epochs: int = 200
     lr: float = 0.01
@@ -71,6 +82,8 @@ class GNNConfig:
             assert self.node_id_dim + self.lpe_dim > 0, \
                 "node_edge tokenization needs node_id_dim > 0 (or lpe_dim > 0) so edge " \
                 "tokens can reference their endpoints; otherwise edges are anonymous"
+            assert self.node_id_mode in ("learned", "random"), \
+                f"node_id_mode must be 'learned' or 'random' — got '{self.node_id_mode}'"
         for i, layer in enumerate(self.layers):
             assert "type" in layer, f"layer {i} is missing 'type'"
             assert layer["type"] in ("gcn", "sage", "gat", "gin", "global_attn"), \
@@ -94,6 +107,10 @@ class GNNConfig:
             + (f"  |  node_id_dim: {self.node_id_dim}" if self.tokenization == "node_edge" else ""),
             f"Task: {self.task}  |  Pooling: {self.pooling if self.task == 'graph' else '-'}",
             f"In: {self.in_channels}  +{lpe}  ->  [{emb} emb]  ->  Hidden: {self.hidden_channels}  ->  Out: {self.out_channels}",
+            # node_edge uses fixed pre-norm residual transformer blocks; norm_type/residual
+            # only apply to the node-token GNN path.
+            f"Dropout: {self.dropout}  |  Norm: layer (pre-norm)  |  Residual: yes (transformer blocks)"
+            if self.tokenization == "node_edge" else
             f"Dropout: {self.dropout}  |  Norm: {self.norm_type or 'none'}  |  Residual: {self.residual}",
             f"Epochs: {self.epochs}  |  LR: {self.lr}  |  Weight decay: {self.weight_decay}  |  Batch size: {self.batch_size}",
             "Layers:",

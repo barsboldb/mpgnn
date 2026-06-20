@@ -12,15 +12,20 @@ out_channels: 2
 hidden_channels: 64
 
 tokenization: node_edge
-node_id_dim: 16       # random per-node identities so edge tokens can name their endpoints
+node_id_dim: 16       # per-node identities so edge tokens can name their endpoints
+node_id_mode: learned # 'learned' (deterministic, trainable) actually optimizes;
+                      # 'random' is permutation-invariant but stalls at chance
 lpe_dim: 0            # keep 0 for honest connectivity; turn on for isomorphism
 
 task: graph           # readout is via the task token (pooling field is unused here)
 dropout: 0.1
+# NOTE: this model always uses pre-norm residual transformer blocks (LayerNorm +
+# residual around attention and FFN). The `residual`/`norm_type` config fields apply
+# only to the node-token GNN path and are ignored here.
 
 # training
-epochs: 200
-lr: 0.0005
+epochs: 500
+lr: 0.005
 weight_decay: 0.0005
 batch_size: 32
 
