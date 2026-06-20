@@ -249,6 +249,41 @@ def make_connectedness_hard_adj_dataset(
     return data_list
 
 
+def make_connectedness_hard_fixed_dataset(
+    num_graphs: int = 1000,
+    seed: int = 42,
+    lpe_dim: int = 0,
+) -> list[Data]:
+    """connectedness_hard with a FIXED graph size (n=20 for every graph).
+
+    Identical hard two-blob construction, but every graph has exactly 20 nodes.
+    This isolates the effect of variable size: Yehudai's connectivity benchmark
+    is fixed-size (all graphs n=50) and a 1-layer transformer solves it, whereas
+    our variable-size connectedness_hard defeats the same tokenizations. Note the
+    blob split point `na` still varies, so this fixes size but NOT per-position
+    blob membership.
+    """
+    return make_connectedness_hard_dataset(
+        num_graphs=num_graphs, min_nodes=20, max_nodes=20, seed=seed, lpe_dim=lpe_dim
+    )
+
+
+def make_connectedness_hard_adj_fixed_dataset(
+    num_graphs: int = 1000,
+    seed: int = 42,
+    lpe_dim: int = 0,
+) -> list[Data]:
+    """Adjacency-rows tokenization on a FIXED-size (n=20) hard connectivity set.
+
+    The direct apples-to-apples with Yehudai's adj_rows (which is fixed-size and
+    solves connectivity with a 1-layer transformer). Every graph has 20 nodes, so
+    each token is a full 20-dim adjacency row with no padding ambiguity.
+    """
+    return make_connectedness_hard_adj_dataset(
+        num_graphs=num_graphs, min_nodes=20, max_nodes=20, seed=seed, lpe_dim=lpe_dim
+    )
+
+
 def _random_undirected_edges(n: int, p: float, rng: np.random.Generator) -> list[tuple[int, int]]:
     return [(i, j) for i in range(n) for j in range(i + 1, n) if rng.random() < p]
 
@@ -337,6 +372,65 @@ def make_isomorphism_dataset(
     return data_list
 
 
+# ── Yehudai et al. 2025 connectivity data, loaded into our pipeline ─────────────
+
+_YEHUDAI_DIR = "yehudai/connectivity_dataset"
+_YEHUDAI_N = 50  # their graphs are fixed-size n=50
+
+
+def _load_yehudai_pool(num_graphs: int) -> list[Data]:
+    """Balanced subset of Yehudai's connectivity graphs (their train+test pools)."""
+    paths = [f"{_YEHUDAI_DIR}/{_YEHUDAI_N}connectivity_{s}_data.pt" for s in ("train", "test")]
+    for p in paths:
+        if not os.path.exists(p):
+            raise FileNotFoundError(
+                f"{p} not found — generate it first:\n"
+                f"  cd yehudai && python run_connectivity.py --rep_type adj_rows "
+                f"--n_nodes 50 --num_epochs 1")
+    pool = []
+    for p in paths:
+        pool += list(torch.load(p, weights_only=False))
+    conn = [g for g in pool if int(g.y.item()) == 1][:num_graphs // 2]
+    disc = [g for g in pool if int(g.y.item()) == 0][:num_graphs // 2]
+    return conn + disc
+
+
+def make_yehudai_connectivity_dataset(
+    num_graphs: int = 1000, seed: int = 42, lpe_dim: int = 0,
+) -> list[Data]:
+    """Yehudai's connectivity graphs, raw — x = constant (in_channels=1), edges intact.
+
+    For our node_edge token transformer (which consumes x + edge_index directly).
+    """
+    graphs = _load_yehudai_pool(num_graphs)
+    out = []
+    for g in graphs:
+        pe = laplacian_positional_encoding(g.edge_index, _YEHUDAI_N, lpe_dim) if lpe_dim > 0 else None
+        out.append(Data(x=g.x.float(), edge_index=g.edge_index, y=g.y.view(1), pe=pe))
+    print(f"Loaded {len(out)} Yehudai connectivity graphs (raw, n={_YEHUDAI_N})")
+    return out
+
+
+def make_yehudai_connectivity_adj_dataset(
+    num_graphs: int = 1000, seed: int = 42, lpe_dim: int = 0,
+) -> list[Data]:
+    """Yehudai's connectivity graphs with adjacency-row features (in_channels=50).
+
+    Replicates Yehudai's winning adj_rows tokenization, but fed through OUR model
+    and training code. If our global_attn GNN also reaches ~1.0 here, the pipeline
+    is sound and the only thing separating us from their result is the dataset.
+    """
+    from torch_geometric.utils import to_dense_adj
+    graphs = _load_yehudai_pool(num_graphs)
+    out = []
+    for g in graphs:
+        adj = to_dense_adj(g.edge_index, max_num_nodes=_YEHUDAI_N).squeeze(0)  # [50,50]
+        pe = laplacian_positional_encoding(g.edge_index, _YEHUDAI_N, lpe_dim) if lpe_dim > 0 else None
+        out.append(Data(x=adj.float(), edge_index=g.edge_index, y=g.y.view(1), pe=pe))
+    print(f"Loaded {len(out)} Yehudai connectivity graphs (adj-rows, n={_YEHUDAI_N})")
+    return out
+
+
 def load_or_create(
     name: str,
     cache_dir: str = "data",
@@ -367,7 +461,11 @@ def load_or_create(
 
 GENERATORS = {
     "connectedness":          make_connectedness_dataset,
-    "connectedness_hard":     make_connectedness_hard_dataset,
-    "connectedness_hard_adj": make_connectedness_hard_adj_dataset,
+    "connectedness_hard":       make_connectedness_hard_dataset,
+    "connectedness_hard_fixed": make_connectedness_hard_fixed_dataset,
+    "connectedness_hard_adj":       make_connectedness_hard_adj_dataset,
+    "connectedness_hard_adj_fixed": make_connectedness_hard_adj_fixed_dataset,
+    "yehudai_connectivity":         make_yehudai_connectivity_dataset,
+    "yehudai_connectivity_adj":     make_yehudai_connectivity_adj_dataset,
     "isomorphism":            make_isomorphism_dataset,
 }

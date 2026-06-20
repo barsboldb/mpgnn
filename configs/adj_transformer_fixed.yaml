@@ -1,0 +1,35 @@
+# Adjacency-rows transformer on the FIXED-size hard connectivity set (n=20).
+#
+# Direct apples-to-apples with Yehudai's adj_rows, which is fixed-size and solves
+# connectivity with a single transformer layer. If this learns where the
+# variable-size connectedness_hard_adj plateaued at ~0.59, then fixed size (not the
+# tokenization) was the blocker.
+#
+# Run: python main.py --config configs/adj_transformer_fixed.yaml --dataset connectedness_hard_adj_fixed
+
+in_channels: 20       # adjacency-row width = n (fixed at 20), no padding
+out_channels: 2
+hidden_channels: 64
+
+tokenization: node    # GNN path — no edge tokens, no task token
+input_embedding: linear  # project adj row (20) -> hidden (64)
+norm_type: layer
+residual: true
+lpe_dim: 0
+
+task: graph
+pooling: mean
+dropout: 0.1
+
+# training
+epochs: 200
+lr: 0.001
+weight_decay: 0.0005
+batch_size: 32
+
+# start at depth 1 (Yehudai solves n=50 connectivity with 1 layer); sweep by adding entries
+layers:
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4

@@ -1,0 +1,33 @@
+# OUR adjacency-rows global-attention GNN, run on YEHUDAI's connectivity data.
+#
+# Controlled experiment: same data Yehudai's adj_rows solved at 1.00, but fed
+# through our model + training loop. If we also hit ~1.0, our pipeline is sound
+# and the only thing separating us from their result is the dataset (our
+# connectedness_hard is genuinely harder), not the model.
+#
+# Run: python main.py --config configs/adj_yehudai.yaml --dataset yehudai_connectivity_adj
+
+in_channels: 50       # adjacency-row width = their fixed n=50
+out_channels: 2
+hidden_channels: 64
+
+tokenization: node    # GNN path with global attention
+input_embedding: linear
+norm_type: layer
+residual: true
+lpe_dim: 0
+
+task: graph
+pooling: mean
+dropout: 0.1
+
+# training
+epochs: 100
+lr: 0.001
+weight_decay: 0.0005
+batch_size: 64
+
+# 1 layer, like Yehudai's setup that reached 1.00
+layers:
+  - type: global_attn
+    heads: 4
