@@ -182,6 +182,73 @@ def make_connectedness_hard_dataset(
     return data_list
 
 
+def make_connectedness_hard_adj_dataset(
+    num_graphs: int = 1000,
+    min_nodes: int = 12,
+    max_nodes: int = 24,
+    seed: int = 42,
+    lpe_dim: int = 0,
+) -> list[Data]:
+    """
+    Same graphs as make_connectedness_hard_dataset but with adjacency rows as
+    node features instead of normalised degree.
+
+    Node features: x[i] = i-th row of the adjacency matrix, zero-padded to
+    max_nodes. This gives each node a structural identity derived purely from
+    its neighbourhood — no learned position embeddings needed. Two nodes in
+    the same blob share common neighbours; the bridge endpoints are the only
+    nodes with a non-zero entry pointing across the gap.
+    """
+    rng = np.random.default_rng(seed)
+    data_list = []
+    counts = [0, 0]
+
+    for i in range(num_graphs):
+        label = i % 2
+        n = int(rng.integers(min_nodes, max_nodes + 1))
+        na = int(rng.integers(3, n - 2))
+        a_nodes = list(range(na))
+        b_nodes = list(range(na, n))
+
+        edges: set[tuple[int, int]] = set(_connected_component_edges(a_nodes, rng))
+        edges |= set(_connected_component_edges(b_nodes, rng))
+
+        if label == 1:
+            u, v = int(rng.choice(a_nodes)), int(rng.choice(b_nodes))
+            edges.add((min(u, v), max(u, v)))
+        else:
+            for _ in range(100):
+                blob = a_nodes if rng.random() < 0.5 else b_nodes
+                u, v = (int(x) for x in rng.choice(blob, size=2, replace=False))
+                e = (min(u, v), max(u, v))
+                if e not in edges:
+                    edges.add(e)
+                    break
+
+        all_edges: list[list[int]] = []
+        for a, b in edges:
+            all_edges += [[a, b], [b, a]]
+        edge_index = torch.tensor(all_edges, dtype=torch.long).t().contiguous()
+
+        # adjacency row for each node, padded to max_nodes
+        x = torch.zeros(n, max_nodes)
+        for a, b in edges:
+            x[a, b] = 1.0
+            x[b, a] = 1.0
+
+        counts[label] += 1
+        pe = laplacian_positional_encoding(edge_index, n, lpe_dim) if lpe_dim > 0 else None
+        data_list.append(Data(
+            x=x,
+            edge_index=edge_index,
+            y=torch.tensor([label], dtype=torch.long),
+            pe=pe,
+        ))
+
+    print(f"Generated {num_graphs} graphs  |  connected: {counts[1]}  disconnected: {counts[0]}")
+    return data_list
+
+
 def _random_undirected_edges(n: int, p: float, rng: np.random.Generator) -> list[tuple[int, int]]:
     return [(i, j) for i in range(n) for j in range(i + 1, n) if rng.random() < p]
 
@@ -299,7 +366,8 @@ def load_or_create(
 
 
 GENERATORS = {
-    "connectedness":      make_connectedness_dataset,
-    "connectedness_hard": make_connectedness_hard_dataset,
-    "isomorphism":        make_isomorphism_dataset,
+    "connectedness":          make_connectedness_dataset,
+    "connectedness_hard":     make_connectedness_hard_dataset,
+    "connectedness_hard_adj": make_connectedness_hard_adj_dataset,
+    "isomorphism":            make_isomorphism_dataset,
 }
