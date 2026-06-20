@@ -66,13 +66,21 @@ def node_experiment(config: GNNConfig, dataset_name: str):
     logger.save()
 
 
-def graph_experiment(config: GNNConfig, dataset_name: str):
+def graph_experiment(config: GNNConfig, dataset_name: str, overfit: int = 0):
     if dataset_name in GENERATORS:
         data_list = load_or_create(dataset_name, lpe_dim=config.lpe_dim)
-        n = len(data_list)
-        train_ds = data_list[:int(0.8 * n)]
-        test_ds  = data_list[int(0.8 * n):]
-        print(f"\nDataset: {dataset_name}  |  Graphs: {n}  Train: {len(train_ds)}  Test: {len(test_ds)}")
+        if overfit > 0:
+            # balanced: take equal numbers from each class
+            class0 = [d for d in data_list if d.y.item() == 0][:overfit // 2]
+            class1 = [d for d in data_list if d.y.item() == 1][:overfit // 2]
+            data_list = class0 + class1
+            train_ds = test_ds = data_list
+            print(f"\n[OVERFIT MODE] Dataset: {dataset_name}  |  Graphs: {len(data_list)}  (all used for train+test)")
+        else:
+            n = len(data_list)
+            train_ds = data_list[:int(0.8 * n)]
+            test_ds  = data_list[int(0.8 * n):]
+            print(f"\nDataset: {dataset_name}  |  Graphs: {n}  Train: {len(train_ds)}  Test: {len(test_ds)}")
     else:
         dataset = TUDataset(root=f"/tmp/{dataset_name.upper()}", name=dataset_name.upper())
         dataset = dataset.shuffle()
@@ -89,7 +97,8 @@ def graph_experiment(config: GNNConfig, dataset_name: str):
     print(config.describe())
     print()
 
-    logger = RunLogger(dataset_name, config)
+    tag = f"overfit{overfit}_" if overfit > 0 else ""
+    logger = RunLogger(dataset_name, config, tag=tag)
     run_graph_experiment(model, train_loader, test_loader, DEVICE,
                          epochs=config.epochs, lr=config.lr, weight_decay=config.weight_decay,
                          logger=logger)
@@ -106,6 +115,8 @@ def main():
                         help="cora | mutag | connectedness | isomorphism")
     parser.add_argument("--results", action="store_true",
                         help="Print comparison table of all saved runs and exit")
+    parser.add_argument("--overfit", type=int, default=0,
+                        help="Use only N graphs (balanced), same set for train+test, to check memorisation capacity")
     args = parser.parse_args()
 
     if args.results:
@@ -120,7 +131,7 @@ def main():
     if config.task == "node":
         node_experiment(config, args.dataset)
     else:
-        graph_experiment(config, args.dataset)
+        graph_experiment(config, args.dataset, overfit=args.overfit)
 
 
 if __name__ == "__main__":

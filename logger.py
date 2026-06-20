@@ -9,13 +9,14 @@ class RunLogger:
     Records one experiment run: config, per-epoch metrics, and final summary.
     Saves to results/<timestamp>_<dataset>_<layers>.json on .save().
     """
-    def __init__(self, dataset: str, config):
+    def __init__(self, dataset: str, config, tag: str = ""):
         self.dataset = dataset
         self.config = asdict(config)
         self.history: list[dict] = []
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         layer_types = "-".join(l["type"] for l in self.config.get("layers", []))
-        self.run_id = f"{self.timestamp}_{dataset}_{layer_types}"
+        prefix = f"{tag}" if tag else ""
+        self.run_id = f"{self.timestamp}_{prefix}{dataset}_{layer_types}"
 
     def log(self, epoch: int, **metrics):
         self.history.append({"epoch": epoch, **metrics})
