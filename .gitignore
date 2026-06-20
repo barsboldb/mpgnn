@@ -10,3 +10,12 @@ env/
 
 # OS / editor
 .DS_Store
+
+# Generated visualizer output (regenerate with viz.py)
+results/report.html
+
+# Yehudai reference: generated datasets, logs, and large supplement data
+yehudai/connectivity_dataset/
+yehudai/graph_dataset/
+yehudai/logs/
+yehudai/randomgraph.mat
