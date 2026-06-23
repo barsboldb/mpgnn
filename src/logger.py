@@ -13,6 +13,7 @@ class RunLogger:
         self.dataset = dataset
         self.config = asdict(config)
         self.history: list[dict] = []
+        self.timing: dict = {}
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         layer_types = "-".join(l["type"] for l in self.config.get("layers", []))
         prefix = f"{tag}" if tag else ""
@@ -21,6 +22,23 @@ class RunLogger:
     def log(self, epoch: int, **metrics):
         self.history.append({"epoch": epoch, **metrics})
 
+    def set_timing(self, device, inference: dict):
+        """Record the device and the single-inference benchmark. Per-epoch
+        aggregates are derived from history at save time."""
+        self.timing = {"device": str(device), "inference": inference}
+
+    def _timing(self) -> dict:
+        out = dict(self.timing)
+        tt = [h["train_time_s"] for h in self.history if "train_time_s" in h]
+        et = [h["eval_time_s"] for h in self.history if "eval_time_s" in h]
+        if tt:
+            out["epochs_timed"] = len(tt)
+            out["total_train_s"] = round(sum(tt), 4)
+            out["mean_epoch_train_s"] = round(sum(tt) / len(tt), 5)
+        if et:
+            out["mean_epoch_eval_s"] = round(sum(et) / len(et), 5)
+        return out
+
     def save(self, results_dir: str = "results") -> str:
         os.makedirs(results_dir, exist_ok=True)
         path = os.path.join(results_dir, f"{self.run_id}.json")
@@ -28,8 +46,9 @@ class RunLogger:
             "run_id": self.run_id,
             "dataset": self.dataset,
             "config": self.config,
-            "history": self.history,
             "summary": self._summary(),
+            "timing": self._timing(),
+            "history": self.history,
         }
         with open(path, "w") as f:
             json.dump(payload, f, indent=2)
@@ -62,6 +81,8 @@ def print_results_table(results_dir: str = "results"):
             run = json.load(f)
         layers = " → ".join(l["type"] for l in run["config"].get("layers", []))
         s = run.get("summary", {})
+        t = run.get("timing", {})
+        inf = t.get("inference", {})
         rows.append({
             "run_id":   run["run_id"],
             "dataset":  run["dataset"],
@@ -70,6 +91,8 @@ def print_results_table(results_dir: str = "results"):
             "epochs":   run["config"].get("epochs", "-"),
             **{k: v for k, v in s.items() if k != "best_epoch"},
             "best_epoch": s.get("best_epoch", "-"),
+            "ms/epoch": round(t["mean_epoch_train_s"] * 1e3, 1) if "mean_epoch_train_s" in t else "-",
+            "infer_ms": inf.get("per_graph_ms", inf.get("per_call_ms", "-")),
         })
 
     if not rows:
