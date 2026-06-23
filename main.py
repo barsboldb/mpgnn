@@ -11,11 +11,11 @@ import torch
 from torch_geometric.datasets import Planetoid, TUDataset
 from torch_geometric.loader import DataLoader
 
-from config import GNNConfig
-from model import GNN, build_model
-from train import run_node_experiment, run_graph_experiment
-from dataset import GENERATORS, load_or_create
-from logger import RunLogger, print_results_table
+from src.config import GNNConfig
+from src.model import GNN, build_model
+from src.train import run_node_experiment, run_graph_experiment
+from src.dataset import GENERATORS, load_or_create
+from src.logger import RunLogger, print_results_table
 
 
 if torch.cuda.is_available():
@@ -70,7 +70,8 @@ def graph_experiment(config: GNNConfig, dataset_name: str, overfit: int = 0):
     if dataset_name in GENERATORS:
         data_list = load_or_create(dataset_name,
                                    node_features=config.node_features,
-                                   lpe_dim=config.lpe_dim)
+                                   lpe_dim=config.lpe_dim,
+                                   in_channels=config.in_channels)
         if overfit > 0:
             # balanced: take equal numbers from each class
             class0 = [d for d in data_list if d.y.item() == 0][:overfit // 2]

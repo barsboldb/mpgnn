@@ -180,7 +180,7 @@ class GlobalAttnConv(nn.Module):
 
         # add learned shortest-path distance bias before softmax (Graphormer-style)
         if self.spd_bias is not None:
-            from features import spd_batch
+            from .features import spd_batch
             spd = spd_batch(edge_index, batch, N, self.spd_max_dist)  # [N, N]
             attn = attn + self.spd_bias(spd)                          # [N, N, H]
 

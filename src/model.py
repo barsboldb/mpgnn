@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import global_mean_pool, global_add_pool, global_max_pool
 
-from layers import GCNConv, SAGEConv, GATConv, GINConv, GlobalAttnConv
-from config import GNNConfig
+from .layers import GCNConv, SAGEConv, GATConv, GINConv, GlobalAttnConv
+from .config import GNNConfig
 
 
 LAYER_MAP = {
@@ -31,7 +31,10 @@ def _build_input_embedding(config: GNNConfig) -> nn.Module | None:
     None    — no embedding; first conv layer receives raw features directly
     """
     h = config.hidden_channels
-    raw_in = config.in_channels + config.lpe_dim
+    # "lap" uses lpe_dim eigenvectors as the primary features (stored in x, not pe)
+    # so lpe_dim must not be added again here
+    raw_in = config.in_channels if config.node_features == "lap" \
+        else config.in_channels + config.lpe_dim
     if config.input_embedding == "linear":
         return nn.Linear(raw_in, h)
     if config.input_embedding == "mlp":
@@ -73,7 +76,8 @@ class GNN(nn.Module):
         self.config = config
         self.input_emb = _build_input_embedding(config)
 
-        raw_in = config.in_channels + config.lpe_dim
+        raw_in = config.in_channels if config.node_features == "lap" \
+            else config.in_channels + config.lpe_dim
         in_ch = config.hidden_channels if self.input_emb is not None else raw_in
 
         self.convs = nn.ModuleList()
@@ -121,7 +125,7 @@ class GNN(nn.Module):
         split_batch = batch * 2
         split_batch[is_g2] += 1                                    # G2 nodes → odd slots
 
-        pooled = global_mean_pool(x, split_batch)                  # [2*B, hidden]
+        pooled = global_mean_pool(x, split_batch, size=2 * B)       # [2*B, hidden]
         return pooled.view(B, -1)                                   # [B, 2*hidden]
 
     def _prepare_input(self, data) -> torch.Tensor:
@@ -190,6 +194,6 @@ def build_model(config: GNNConfig) -> nn.Module:
     'node_edge' -> GraphTokenTransformer (Sanford-style edge tokens + task token)
     """
     if getattr(config, "tokenization", "node") == "node_edge":
-        from token_model import GraphTokenTransformer
+        from .token_model import GraphTokenTransformer
         return GraphTokenTransformer(config)
     return GNN(config)

@@ -1,7 +1,7 @@
 # Config Reference
 
 All experiments are configured via a single YAML file passed with `--config config.yaml`.
-Every field maps 1-to-1 to `GNNConfig` in `config.py`.
+Every field maps 1-to-1 to `GNNConfig` in `src/config.py`.
 
 ---
 
@@ -31,7 +31,10 @@ Dataset reference:
 | Field | Values | Description |
 |---|---|---|
 | `task` | `node` / `graph` | Node classification vs. graph classification. |
-| `pooling` | `mean` / `add` / `max` | Global pooling applied after the conv stack (graph task only). |
+| `pooling` | `mean` / `add` / `max` / `pair` | Global pooling applied after the conv stack (graph task only). |
+
+- `mean` / `add` / `max` — standard global pooling over all nodes.
+- `pair` — **isomorphism pairs only**. Pools G1 and G2 nodes separately using `mean`, then concatenates the two graph-level vectors before the classifier. The classifier sees `[h_G1 ‖ h_G2]` (width `2 × hidden_channels`). Requires `data.n1` to be set (produced automatically for the `isomorphism` dataset).
 
 ---
 
@@ -64,13 +67,37 @@ model uses fixed pre-norm residual blocks regardless of these settings (see Toke
 
 ---
 
+### Node features / tokenization input
+
+`node_features` controls how raw graph structure becomes node feature vectors before the model sees them.
+
+| Value | Shape | Description |
+|---|---|---|
+| `degree` | `[n, 1]` | Normalised degree `deg(v) / max_deg`. Safe default; breaks symmetry. **Does not work on `connectedness_hard`** — degree distributions are matched by construction. |
+| `constant` | `[n, 1]` | All-ones vector. Fully anonymous nodes; useful as a lower bound or when LPE carries all structure. |
+| `adj_rows` | `[n, max_n]` | Each node's row in the adjacency matrix, zero-padded to the largest graph in the dataset. Encodes full neighbourhood in one vector — strong structural signal but dimension grows with dataset. |
+| `membership` | `[n, 2]` | One-hot component flag: `[1,0]` for nodes in G1, `[0,1]` for nodes in G2. **Isomorphism pairs only** — requires `data.n1`. Tells the model which half of the pair it's looking at. |
+| `lap` | `[n, lpe_dim]` | Laplacian eigenvectors used *as* features (not appended). `in_channels` must equal `lpe_dim`. See LPE section below. |
+
+> `in_channels` in the config must match the feature width. For `degree`/`constant`: 1. For `adj_rows`: `max_nodes` of the dataset. For `membership`: 2. For `lap`: equal to `lpe_dim`.
+
+---
+
 ### Structural encodings
 
 | Field | Type | Description |
 |---|---|---|
-| `lpe_dim` | int | Number of Laplacian eigenvectors concatenated to node features. `0` disables LPE. |
+| `lpe_dim` | int | Number of Laplacian eigenvectors. `0` disables LPE entirely. |
 
-When `lpe_dim > 0`, the eigenvectors are pre-computed and stored in `data.pe` at dataset creation time. The effective input to the first layer becomes `in_channels + lpe_dim`.
+When `lpe_dim > 0` **and** `node_features != "lap"`: eigenvectors are appended to node features and stored in `data.pe`. The effective input to the first layer becomes `in_channels + lpe_dim`.
+
+When `node_features == "lap"`: eigenvectors *are* the features (`data.x`), not a separate field. Set `in_channels = lpe_dim`.
+
+**Zero-eigenvalue filtering:** the normalized Laplacian of a graph with C connected components has exactly C eigenvalues equal to 0. Each corresponding eigenvector is an indicator function for one component — it directly encodes which component a node belongs to. The LPE implementation skips all eigenvectors whose eigenvalue is below `1e-5`, not just the first one. This means:
+- Connected graph (C=1): same as before — skip 1 trivial vector.
+- Disconnected graph (C>1): skip all C component-indicator vectors. The remaining eigenvectors encode intra-component geometry only.
+
+Without this fix, `lpe_dim > 0` on `connectedness_hard` would hand the model C−1 component-membership vectors as input features, making the task trivially solvable from the embedding rather than from reasoning.
 
 ---
 
@@ -81,8 +108,8 @@ When `lpe_dim > 0`, the eigenvectors are pre-computed and stored in `data.pe` at
 | `tokenization` | `node` / `node_edge` | How the graph is presented to the model. |
 | `node_id_dim` | int | Random per-node identity width for the `node_edge` model. `0` disables. |
 
-- `node` (default) — vertices are the only tokens. Edges enter via message passing (`gcn`/`gin`/`gat`/`sage`) or, for `global_attn`, via the SPD bias and/or LPE. Built by `model.GNN`.
-- `node_edge` — **Sanford et al. 2024a** style. The input sequence is `[vertex tokens] + [edge tokens] + [task token]`, so edges are *first-class tokens* the transformer reasons over. The prediction is read out from the task token. Built by `token_model.GraphTokenTransformer`.
+- `node` (default) — vertices are the only tokens. Edges enter via message passing (`gcn`/`gin`/`gat`/`sage`) or, for `global_attn`, via the SPD bias and/or LPE. Built by `src.model.GNN`.
+- `node_edge` — **Sanford et al. 2024a** style. The input sequence is `[vertex tokens] + [edge tokens] + [task token]`, so edges are *first-class tokens* the transformer reasons over. The prediction is read out from the task token. Built by `src.token_model.GraphTokenTransformer`.
 
 For `node_edge`, each node is given a random identity vector of width `node_id_dim` (concatenated with LPE if `lpe_dim > 0`) so that an edge token can reference its two endpoints. **You must set `node_id_dim > 0` or `lpe_dim > 0`** — otherwise edges are anonymous and the model is rejected by config validation.
 
@@ -195,6 +222,49 @@ residual: false
 layers:
   - type: gin
   - type: gin
+  - type: global_attn
+    heads: 4
+```
+
+### Adjacency-row transformer (honest connectivity, no LPE)
+Each node's token is its full adjacency row — who it's connected to — but no positional encoding.
+The only information the model has is the local neighbourhood structure.
+```yaml
+node_features: adj_rows
+in_channels: 24        # max_nodes for connectedness_hard
+tokenization: node
+input_embedding: linear
+norm_type: layer
+residual: true
+lpe_dim: 0             # no LPE: no connectivity leak
+task: graph
+pooling: mean
+layers:
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4
+```
+
+### Laplacian eigenvector tokenization (isomorphism)
+Eigenvectors are the features. Isomorphic graphs share the same eigenspectrum so the
+representations are structurally matched across the pair. Uses `pair` pooling so the
+classifier sees both halves.
+```yaml
+node_features: lap
+in_channels: 16        # must equal lpe_dim
+lpe_dim: 16
+tokenization: node
+input_embedding: linear
+norm_type: layer
+residual: true
+task: graph
+pooling: pair          # pools G1 and G2 separately, then concatenates
+layers:
   - type: global_attn
     heads: 4
 ```

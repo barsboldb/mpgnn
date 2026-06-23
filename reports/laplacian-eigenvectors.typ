@@ -29,7 +29,7 @@
   #v(0.3em)
   #text(size: 11pt)[Giving graph nodes a coordinate system the way sines and cosines give one to a line]
   #v(0.2em)
-  #text(size: 9.5pt, fill: luma(100))[positional encoding · `features.laplacian_positional_encoding` · #datetime.today().display()]
+  #text(size: 9.5pt, fill: luma(100))[positional encoding · `src.features.laplacian_positional_encoding` · #datetime.today().display()]
 ]
 
 #v(0.6em)
@@ -160,21 +160,22 @@ The leftmost mode is flat — every node gets the same value. The next splits th
 
 The smallest eigenvalue is always $lambda_1 = 0$, and for a connected graph its eigenvector is the *constant* vector $u_1 = (1, 1, dots, 1) \/ sqrt(n)$. Check it: $L dot bold(1) = (D - A) bold(1) = 0$ because each row of $A$ sums to that node's degree.
 
-A constant assigns *the same coordinate to every node*, so it tells you nothing about position. That is why the implementation skips it:
+A constant assigns *the same coordinate to every node*, so it tells you nothing about position. But there is a subtlety the original code missed: a graph with $C$ connected components has eigenvalue $0$ with *multiplicity $C$*, and each of those $C$ modes is a constant-on-one-piece indicator. Skipping only the first column leaves $C - 1$ of them in — and those are literal component-membership flags. The implementation therefore drops *every* eigenvector whose eigenvalue is numerically zero, not just the first:
 
 ```python
-# features.py — symmetric normalized Laplacian, drop the trivial mode
-_, eigvecs = torch.linalg.eigh(L)   # ascending eigenvalues
-pe = eigvecs[:, 1:k + 1]            # skip column 0 (constant), keep next k
+# src/features.py — symmetric normalized Laplacian, drop every zero-eigenvalue mode
+eigvals, eigvecs = torch.linalg.eigh(L)            # ascending eigenvalues
+non_trivial = (eigvals > 1e-5).nonzero()[:, 0]     # skip ALL ~0 modes (one per component)
+pe = eigvecs[:, non_trivial[:k]]                   # keep the next k smallest
 ```
 
 #note[
-  *Aside — counting connected components.* The multiplicity of eigenvalue $0$ equals the number of connected components. If the graph splits into two pieces there are *two* independent constant-like modes (one per piece). This is the spectral fingerprint of connectivity — the very property the #good[connectedness] task is about — and a reason the Laplacian spectrum is a natural language for these experiments. See [[connectedness-dataset-leak]].
+  *Aside — counting connected components.* The multiplicity of eigenvalue $0$ equals the number of connected components. If the graph splits into two pieces there are *two* independent constant-like modes (one per piece). This is the spectral fingerprint of connectivity — the very property the #good[connectedness] task is about — and a reason the Laplacian spectrum is a natural language for these experiments. The filter above removes this *direct* leak, but as @sec:connectivity shows, a subtler *soft* leak survives it. See [[connectedness-dataset-leak]].
 ]
 
 = The normalized Laplacian we actually use
 
-`features.py` does not use $L = D - A$ directly. It uses the *symmetric normalized* Laplacian:
+`src/features.py` does not use $L = D - A$ directly. It uses the *symmetric normalized* Laplacian:
 
 $ L_"sym" = I - D^(-1/2) A D^(-1/2) . $
 
@@ -183,18 +184,18 @@ The normalization rescales each node by $1\/sqrt(deg)$, which keeps high-degree 
 #align(center)[
 #cetz.canvas(length: 1cm, {
   import cetz.draw: *
-  let box(x, body, col) = {
-    rect((x, -0.4), (x + 2.3, 0.4), radius: 3pt, fill: col.lighten(80%), stroke: 0.5pt + col)
-    content((x + 1.15, 0), text(8pt)[#body])
+  let box(x, body, col, w: 2.3) = {
+    rect((x, -0.4), (x + w, 0.4), radius: 3pt, fill: col.lighten(80%), stroke: 0.5pt + col)
+    content((x + w / 2, 0), text(8pt)[#body])
   }
   let arrow(x) = line((x, 0), (x + 0.55, 0), mark: (end: ">"), stroke: 0.6pt)
   box(0,    [graph edges], luma(120))
   arrow(2.3)
   box(2.85, [$A, D$], blue)
   arrow(5.15)
-  box(5.7,  [$L_"sym" = I - D^(-1/2)A D^(-1/2)$], orange)
-  content((6.85, -0.85), text(7pt)[eigh →])
-  box(9.0,  [$u_2 dots u_(k+1)$], green)
+  box(5.7,  [$L_"sym" = I - D^(-1/2)A D^(-1/2)$], orange, w: 3.4)
+  content((7.4, -0.85), text(7pt)[eigh →])
+  box(9.5,  [$u_2 dots u_(k+1)$], green)
 })
 ]
 
@@ -298,7 +299,7 @@ Both encode the identical structure, but a model that memorized "$"pe"_2 > 0$ me
 When $lambda_k = lambda_(k+1)$ the eigenvectors are only defined *up to rotation within that eigenspace* — there is no canonical choice at all, not even up to sign. Highly symmetric graphs (cycles, grids) have many such repeats. This is a deeper ambiguity than sign flips and is the main theoretical wrinkle of Laplacian PE; sign-flip augmentation handles the common case, and basis-invariant architectures handle the rest.
 
 #note[
-  *Practical defaults baked into `features.py`.* (1) Use $L_"sym"$ so eigenvalues live in $[0,2]$. (2) Always skip $u_1$. (3) Keep a small $k$ (the lowest, smoothest modes carry the most global structure); pad with zeros when the graph has fewer than $k+1$ nodes. (4) Apply random sign flips at train time. With these four habits, Laplacian PE is a robust, permutation-aware coordinate system for graph tokens.
+  *Practical defaults baked into `src/features.py`.* (1) Use $L_"sym"$ so eigenvalues live in $[0,2]$. (2) Always skip $u_1$. (3) Keep a small $k$ (the lowest, smoothest modes carry the most global structure); pad with zeros when the graph has fewer than $k+1$ nodes. (4) Apply random sign flips at train time. With these four habits, Laplacian PE is a robust, permutation-aware coordinate system for graph tokens.
 ]
 
 = A worked micro-example
@@ -325,6 +326,116 @@ Read the rows to get each node's 2-D coordinate (we keep $k = 2$):
 
 Node 2 sits at the *centre of mass* of the slow mode ($"pe"_1 = 0$) while the two ends are pushed to opposite extremes — the encoding has discovered the geometry of the path with no coordinates ever supplied. Notice also that nodes 1 and 3 share $"pe"_2$ but differ in $"pe"_1$: it takes *both* coordinates together to separate the symmetric endpoints, which is exactly why we keep several eigenvectors rather than one.
 
+== A gallery of spectra
+
+A few canonical graphs make the "smooth-to-rough" ordering concrete and expose the degeneracy that causes the basis ambiguity of §7. Eigenvalues below are for the *combinatorial* $L = D - A$; the normalized $L_"sym"$ rescales them into $[0, 2]$ but keeps the same qualitative shape.
+
+#align(center)[
+#table(
+  columns: (auto, auto, 1fr),
+  inset: 6pt, align: (left, left, left),
+  stroke: 0.4pt + luma(180),
+  table.header([*graph on $n$ nodes*], [*Laplacian eigenvalues*], [*what it teaches*]),
+  [path $P_n$], [$2 - 2cos(k pi \/ n)$, distinct], [cosine modes, no degeneracy — the clean case of §6],
+  [cycle $C_n$], [$2 - 2cos(2 pi k \/ n)$, in *equal pairs*], [sine/cosine modes come in degenerate pairs $arrow.r$ basis rotation, no canonical choice],
+  [complete $K_n$], [$0$, then $n$ with multiplicity $n - 1$], [maximal symmetry $arrow.r$ maximal degeneracy; every non-trivial mode equivalent],
+  [star $K_(1,n-1)$], [$0, space 1 (times (n - 2)), space n$], [one hub mode at the top, a flat band of leaf modes in the middle],
+  [two blobs, no bridge], [$0$ with multiplicity $2$], [#bad[disconnected] — the multiplicity *is* the component count],
+  [two blobs, one bridge], [$0$, then a *tiny* $lambda_2 > 0$], [#good[connected] but barely — the soft leak of @sec:connectivity],
+)
+]
+
+The last two rows are the whole subject of the next section: the only difference between them is whether $lambda_2$ is *exactly* zero or merely *near* zero — and that single bit is what the connectedness task asks for.
+
+= Why Laplacian encoding carries a connectivity signal <sec:connectivity>
+
+Empirically, a one-layer, width-4 transformer reaches #good[91.5%] on `connectedness_hard` using *only* Laplacian features — even with all zero-eigenvalue modes filtered out. That is far too easy for a model that size if the task truly required tracing reachability. The reason is that the Laplacian spectrum is, by construction, a *soft min-cut detector*: the encoding hands the model the answer geometrically. There are two distinct leaks.
+
+== Leak 1 — the hard leak (multiplicity of zero)
+
+As the aside in §4 noted, the multiplicity of eigenvalue $0$ equals the number of connected components. A disconnected graph has $>= 2$ zero modes, each a constant-on-one-component indicator. Reading any one of them off tells you the graph is disconnected immediately. The eigenvalue filter (`eigvals > 1e-5`) exists precisely to delete these indicator columns. This leak is *closed*.
+
+== Leak 2 — the soft leak (algebraic connectivity)
+
+What survives the filter is more interesting. The smallest *non-zero* eigenvalue $lambda_2$ is the graph's #emph[algebraic connectivity], or *Fiedler value*. Two facts make it a connectivity oracle:
+
+#align(center)[
+#table(columns: 2, stroke: none, inset: (x: 6pt, y: 3pt), align: left,
+  [#good[$lambda_2 > 0 arrow.l.r.double$ connected]], [the graph is connected *iff* its second eigenvalue is strictly positive,],
+  [#good[$lambda_2 approx 0 arrow.l.r.double$ a sparse cut exists]], [a graph that is *almost* split into two pieces has an *almost*-zero $lambda_2$.],
+)
+]
+
+The second fact is the #emph[Cheeger inequality]. Writing $h_G$ for the conductance — the cost of the cheapest cut, relative to the smaller side's volume —
+
+$ lambda_2 / 2 quad <= quad h_G quad <= quad sqrt(2 lambda_2) . $
+
+So connectivity is *not* a knife-edge property in the spectrum; it is a smooth one. "Two dense blobs joined by a single edge" has a cut of cost $1$ over a large volume, hence a tiny $h_G$, hence a tiny $lambda_2$ — and its Fiedler vector $u_2$ is an *approximate* component indicator: nearly constant on each blob, flipping sign across the bridge.
+
+This is exactly how spectral clustering finds communities: threshold the Fiedler vector and you get the min cut. The Laplacian encoding is spectral clustering's input — so it carries the cut for free.
+
+== The `connectedness_hard` worst case
+
+The dataset is engineered to sit right on this fault line. Every graph is two dense blobs; the *only* difference between the classes is one edge:
+
+#align(center)[
+#cetz.canvas(length: 1cm, {
+  import cetz.draw: *
+  let blob(cx, cy, col) = {
+    for a in range(5) {
+      let ang = a / 5 * 2 * 3.14159
+      let x = cx + 0.5 * calc.cos(ang)
+      let y = cy + 0.5 * calc.sin(ang)
+      circle((x, y), radius: 0.11, fill: col, stroke: none)
+    }
+  }
+  // connected
+  content((1.4, 1.7), text(8pt)[#text(green)[*connected*] · one bridge])
+  blob(0.4, 0.4, blue); blob(2.4, 0.4, purple)
+  line((0.9, 0.4), (1.9, 0.4), stroke: 1.2pt + green)
+  content((1.4, -0.55), text(7pt)[$lambda_2 approx 0.09$ (tiny but $> 0$)])
+
+  // disconnected
+  content((6.4, 1.7), text(8pt)[#text(red)[*disconnected*] · no bridge])
+  blob(5.4, 0.4, blue); blob(7.4, 0.4, purple)
+  line((6.4, 0.95), (6.4, 1.25), stroke: (paint: red, dash: "dashed", thickness: 0.8pt))
+  content((6.4, -0.55), text(7pt)[$lambda_2 = 0$ (exactly)])
+})
+]
+
+Real spectra from a $5 + 5$ instance (normalized $L_"sym"$, the operator in code), showing the smallest five eigenvalues and the Fiedler vector $u_2$:
+
+#align(center)[
+#table(
+  columns: (auto, auto, 1fr),
+  inset: 6pt, align: (left, left, left),
+  stroke: 0.4pt + luma(180),
+  table.header([*class*], [*smallest eigenvalues*], [*Fiedler vector $u_2$ (blob A $bar.v$ blob B)*]),
+  [#good[connected]],
+  [$0, space #text(orange)[$0.086$], space 0.85, space 0.95, space 1.0$],
+  [$#text(blue)[$+.30 +.25 +.37 +.32 +.32$] bar.v #text(purple)[$-.23 -.31 -.37 -.35 -.31$]$],
+  [#bad[disconnected]],
+  [$0, space #text(red)[$0$], space 1.0, space 1.0, space 1.0$],
+  [$#text(luma(140))[$0 thin 0 thin 0 thin 0 thin 0$] bar.v #text(purple)[$-.43 -.43 -.50 -.43 -.43$]$],
+)
+]
+
+Read the table and the whole effect is visible:
+
+- *Connected.* One zero mode, then $lambda_2 = 0.086$ — a near-zero Fiedler value. Its eigenvector is a clean *step function*: every blob-A node positive, every blob-B node negative. A soft component indicator, handed to the model as the first kept feature column.
+- *Disconnected.* *Two* zero modes. After the filter deletes both, the first surviving eigenvector sits at $lambda = 1$ — a genuine within-blob oscillation, supported on one blob and exactly zero on the other.
+
+== Why the filter does not save us
+
+Deleting the exact-zero modes was supposed to remove the connectivity signal. It does not, for two compounding reasons:
+
++ *The leading kept column changes character.* Because the disconnected graph loses *two* columns and the connected graph loses *one*, the first surviving eigenvector is a within-blob mode ($lambda approx 1$) for the disconnected class but the bridge-spanning Fiedler step ($lambda approx 0.09$) for the connected class. The model reads two visibly different leading features.
++ *The Fiedler vector is a soft indicator.* Even ignoring the ordering shift, the connected class's first kept column is a $plus.minus$ step across the two blobs — almost as informative as the hard indicator the filter removed. Mean-pooling the sign pattern already separates the classes.
+
+#note[
+  *The takeaway for the thesis.* The model's #good[91.5%] is *not* evidence of reasoning through reachability. The Laplacian encoding is a soft spectral cut detector, and `connectedness_hard` differs between classes by exactly the sparsest possible cut — one edge. The embedding does the work; the transformer only reads a coordinate. This is the same "good embedding, not reasoning" pattern as the degree shortcut in [[connectedness-dataset-leak]], one level deeper. To test genuine reasoning the structural answer must be kept *out* of the input features — e.g. honest edge-token tokenization with no positional encoding, or CoT scratchpad tokens where computation must unroll over depth rather than be read off a precomputed spectrum.
+]
+
 = Summary
 
 #align(center)[
@@ -340,6 +451,7 @@ Node 2 sits at the *centre of mass* of the slow mode ($"pe"_1 = 0$) while the tw
   [Token], [each node's row across the kept eigenvectors = its structural coordinates],
   [Equivariance], [relabel the graph and the encoding permutes with it — #good[structure-only]],
   [Ambiguity], [sign flips and degenerate eigenspaces; fix with sign-flip augmentation / SignNet],
+  [Connectivity leak], [$lambda_2$ (Fiedler) detects sparse cuts via Cheeger; the encoding *is* a soft min-cut detector, so high connectedness accuracy $!=$ reasoning],
 )
 ]
 

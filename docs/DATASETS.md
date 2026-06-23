@@ -63,7 +63,7 @@ task: graph
 ## Connectedness (`--dataset connectedness`)
 
 **Task:** Graph classification (`task: graph`)  
-**Source:** Synthetic — `dataset.py:make_connectedness_dataset`  
+**Source:** Synthetic — `src/dataset.py:make_connectedness_dataset`  
 **Cache:** `data/connectedness.pt`
 
 Random Erdős–Rényi graphs labeled by whether the graph is connected.
@@ -105,7 +105,7 @@ shortcut (see CHANGELOG 2026-06-19).
 ## Connectedness Hard (`--dataset connectedness_hard`)
 
 **Task:** Graph classification (`task: graph`)  
-**Source:** Synthetic — `dataset.py:make_connectedness_hard_dataset`  
+**Source:** Synthetic — `src/dataset.py:make_connectedness_hard_dataset`  
 **Cache:** `data/connectedness_hard.pt`
 
 Connectedness without the local degree shortcut. Every graph is **two dense,
@@ -162,7 +162,7 @@ to read a precomputed spectral feature.
 ## Isomorphism (`--dataset isomorphism`)
 
 **Task:** Graph classification (`task: graph`)  
-**Source:** Synthetic — `dataset.py:make_isomorphism_dataset`  
+**Source:** Synthetic — `src/dataset.py:make_isomorphism_dataset`  
 **Cache:** `data/isomorphism.pt`
 
 Pairs of graphs encoded as a single disconnected graph. Label indicates

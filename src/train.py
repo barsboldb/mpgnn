@@ -5,7 +5,7 @@ from torch_geometric.loader import DataLoader
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from logger import RunLogger
+    from .logger import RunLogger
 
 
 # ── Node classification ────────────────────────────────────────────────────────

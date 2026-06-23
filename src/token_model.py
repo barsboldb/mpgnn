@@ -23,7 +23,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from config import GNNConfig
+from .config import GNNConfig
 
 
 class _EncoderBlock(nn.Module):

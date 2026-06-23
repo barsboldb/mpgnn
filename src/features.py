@@ -11,12 +11,14 @@ import collections
 import torch
 
 
-def laplacian_positional_encoding(edge_index, num_nodes, k):
+def laplacian_positional_encoding(edge_index, num_nodes, k, skip_zero_tol=1e-5):
     """k smallest non-trivial eigenvectors of the symmetric normalized Laplacian.
 
-    L = I - D^{-1/2} A D^{-1/2}. The first eigenvector (eigenvalue ~0) is constant
-    and carries no positional information, so it is skipped. The result is padded
-    with zeros if the graph has fewer than k+1 nodes.
+    L = I - D^{-1/2} A D^{-1/2}. All eigenvectors whose eigenvalue is below
+    skip_zero_tol are skipped — for a graph with C connected components this
+    removes C vectors (one constant indicator per component) rather than just
+    one, preventing connectivity from leaking directly into node features.
+    The result is padded with zeros if fewer than k non-trivial eigenvectors exist.
     """
     A = torch.zeros(num_nodes, num_nodes)
     A[edge_index[0], edge_index[1]] = 1.0
@@ -28,9 +30,11 @@ def laplacian_positional_encoding(edge_index, num_nodes, k):
     L = torch.eye(num_nodes) - d_inv_sqrt.unsqueeze(1) * A * d_inv_sqrt.unsqueeze(0)
 
     # eigh because L is real symmetric; eigenvalues come out ascending.
-    _, eigvecs = torch.linalg.eigh(L)
-    pe = eigvecs[:, 1:k + 1]
-    if pe.shape[1] < k:  # tiny graph: pad
+    eigvals, eigvecs = torch.linalg.eigh(L)
+    non_trivial = (eigvals > skip_zero_tol).nonzero(as_tuple=True)[0]
+    selected = non_trivial[:k]
+    pe = eigvecs[:, selected]
+    if pe.shape[1] < k:  # too few non-trivial eigenvectors: pad
         pe = torch.cat([pe, torch.zeros(num_nodes, k - pe.shape[1])], dim=1)
     return pe  # (num_nodes, k)
 

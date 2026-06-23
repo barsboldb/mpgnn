@@ -2,7 +2,7 @@ import os
 import torch
 import numpy as np
 from torch_geometric.data import Data
-from features import laplacian_positional_encoding
+from .features import laplacian_positional_encoding
 
 
 def _is_connected(num_nodes: int, edge_index: torch.Tensor) -> bool:
@@ -66,7 +66,7 @@ def make_connectedness_dataset(
         )
         label = int(_is_connected(n, edge_index))
         counts[label] += 1
-        data_list.append(Data(edge_index=edge_index, y=torch.tensor([label], dtype=torch.long)))
+        data_list.append(Data(edge_index=edge_index, y=torch.tensor([label], dtype=torch.long), num_nodes=n))
 
     print(f"Generated {num_graphs} graphs  |  connected: {counts[1]}  disconnected: {counts[0]}")
     return data_list
@@ -145,7 +145,7 @@ def make_connectedness_hard_dataset(
         edge_index = torch.tensor(all_edges, dtype=torch.long).t().contiguous()
 
         counts[label] += 1
-        data_list.append(Data(edge_index=edge_index, y=torch.tensor([label], dtype=torch.long)))
+        data_list.append(Data(edge_index=edge_index, y=torch.tensor([label], dtype=torch.long), num_nodes=n))
 
     print(f"Generated {num_graphs} graphs  |  connected: {counts[1]}  disconnected: {counts[0]}")
     return data_list
@@ -221,7 +221,8 @@ def make_isomorphism_dataset(
         data_list.append(Data(
             edge_index=edge_index,
             y=torch.tensor([label], dtype=torch.long),
-            n1=torch.tensor(n, dtype=torch.long),  # G1 = nodes 0..n-1, G2 = nodes n..2n-1
+            n1=torch.tensor([n], dtype=torch.long),  # shape [1] so PyG cats across batch
+            num_nodes=2 * n,                          # explicit: G1 (n) + G2 (n)
         ))
 
     print(f"Generated {num_graphs} graph pairs  |  isomorphic: {counts[1]}  non-isomorphic: {counts[0]}")
@@ -255,7 +256,7 @@ def make_yehudai_connectivity_dataset(
 ) -> list[Data]:
     """Yehudai's connectivity graphs — raw edge_index + y only."""
     graphs = _load_yehudai_pool(num_graphs)
-    out = [Data(edge_index=g.edge_index, y=g.y.view(1)) for g in graphs]
+    out = [Data(edge_index=g.edge_index, y=g.y.view(1), num_nodes=_YEHUDAI_N) for g in graphs]
     print(f"Loaded {len(out)} Yehudai connectivity graphs (raw, n={_YEHUDAI_N})")
     return out
 
@@ -266,6 +267,7 @@ def tokenize_dataset(
     data_list: list[Data],
     node_features: str = "degree",
     lpe_dim: int = 0,
+    in_channels: int = 0,
 ) -> list[Data]:
     """Apply node features and LPE to a list of raw Data objects in memory.
 
@@ -311,9 +313,18 @@ def tokenize_dataset(
                 torch.tensor([[0., 1.]] * (n - n1)),
             ])
 
+        elif node_features == "lap":
+            # Eigenvector count: prefer in_channels (allows lpe_dim: 0 in config),
+            # fall back to lpe_dim for backwards compatibility.
+            k = in_channels if in_channels > 0 else lpe_dim
+            g.x = laplacian_positional_encoding(g.edge_index, n, k) if k > 0 \
+                else torch.zeros(n, 1)
+            g.pe = None
+            continue  # skip the pe step below
+
         else:
             raise ValueError(f"Unknown node_features: '{node_features}'. "
-                             f"Choose from: degree, constant, adj_rows, membership")
+                             f"Choose from: degree, constant, adj_rows, membership, lap")
 
         g.pe = laplacian_positional_encoding(g.edge_index, n, lpe_dim) if lpe_dim > 0 else None
 
@@ -335,6 +346,7 @@ def load_or_create(
     name: str,
     node_features: str = "degree",
     lpe_dim: int = 0,
+    in_channels: int = 0,
     cache_dir: str = "data",
     **structural_kwargs,
 ) -> list[Data]:
@@ -361,7 +373,7 @@ def load_or_create(
         torch.save(data_list, path)
         print(f"Saved raw graphs to {path}")
 
-    data_list = tokenize_dataset(data_list, node_features=node_features, lpe_dim=lpe_dim)
+    data_list = tokenize_dataset(data_list, node_features=node_features, lpe_dim=lpe_dim, in_channels=in_channels)
 
     labels = [d.y.item() for d in data_list]
     n_classes = len(set(labels))

@@ -45,6 +45,7 @@ class GNNConfig:
     #   "constant"   — ones [n, 1]; ablation / when structure comes from LPE or edge tokens
     #   "adj_rows"   — adjacency row padded to max dataset node count [n, max_n]
     #   "membership" — one-hot component flag [n, 2] for isomorphism pairs (needs data.n1)
+    #   "lap"        — Laplacian eigenvectors as features [n, lpe_dim]; in_channels must = lpe_dim
     node_features: str = "degree"
     # lpe_dim: number of Laplacian eigenvectors concatenated to node features (0 = disabled)
     lpe_dim: int = 0
@@ -77,7 +78,7 @@ class GNNConfig:
     def __post_init__(self):
         assert self.task in ("node", "graph"), f"task must be 'node' or 'graph', got '{self.task}'"
         assert self.pooling in ("mean", "add", "max", "pair"), f"unknown pooling '{self.pooling}'"
-        assert self.node_features in ("degree", "constant", "adj_rows", "membership"), \
+        assert self.node_features in ("degree", "constant", "adj_rows", "membership", "lap"), \
             f"unknown node_features '{self.node_features}'"
         assert self.input_embedding in (None, "linear", "mlp", "lookup"), \
             f"unknown input_embedding '{self.input_embedding}'"
@@ -108,7 +109,8 @@ class GNNConfig:
 
     def describe(self) -> str:
         emb = self.input_embedding or "none"
-        lpe = f"LPE({self.lpe_dim})" if self.lpe_dim > 0 else "no LPE"
+        lpe = f"lap({self.lpe_dim}) as features" if self.node_features == "lap" \
+            else (f"+LPE({self.lpe_dim})" if self.lpe_dim > 0 else "no LPE")
         lines = [
             f"Tokenization: {self.tokenization}"
             + (f"  |  node_id_dim: {self.node_id_dim}" if self.tokenization == "node_edge" else ""),

@@ -4,6 +4,52 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-06-21
+
+### Isomorphism task: tokenization analysis and 0.85 accuracy ceiling
+
+**Task setup:** Graph pairs (G1, G2) encoded as one disconnected graph (G1 at nodes
+0..n-1, G2 at n..2n-1, n ∈ [6,15]). Label 1 = isomorphic (G2 is a permutation of G1),
+label 0 = non-isomorphic (different degree sequences). 1000 pairs, 800/200 train/test.
+
+**Adjacency-row tokenization + pair pooling → 0.85 ceiling:**
+Switching from flat mean-pool to pair pooling (G1 and G2 pooled separately, classifier
+sees [h_G1 | h_G2]) did not improve over mean-pool. Analysis via `analyze_iso.py`
+revealed two distinct failure modes:
+
+- **Wrong non-iso (22/200):** Pairs with small degree-sequence differences
+  (avg `deg_seq_diff`=5.4 vs 15.0 for easy cases; 6 pairs had diff=2). The model
+  can't resolve near-identical degree distributions from averaged representations.
+- **Wrong iso (19/200):** Model predicts non-iso for genuinely isomorphic pairs.
+  Root cause: adj_rows column asymmetry — G1 nodes have non-zeros in columns 0..n-1,
+  G2 nodes in columns n..2n-1. Even for identical graphs the pair-pooled vectors live
+  in different subspaces, so the classifier sees them as different.
+
+**Membership tokenization → ln(2) collapse (0.50):**
+One-hot component flag [1,0]/[0,1] is symmetric across G1/G2 but gives every node in
+the same component identical features. Global attention with uniform Q/K/V per component
+produces the same output for every node → pair pool returns a constant → classifier
+always predicts 50/50 → loss pins at ln(2). Same symmetry collapse as constant features
+on connectedness.
+
+**Laplacian eigenvector tokenization → worse than adj_rows:**
+Eigenvectors are only defined up to sign flips and rotations within degenerate
+eigenspaces. Two isomorphic graphs can produce completely different eigenvector matrices.
+Pair pool then sees h_G1 ≠ h_G2 for every isomorphic pair, making the task harder not
+easier. (Eigenvalues are invariant, but they are graph-level, not node-level features.)
+
+**Fundamental tension in isomorphism tokenization:**
+No single tokenization satisfies both requirements simultaneously:
+- adj_rows: nodes differ within a component ✓, but G1/G2 live in different column subspaces ✗
+- membership: G1/G2 comparable ✓, but all nodes in the same component look identical ✗
+- lap: nodes differ ✓, but eigenvectors not canonical across components ✗
+
+**Next direction:** Local adj_rows — remap G2's adjacency rows to columns 0..n-1
+(same space as G1) and concatenate with membership flag. Gives each node structural
+identity and component identity in a comparable feature space.
+
+---
+
 ## 2026-06-20
 
 ### Edge-token transformer stalls at the ln 2 plateau on connectedness_hard
@@ -20,7 +66,7 @@ so position 5 is in blob A for some graphs and blob B for others. Those two case
 the same embedding row in opposite directions → the gradients cancel → the optimizer
 gets ~zero net signal and parks at the max-entropy output `[0.5, 0.5]` (loss `ln 2`).
 `lr × 0 = 0`, so a bigger step size can't escape a vanishing gradient. (Full write-up in
-[tokenization.typ](tokenization.typ).)
+[tokenization.typ](../reports/tokenization.typ).)
 
 **Lesson:** A flat loss at exactly `ln 2` is the tell for a saddle, not slow learning —
 look for a representational reason the gradient is structurally near-zero, not a tuning

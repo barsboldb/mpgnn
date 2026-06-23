@@ -4,7 +4,7 @@ Scans every run, embeds the data inline (no server, no CDN, works offline), and
 renders interactive loss / test-accuracy curves you can toggle and compare.
 
 Usage:
-    python viz.py                       # -> results/report.html, then open it
+    python viz.py                       # -> figures/report.html, then open it
     python viz.py --out dash.html       # custom output path
     python viz.py --open                # also open in the default browser
 """
@@ -278,7 +278,7 @@ renderList(); drawAll();
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--results", default="results", help="directory of run JSONs")
-    ap.add_argument("--out", default=None, help="output HTML path (default: <results>/report.html)")
+    ap.add_argument("--out", default=None, help="output HTML path (default: figures/report.html)")
     ap.add_argument("--open", action="store_true", help="open the report in a browser")
     args = ap.parse_args()
 
@@ -287,7 +287,8 @@ def main():
         print(f"No result JSONs found in {args.results}/")
         return
 
-    out = args.out or os.path.join(args.results, "report.html")
+    out = args.out or os.path.join("figures", "report.html")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w") as f:
         f.write(build_html(runs))
     print(f"Wrote {out}  ({len(runs)} runs)")

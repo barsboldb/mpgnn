@@ -9,7 +9,7 @@ patches two bugs in their source — see [Reproduction notes](#reproduction-note
 > For a visual, broad-spectrum comparison of the two datasets — how each is built and
 > visualized, the measured bulk statistics, how graphs become tokens, and exactly what
 > information our data hides that theirs leaks — see
-> [`dataset-comparison.typ`](dataset-comparison.typ) (compiled: `dataset-comparison.pdf`).
+> [`dataset-comparison.typ`](../reports/dataset-comparison.typ) (compiled: `../reports/dataset-comparison.pdf`).
 
 ---
 
@@ -67,7 +67,7 @@ Connectivity, **n=50, 1 layer, width 64, n_train=100, 100 epochs**:
 3. **The `ln 2 ≈ 0.693` plateau is real and tokenization-dependent.** Edge-list sits at
    chance (loss 0.69, acc 0.50) for ~30 epochs before escaping; adjacency-rows never
    plateaus — it's above chance from epoch 1. Same optimization saddle we hit in our own
-   `node_edge` experiments (see [tokenization.typ](tokenization.typ)).
+   `node_edge` experiments (see [tokenization.typ](../reports/tokenization.typ)).
 
 ---
 
