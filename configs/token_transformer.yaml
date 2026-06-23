@@ -15,7 +15,7 @@ tokenization: node_edge
 node_id_dim: 16       # per-node identities so edge tokens can name their endpoints
 node_id_mode: learned # 'learned' (deterministic, trainable) actually optimizes;
                       # 'random' is permutation-invariant but stalls at chance
-lpe_dim: 16            # keep 0 for honest connectivity; turn on for isomorphism
+lpe_dim: 0            # keep 0 for honest connectivity; turn on for isomorphism
 
 task: graph           # readout is via the task token (pooling field is unused here)
 dropout: 0.1
@@ -32,6 +32,8 @@ batch_size: 32
 # depth sweep: number of entries = number of transformer layers
 layers:
   - type: global_attn   # 'type' is required by config validation but ignored by the token model
+    heads: 4
+  - type: global_attn
     heads: 4
   - type: global_attn
     heads: 4

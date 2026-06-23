@@ -1,0 +1,40 @@
+# Adjacency-row transformer for connectedness_hard, no LPE.
+#
+# Same setup as adj_transformer.yaml but with lpe_dim=0 — the only structural
+# information available to the model is each node's adjacency row. This tests
+# whether the adj-row tokenization alone is sufficient without positional encoding.
+#
+# Run: python main.py --config configs/adj_transformer_no_lpe.yaml --dataset connectedness_hard
+
+in_channels: 24       # max_nodes for connectedness_hard
+out_channels: 2
+hidden_channels: 8
+
+node_features: adj_rows
+tokenization: node
+input_embedding: linear
+norm_type: layer
+residual: true
+lpe_dim: 0            # no Laplacian positional encoding
+
+task: graph
+pooling: mean
+dropout: 0.1
+
+# training
+epochs: 300
+lr: 0.001
+weight_decay: 0.0005
+batch_size: 32
+
+layers:
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4

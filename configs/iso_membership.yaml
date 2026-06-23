@@ -1,0 +1,39 @@
+# Isomorphism task with membership tokenization.
+#
+# Each node's feature is a one-hot component flag: [1,0] for G1, [0,1] for G2.
+# This is symmetric — both components use the same feature space — so pair
+# pooling sees [h_G1 | h_G2] where h_G1 and h_G2 are computed in the same way.
+# For isomorphic pairs the two components have identical structure, so after
+# global attention h_G1 ≈ h_G2; the classifier learns to detect equality.
+#
+# No structural features in x — all graph structure enters via global attention
+# over the 2n tokens. lpe_dim > 0 adds Laplacian eigenvectors on top.
+#
+# Run: python main.py --config configs/iso_membership.yaml --dataset isomorphism
+
+in_channels: 2
+out_channels: 2
+hidden_channels: 64
+
+node_features: membership
+lpe_dim: 0
+tokenization: node
+input_embedding: linear
+norm_type: layer
+residual: true
+
+task: graph
+pooling: pair
+dropout: 0.1
+
+# training
+epochs: 300
+lr: 0.001
+weight_decay: 0.0005
+batch_size: 32
+
+layers:
+  - type: global_attn
+    heads: 4
+  # - type: global_attn
+  #   heads: 4

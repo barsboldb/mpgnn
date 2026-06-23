@@ -1,0 +1,39 @@
+# Isomorphism task with Laplacian eigenvector tokenization.
+#
+# Each node's feature is its row in the eigenvector matrix of the normalized
+# Laplacian (k=lpe_dim smallest non-trivial eigenvectors). For isomorphic
+# pairs the eigenvalues are identical; the eigenvectors differ only by sign
+# flips and rotations within degenerate eigenspaces, so the representation is
+# approximately permutation-equivariant across the two components.
+#
+# in_channels must equal lpe_dim (eigenvectors are the features, not appended).
+# 'pair' pooling: G1 and G2 nodes pooled separately → classifier sees [h_G1 | h_G2].
+#
+# Run: python main.py --config configs/iso_lap.yaml --dataset isomorphism
+
+in_channels: 16      # = lpe_dim: eigenvector matrix has shape [n, 16]
+out_channels: 2
+hidden_channels: 64
+
+node_features: lap
+lpe_dim: 16          # number of eigenvectors; must match in_channels
+tokenization: node
+input_embedding: linear
+norm_type: layer
+residual: true
+
+task: graph
+pooling: pair
+dropout: 0.1
+
+# training
+epochs: 300
+lr: 0.001
+weight_decay: 0.0005
+batch_size: 32
+
+layers:
+  - type: global_attn
+    heads: 4
+  # - type: global_attn
+  #   heads: 4
