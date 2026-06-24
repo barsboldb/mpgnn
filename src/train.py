@@ -112,8 +112,15 @@ def run_node_experiment(model, data, device, epochs=200, lr=0.01, weight_decay=5
 # ── Graph classification ───────────────────────────────────────────────────────
 
 def train_graph(model, loader: DataLoader, optimizer, device):
+    """One training epoch. Returns (mean loss, train accuracy).
+
+    Train accuracy is accumulated from the same forward passes used for the loss
+    (free), so it is measured in train mode (dropout on) — a slight underestimate,
+    but enough to separate memorisation (train→1, test flat) from underfitting.
+    """
     model.train()
     total_loss = 0.0
+    correct = total = 0
     for data in loader:
         data = data.to(device)
         optimizer.zero_grad()
@@ -122,7 +129,9 @@ def train_graph(model, loader: DataLoader, optimizer, device):
         loss.backward()
         optimizer.step()
         total_loss += loss.item() * data.num_graphs
-    return total_loss / len(loader.dataset)
+        correct += (out.argmax(dim=1) == data.y).sum().item()
+        total += data.num_graphs
+    return total_loss / total, correct / total
 
 
 @torch.no_grad()
@@ -144,15 +153,17 @@ def run_graph_experiment(model, train_loader, test_loader, device,
 
     for epoch in range(1, epochs + 1):
         _sync(device); t0 = time.perf_counter()
-        loss = train_graph(model, train_loader, optimizer, device)
+        loss, train_acc = train_graph(model, train_loader, optimizer, device)
         _sync(device); t1 = time.perf_counter()
         test_acc = eval_graph(model, test_loader, device)
         _sync(device); t2 = time.perf_counter()
         if logger is not None:
-            logger.log(epoch, loss=round(loss, 4), test=round(test_acc, 4),
+            logger.log(epoch, loss=round(loss, 4),
+                       train=round(train_acc, 4), test=round(test_acc, 4),
                        train_time_s=round(t1 - t0, 5), eval_time_s=round(t2 - t1, 5))
         if epoch % 10 == 0:
-            print(f"Epoch {epoch:03d}  loss={loss:.4f}  test_acc={test_acc:.4f}")
+            print(f"Epoch {epoch:03d}  loss={loss:.4f}  train_acc={train_acc:.4f}  "
+                  f"test_acc={test_acc:.4f}  gap={train_acc - test_acc:+.3f}")
 
     if logger is not None:
         sample = next(iter(test_loader))
