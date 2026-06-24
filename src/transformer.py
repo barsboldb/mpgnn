@@ -5,8 +5,8 @@ dispatches on `tokenization`:
 
   - 'node'      — tokens are node-feature vectors (degree / adj_rows / lap / ...);
                   global self-attention with a pooled (or per-node) readout. This
-                  reuses the conv-stack engine (model.GNN restricted to global_attn
-                  layers), so SPD bias, LPE, input embedding and pooling all apply.
+                  uses the shared graph_conv.GraphConvNet engine with global_attn
+                  layers, so SPD bias, LPE, input embedding and pooling all apply.
   - 'node_edge' — Sanford-style: vertices + edges + a task token (+ optional CoT),
                   with the prediction read from the task token. Implemented by
                   `_GraphTokenTransformer` below.
@@ -25,7 +25,7 @@ Nodes are given random identities so an edge token can reference its two endpoin
 (an edge token is built from the identities of the nodes it connects). LPE, when
 enabled, is concatenated onto those identities — this is where LPE earns its keep
 for the isomorphism task. There is no SPD bias here; SPD/LPE remain available on
-the node-token path (model.GNN / layers.GlobalAttnConv).
+the node-token path (graph_conv.GraphConvNet / layers.GlobalAttnConv).
 
 This is the representation needed to reproduce Sanford's depth-vs-task results:
 connectivity is a parallelizable task expected to need ~log(n) depth when the model
@@ -248,9 +248,14 @@ class GraphTransformer(nn.Module):
     """Attention-based graph model; `tokenization` selects the token layout.
 
     - 'node_edge' -> vertices + edges + task token (+ optional CoT), task-token readout.
-    - 'node'      -> node-feature tokens through the global-attention conv engine
-                     (model.GNN with global_attn layers): configurable input embedding,
-                     SPD bias, LPE, and pooled (graph) or per-node (node task) readout.
+    - 'node'      -> node-feature tokens through a stack of global-attention layers
+                     (the shared GraphConvNet engine with global_attn layers):
+                     configurable input embedding, SPD bias, LPE, and pooled (graph)
+                     or per-node (node task) readout.
+
+    The 'node' path uses the shared graph_conv.GraphConvNet engine — the same
+    scaffold gnn.GNN uses, but with attention layers — so this is a sibling of
+    GNN over a common engine, not a wrapper around the GNN class.
     """
     def __init__(self, config: GNNConfig):
         super().__init__()
@@ -261,8 +266,8 @@ class GraphTransformer(nn.Module):
             # only for node_edge (see _GraphTokenTransformer.use_edges).
             self.net: nn.Module = _GraphTokenTransformer(config)
         else:
-            from .model import GNN
-            self.net = GNN(config)   # node-token attention; reuses the conv-stack engine
+            from .graph_conv import GraphConvNet
+            self.net = GraphConvNet(config)   # node-token attention via the shared engine
 
     def forward(self, data):
         return self.net(data)
