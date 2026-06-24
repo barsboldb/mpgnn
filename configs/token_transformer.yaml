@@ -11,6 +11,7 @@ in_channels: 1        # 1 for connectedness (degree), 2 for isomorphism (one-hot
 out_channels: 2
 hidden_channels: 64
 
+model: transformer
 tokenization: node_edge
 node_id_dim: 16       # per-node identities so edge tokens can name their endpoints
 node_id_mode: learned # 'learned' (deterministic, trainable) actually optimizes;

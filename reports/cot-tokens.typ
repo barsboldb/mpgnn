@@ -29,7 +29,7 @@
   #v(0.3em)
   #text(size: 11pt)[Giving a fixed-depth transformer room to think one step at a time]
   #v(0.2em)
-  #text(size: 9.5pt, fill: luma(100))[scratchpad reasoning · `src/token_model.py` · #datetime.today().display()]
+  #text(size: 9.5pt, fill: luma(100))[scratchpad reasoning · `src/transformer.py` · #datetime.today().display()]
 ]
 
 #v(0.6em)
@@ -281,9 +281,9 @@ There are two ways to train the scratchpad, with very different difficulty:
 
 The latent form is the more interesting scientific test (does sequential capacity *alone* unlock the task?), and it connects to recent results that even content-free *filler* or *pause* tokens can add usable computation when the task structure rewards it (Goyal et al. 2023; Pfau et al. 2024). The supervised form is the stronger baseline if latent training stalls.
 
-= Implementation in `GraphTokenTransformer`
+= Implementation in `GraphTransformer`
 
-The change is small and local to `src/token_model.py`. Three edits:
+The change is small and local to `src/transformer.py`. Three edits:
 
 + *Append $K$ scratchpad tokens* per graph, between the edge tokens and the task token. A single learnable parameter bank, plus a fourth `type_emb` entry:
   ```python
@@ -328,7 +328,7 @@ The change is small and local to `src/token_model.py`. Three edits:
   [attention mask], [graph full-visible, scratchpad causal over the graph, task sees all — the mask *is* the algorithm],
   [BFS reading], [round $c_k$ holds the $k$-hop reachable set; connectivity needs $K >= "diameter"$],
   [the test], [sweep $K$; a phase transition at $K = "diameter"$ is evidence of genuine sequential reasoning, not an embedding shortcut],
-  [where], [`src/token_model.py`: add scratchpad params, a fourth token type, an `attn_mask`, and thread it through `_EncoderBlock`],
+  [where], [`src/transformer.py`: add scratchpad params, a fourth token type, an `attn_mask`, and thread it through `_EncoderBlock`],
 )
 ]
 

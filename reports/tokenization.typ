@@ -82,7 +82,7 @@ Both classes have the *same number of edges* and the *same degree distribution*.
 
 = Attempt 1 — vertices + edges + a task token
 
-This is the Sanford-style tokenization in `src/token_model.py`. We build one token per vertex, one token per edge, and a single "task" token that reads out the answer:
+This is the Sanford-style tokenization in `src/transformer.py`. We build one token per vertex, one token per edge, and a single "task" token that reads out the answer:
 
 #align(center)[
 #cetz.canvas(length: 1cm, {

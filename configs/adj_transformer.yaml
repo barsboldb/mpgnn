@@ -13,21 +13,22 @@
 
 in_channels: 24       # max_nodes for connectedness_hard (adj_rows pads to dataset max)
 out_channels: 2
-hidden_channels: 8
+hidden_channels: 128
 
+model: transformer    # attention model; node tokenization = global_attn over node tokens
 node_features: adj_rows
 tokenization: node
 input_embedding: linear
 norm_type: layer
 residual: true
-lpe_dim: 4
+lpe_dim: 0
 
 task: graph
 pooling: mean
 dropout: 0.1
 
 # training
-epochs: 200
+epochs: 300
 lr: 0.001
 weight_decay: 0.0005
 batch_size: 32

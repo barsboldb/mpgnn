@@ -1,0 +1,43 @@
+# Chain-of-thought scratchpad transformer for honest connectivity.
+#
+# Vertices + edges + K scratchpad tokens + task token. The scratchpad gives the
+# model *sequential* computation (one round per token) orthogonal to depth: a
+# shallow model can unroll a BFS-style frontier expansion over the scratchpad.
+# To decide connectivity the model needs cot_len >= diameter, so sweep cot_len
+# and look for a phase transition. No LPE / no SPD so the answer is not handed to
+# the model in its features (that would make cot_len irrelevant).
+#
+# Full explanation: reports/cot-tokens.typ
+# Run:   python main.py --config configs/cot.yaml --dataset connectedness_hard
+# Sweep: change cot_len (4, 8, 12, ...) and keep depth small to isolate the
+#        sequential axis from the parallel (depth) axis.
+
+in_channels: 1        # degree feature for connectedness
+out_channels: 2
+hidden_channels: 64
+
+model: transformer
+tokenization: node_edge
+node_id_dim: 16       # per-node identities so edge tokens can name their endpoints
+node_id_mode: learned
+lpe_dim: 0            # honest connectivity: no precomputed reachability
+
+# chain-of-thought
+cot_len: 8            # K scratchpad tokens — the swept variable
+cot_mask: causal      # 'causal' (BFS rounds) or 'full' (bidirectional scratchpad)
+
+task: graph
+dropout: 0.1
+
+# training
+epochs: 500
+lr: 0.005
+weight_decay: 0.0005
+batch_size: 32
+
+# keep depth shallow so any gain comes from the scratchpad, not extra layers
+layers:
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4

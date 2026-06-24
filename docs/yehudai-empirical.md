@@ -116,7 +116,7 @@ tokenization behaves so differently on our data.
 | Hardness control | degree-distribution check | degree sequence *and* edge count matched per pair |
 | Node features | constant `x_i = 1` | normalized degree (or adj row) |
 | Readout | mean-pool over tokens → linear | mean-pool / task token |
-| Model | `nn.TransformerEncoder` (PyTorch) | our `GNN` / `GraphTokenTransformer` |
+| Model | `nn.TransformerEncoder` (PyTorch) | our `GNN` / `GraphTransformer` |
 
 ### The decisive difference: fixed vs variable size
 

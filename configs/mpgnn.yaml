@@ -9,7 +9,9 @@
 in_channels: 1        # 1 for connectedness (degree), 2 for isomorphism (one-hot graph id)
 out_channels: 2
 hidden_channels: 64
-lpe_dim: 0            # message passing reads structure from edges; no LPE needed
+
+model: gnn           # message-passing model (gcn/sage/gat/gin)
+lpe_dim: 0           # message passing reads structure from edges; no LPE needed
 
 task: graph
 pooling: mean

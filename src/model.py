@@ -188,12 +188,13 @@ class GNN(nn.Module):
 
 
 def build_model(config: GNNConfig) -> nn.Module:
-    """Pick the model from config.tokenization.
+    """Pick the architecture from config.model (resolved in GNNConfig.__post_init__).
 
-    'node'      -> GNN (message passing, or node-only global attention)
-    'node_edge' -> GraphTokenTransformer (Sanford-style edge tokens + task token)
+    'gnn'         -> GNN (message passing: gcn / sage / gat / gin)
+    'transformer' -> GraphTransformer (attention; tokenization selects node vs
+                     node_edge layout, with CoT available on node_edge)
     """
-    if getattr(config, "tokenization", "node") == "node_edge":
-        from .token_model import GraphTokenTransformer
-        return GraphTokenTransformer(config)
+    if config.model == "transformer":
+        from .transformer import GraphTransformer
+        return GraphTransformer(config)
     return GNN(config)

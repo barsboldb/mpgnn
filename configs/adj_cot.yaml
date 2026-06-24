@@ -1,0 +1,48 @@
+# Adjacency-row transformer + chain-of-thought (node tokenization).
+#
+# Exactly the adj_transformer setup — each node's token is its adjacency row,
+# tokenization: node, no edge tokens — but with K scratchpad tokens appended and
+# a task-token readout, so the model gets sequential reasoning on top of the
+# adj_rows representation. The sequence is [vertex tokens] + [c_1..c_K] + [task].
+#
+# adj_rows already distinguishes nodes, so node_id_dim can stay 0 (no learned
+# positional identities). Sweep cot_len and look for a phase transition at the
+# graph diameter. Full explanation: reports/cot-tokens.typ
+#
+# Run:   python main.py --config configs/adj_cot.yaml --dataset connectedness_hard
+# Sweep: cot_len (4, 8, 12, ...) with depth fixed.
+
+in_channels: 24       # max_nodes for connectedness_hard (adj_rows pads to dataset max)
+out_channels: 2
+hidden_channels: 32
+
+model: transformer
+node_features: adj_rows
+tokenization: node    # vertices only — no edge tokens
+input_embedding: linear
+node_id_dim: 0        # adj_rows already gives each node a distinct token
+lpe_dim: 0
+
+# chain-of-thought
+cot_len: 0            # K scratchpad tokens — the swept variable
+cot_mask: causal      # 'causal' (BFS rounds) or 'full' (bidirectional scratchpad)
+
+task: graph
+dropout: 0.1
+
+# training (matched to adj_transformer.yaml)
+epochs: 300
+lr: 0.001
+weight_decay: 0.0005
+batch_size: 32
+
+# layers supply depth + per-layer heads (the token transformer ignores 'type')
+layers:
+  - type: global_attn
+    heads: 1
+  - type: global_attn
+    heads: 1
+  - type: global_attn
+    heads: 1
+  - type: global_attn
+    heads: 1

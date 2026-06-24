@@ -1,0 +1,46 @@
+# CoT counterpart of configs/adj_transformer.yaml.
+#
+# Same training setup as the tuned adj_transformer (hidden=128, lr=0.001,
+# 1 global_attn layer, dropout=0.1, 300 epochs), but chain-of-thought needs the
+# task-token path, so this uses `node_edge` tokenization instead of node+adj_rows.
+# Nodes therefore carry a degree feature + learned identities (not adjacency rows);
+# edges become first-class tokens and the answer is read from the task token, with
+# K scratchpad tokens added for sequential reasoning.
+#
+# Run:   python main.py --config configs/cot_adj.yaml --dataset connectedness_hard
+# Sweep: cot_len (4, 8, 12, ...) with depth fixed at 1 to isolate the sequential
+#        axis; look for a phase transition near the graph diameter.
+
+in_channels: 1        # degree feature (node_edge uses identities for node distinctness)
+out_channels: 2
+hidden_channels: 128  # matches adj_transformer
+
+model: transformer
+tokenization: node_edge
+node_id_dim: 16       # per-node identities so edge tokens can name their endpoints
+node_id_mode: learned
+lpe_dim: 0            # honest connectivity: no precomputed reachability
+
+# chain-of-thought
+cot_len: 0            # K scratchpad tokens — the swept variable
+cot_mask: causal      # 'causal' (BFS rounds) or 'full' (bidirectional scratchpad)
+
+task: graph
+dropout: 0.1
+
+# training (matched to adj_transformer.yaml)
+epochs: 300
+lr: 0.001
+weight_decay: 0.0005
+batch_size: 32
+
+# depth sweep: add/remove entries to change number of transformer layers
+layers:
+  - type: global_attn
+    heads: 4
+  # - type: global_attn
+  #   heads: 4
+  # - type: global_attn
+  #   heads: 4
+  # - type: global_attn
+  #   heads: 4
