@@ -276,6 +276,9 @@ def tokenize_dataset(
                      without encoding global structure.
       "constant"   — ones [n, 1].  No structural signal; useful as an ablation
                      or when LPE/edge-tokens carry all the structure.
+      "random"     — a random vector per node [n, in_channels] (rGIN). Breaks
+                     symmetry so message passing can build reachable-set
+                     fingerprints — the right feature for connectivity reasoning.
       "adj_rows"   — each node's adjacency row, zero-padded to the largest
                      num_nodes across the dataset [n, max_nodes].
       "membership" — one-hot component flag [n, 2]: [1,0] for G1 nodes,
@@ -310,6 +313,13 @@ def tokenize_dataset(
         elif node_features == "constant":
             g.x = torch.ones(n, 1)
 
+        elif node_features == "random":
+            # rGIN-style: a random vector per node so message passing can build a
+            # reachable-set fingerprint (Sato et al. 2021; Abboud et al. 2021).
+            # Width = in_channels; sampled fresh each load (new draw per run).
+            width = in_channels if in_channels > 0 else 1
+            g.x = torch.randn(n, width)
+
         elif node_features == "adj_rows":
             x = torch.zeros(n, adj_width)
             if g.edge_index.size(1) > 0:
@@ -337,7 +347,7 @@ def tokenize_dataset(
 
         else:
             raise ValueError(f"Unknown node_features: '{node_features}'. "
-                             f"Choose from: degree, constant, adj_rows, membership, lap")
+                             f"Choose from: degree, constant, random, adj_rows, membership, lap")
 
         g.pe = laplacian_positional_encoding(g.edge_index, n, lpe_dim) if lpe_dim > 0 else None
 

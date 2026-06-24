@@ -1,0 +1,46 @@
+# Message-passing GNN on connectedness_hard — does an mpGNN reason connectivity?
+#
+# Degree is useless here (distributions are matched, nodes are symmetric), so the
+# model can't even tell the two blobs apart. Instead use RANDOM node features
+# (rGIN): each node gets a random vector, so message passing can build a
+# reachable-set fingerprint — nodes in the same component converge to the same
+# fingerprint, different components stay distinct. That is the connectivity signal.
+#
+# A message-passing GNN's receptive field = number of layers, so it still needs
+# depth >= the graph diameter (4-8 here, median 5). Residual + BatchNorm fight the
+# oversmoothing that otherwise kills deep GINs.
+#
+# THE TEST is a DEPTH SWEEP: run this with the `layers` list at length
+# 2, 4, 6, 8, 10 and plot best test accuracy (and train accuracy) vs depth.
+# Expect chance while depth < diameter, rising once depth >= diameter — if at all.
+#
+# Run: python main.py --config configs/mpgnn_hard.yaml --dataset connectedness_hard
+
+in_channels: 1       # random feature dimension (symmetry-breaking, rGIN)
+out_channels: 2
+hidden_channels: 64
+
+model: gnn
+node_features: degree # random vectors per node so MP can track reachable sets
+input_embedding: linear  # project the 16-dim random features into hidden
+norm_type: batch
+residual: true        # residual skips so deep stacks don't oversmooth
+
+task: graph
+pooling: mean
+dropout: 0.1
+
+# training
+epochs: 300
+lr: 0.005
+weight_decay: 0.0005
+batch_size: 32
+
+# depth sweep: set this list to length 2 / 4 / 6 / 8 / 10 and compare
+layers:
+  - type: gin
+  - type: gin
+  - type: gin
+  # - type: gin
+  # - type: gin
+  # - type: gin

@@ -66,12 +66,17 @@ def node_experiment(config: GNNConfig, dataset_name: str):
     logger.save()
 
 
-def graph_experiment(config: GNNConfig, dataset_name: str, overfit: int = 0):
+def graph_experiment(config: GNNConfig, dataset_name: str, overfit: int = 0, limit: int = 0):
     if dataset_name in GENERATORS:
         data_list = load_or_create(dataset_name,
                                    node_features=config.node_features,
                                    lpe_dim=config.lpe_dim,
                                    in_channels=config.in_channels)
+        if limit > 0 and limit < len(data_list):
+            # quick run on a subset; the on-disk cache is untouched. The generator
+            # alternates labels (i % 2), so a head slice stays class-balanced.
+            data_list = data_list[:limit]
+            print(f"[--limit {limit}] using {len(data_list)} of the cached graphs")
         if overfit > 0:
             # balanced: take equal numbers from each class
             class0 = [d for d in data_list if d.y.item() == 0][:overfit // 2]
@@ -120,6 +125,8 @@ def main():
                         help="Print comparison table of all saved runs and exit")
     parser.add_argument("--overfit", type=int, default=0,
                         help="Use only N graphs (balanced), same set for train+test, to check memorisation capacity")
+    parser.add_argument("--limit", type=int, default=0,
+                        help="Cap the dataset to the first N cached graphs (balanced) for a quick run; cache is untouched")
     args = parser.parse_args()
 
     if args.results:
@@ -134,7 +141,7 @@ def main():
     if config.task == "node":
         node_experiment(config, args.dataset)
     else:
-        graph_experiment(config, args.dataset, overfit=args.overfit)
+        graph_experiment(config, args.dataset, overfit=args.overfit, limit=args.limit)
 
 
 if __name__ == "__main__":

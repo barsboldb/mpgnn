@@ -23,7 +23,7 @@ class GNNConfig:
     out_channels: int
     hidden_channels: int = 64
     # model: which architecture the front program initializes.
-    #   'gnn'         — message passing (gcn/sage/gat/gin)            -> model.GNN
+    #   'gnn'         — message passing (gcn/sage/gat/gin)            -> gnn.GNN
     #   'transformer' — attention; tokenization selects the layout    -> transformer.GraphTransformer
     #   None          — inferred: node_edge or any global_attn layer => transformer, else gnn
     model: str | None = None
@@ -48,6 +48,8 @@ class GNNConfig:
     # node_features: how raw graph structure becomes node feature vectors x
     #   "degree"     — normalised degree [n, 1]; safe default
     #   "constant"   — ones [n, 1]; ablation / when structure comes from LPE or edge tokens
+    #   "random"     — random vector per node [n, in_channels] (rGIN); symmetry-breaking
+    #                  features for reachability/connectivity reasoning
     #   "adj_rows"   — adjacency row padded to max dataset node count [n, max_n]
     #   "membership" — one-hot component flag [n, 2] for isomorphism pairs (needs data.n1)
     #   "lap"        — Laplacian eigenvectors as features [n, lpe_dim]; in_channels must = lpe_dim
@@ -56,7 +58,7 @@ class GNNConfig:
     lpe_dim: int = 0
     # tokenization (graph task only):
     # 'node'      — vertices are the only tokens; edges enter via message passing
-    #               (GCN/GIN/GAT) or, for global_attn, via SPD bias / LPE. -> model.GNN
+    #               (GCN/GIN/GAT) or, for global_attn, via SPD bias / LPE. -> gnn.GNN
     # 'node_edge' — Sanford-style: tokens = vertices + edges + a task token; edges are
     #               first-class tokens the transformer reasons over. -> transformer.GraphTransformer
     tokenization: str = "node"
@@ -105,7 +107,7 @@ class GNNConfig:
         assert self.model in ("gnn", "transformer"), \
             f"model must be 'gnn' or 'transformer' — got '{self.model}'"
         assert self.pooling in ("mean", "add", "max", "pair"), f"unknown pooling '{self.pooling}'"
-        assert self.node_features in ("degree", "constant", "adj_rows", "membership", "lap"), \
+        assert self.node_features in ("degree", "constant", "random", "adj_rows", "membership", "lap"), \
             f"unknown node_features '{self.node_features}'"
         assert self.input_embedding in (None, "linear", "mlp", "lookup"), \
             f"unknown input_embedding '{self.input_embedding}'"
