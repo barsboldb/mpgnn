@@ -95,7 +95,7 @@ def _connected_component_edges(
 
 
 def make_connectedness_hard_dataset(
-    num_graphs: int = 1000,
+    num_graphs: int = 10000,
     min_nodes: int = 12,
     max_nodes: int = 24,
     seed: int = 42,
@@ -152,7 +152,7 @@ def make_connectedness_hard_dataset(
 
 
 def make_connectedness_hard_fixed_dataset(
-    num_graphs: int = 1000,
+    num_graphs: int = 10000,
     seed: int = 42,
 ) -> list[Data]:
     """connectedness_hard with a FIXED graph size (n=20 for every graph)."""
@@ -285,6 +285,19 @@ def tokenize_dataset(
     """
     max_n = max(g.num_nodes for g in data_list)
 
+    # adj_rows pads each adjacency row to in_channels, so the configured width is the
+    # single source of truth and one config works across datasets of different sizes
+    # (e.g. connectedness_hard max=24 vs the fixed n=20 variant). Falls back to the
+    # dataset max when in_channels is unset.
+    if node_features == "adj_rows" and in_channels > 0:
+        assert max_n <= in_channels, (
+            f"adj_rows needs in_channels >= the dataset's max node count ({max_n}); "
+            f"got in_channels={in_channels}. Raise in_channels to at least {max_n}."
+        )
+        adj_width = in_channels
+    else:
+        adj_width = max_n
+
     for g in data_list:
         n = g.num_nodes
 
@@ -298,11 +311,11 @@ def tokenize_dataset(
             g.x = torch.ones(n, 1)
 
         elif node_features == "adj_rows":
-            x = torch.zeros(n, max_n)
+            x = torch.zeros(n, adj_width)
             if g.edge_index.size(1) > 0:
                 row, col = g.edge_index
-                # clamp col to max_n in case a graph's node indices exceed the padded width
-                valid = col < max_n
+                # clamp col to the padded width (asserted >= max_n above when set)
+                valid = col < adj_width
                 x[row[valid], col[valid]] = 1.0
             g.x = x
 
