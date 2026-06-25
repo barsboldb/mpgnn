@@ -1,0 +1,23 @@
+{
+  "config": {
+    "regime": "raw",
+    "depth": 2,
+    "n": 60,
+    "p": 0.05,
+    "train": 3000,
+    "test": 500,
+    "hidden": 64,
+    "heads": 4,
+    "epochs": 300,
+    "lr": 0.001,
+    "batch": 128,
+    "seed": 0
+  },
+  "capacity": 9,
+  "results": {
+    "train_EM": 1.0,
+    "er_test_EM": 0.578,
+    "2clique_disc_EM": 0.0,
+    "2clique_bridge_EM": 1.0
+  }
+}

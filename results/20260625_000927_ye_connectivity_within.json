@@ -1,0 +1,23 @@
+{
+  "config": {
+    "regime": "within",
+    "depth": 2,
+    "n": 20,
+    "p": 0.16,
+    "train": 400,
+    "test": 150,
+    "hidden": 64,
+    "heads": 4,
+    "epochs": 40,
+    "lr": 0.001,
+    "batch": 128,
+    "seed": 0
+  },
+  "capacity": 9,
+  "results": {
+    "train_EM": 0.4525,
+    "er_test_EM": 0.38,
+    "2clique_disc_EM": 0.0,
+    "2clique_bridge_EM": 1.0
+  }
+}
