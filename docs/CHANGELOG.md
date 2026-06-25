@@ -4,6 +4,121 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-06-25
+
+Long session (work spanned 06-23 → 06-25) centered on graph connectivity: why our
+transformer couldn't learn it, and what fixes it. The headline result reframes the
+whole project.
+
+### Supervision density is the blocker, not the architecture (the headline)
+
+The **binary** connectedness_hard task (one label per graph: connected?) stalls at
+`ln 2` — the model parks at the marginal predictor and never learns. The **exact
+same graphs**, retargeted as the **n×n reachability matrix** R (R_ij = 1 iff i, j in
+the same component), are learned to **~0.97 exact-match**. The difference is purely
+the *density of supervision*: 1 bit/graph starves the algorithm; n² bits/graph feed
+it. Producing R requires actually computing reachability for every pair; once you
+have R, whole-graph connectedness is a trivial readout (`all(R == 1)`). So the hard
+part was never the binary decision — it was computing reachability, and the binary
+loss gave gradient descent nothing to grip. **Lesson: train on the dense matrix
+target, read the binary answer off it for free.**
+
+### Connectivity-matrix task (Ye et al. 2026) added to the framework
+
+Folded into `GraphTransformer` as `task: connectivity`: input = self-loop-augmented
+adjacency rows (`node_features: adj_self` = A+I), encoder = the node-token attention
+stack, output = per-graph n×n logits via a **pairwise bilinear readout** `H W Hᵀ`,
+target = reachability from per-node component labels, metric = **exact-match** (whole
+matrix correct). Config-driven (`configs/connectivity_hard.yaml`), variable-n,
+logs/plots like every other run.
+
+### The Ye data lever is a catch-22 on our setups
+
+The paper's lever (train only on within-capacity graphs, diam ≤ 3^L, to suppress the
+heuristic) would not engage for us, and the diagnostics (`rho_hard` = fraction of
+reachable pairs beyond capacity, + diameter histograms) showed exactly why:
+
+- **ER graphs**: diameters concentrate tightly. At cap 9 they are *all* within
+  capacity (filter removes nothing → within ≈ raw), or at lower cap *all* beyond it
+  (filter removes everything → no training data). No regime gives beyond-capacity
+  mass **and** within-capacity margin at once.
+- **Diameter-controlled caterpillars** (new generator) fix filter engagement
+  (`rho_hard` 0.04 raw vs 0.00 within) — but caterpillars are degree-uniform, so the
+  **degree heuristic never forms**, so there's nothing for the lever to suppress.
+
+So: ER forms the heuristic but can't engage the filter; caterpillars engage the
+filter but never form the heuristic. Reproducing the lever needs a distribution with
+*both* dense structure and controlled diameter (clustered graphs + bridges — noted as
+future work).
+
+### Global attention is not capacity-bound; local (GAT) attention is
+
+The 3^L capacity wall assumes **local** mixing (a node combines with neighbours).
+Our `GlobalAttnConv` is **global all-pairs**, so one layer reaches any node — it
+solves even diam-18 graphs at capacity 9, and the lever can't bind. Added a
+`local: true` option to `GlobalAttnConv` (mask attention to graph neighbours + self
+→ 1 hop/layer → depth-bounded reach). With local attention the capacity wall appears
+(`test < test_within` once graphs exceed reach). Conceptual finding: **local
+attention = GAT = a GNN** — restricting attention to edges slides the model from the
+transformer end of the spectrum (complete-graph attention) to the GNN end
+(edge attention). For connectivity the **GNN inductive bias is the right one**: it
+forces propagation along edges (which *is* reachability), whereas global attention
+has too much freedom and finds shortcuts. Rule of thumb that emerged: *more
+transformer-like (global) → more shortcutting; more GNN-like (local) → more genuine
+computation.*
+
+### OOD generalization: distribution-learning, not algorithm-learning
+
+Model trained on diameter_controlled hits **0.98** in-distribution but collapses OOD:
+**0.679** on `connectedness` (= exactly the connected fraction 679/1000) and **0.42**
+on `connectedness_hard`. Per-example inspection (`--inspect`) of a failing
+disconnected graph showed predicted density = 1.000 and mean cross-component
+P(reachable) = **1.000** — i.e. it outputs the **all-ones** matrix, completely
+failing to detect disconnection. Mechanism: a dense-blob node's `adj_self` row (many
+1s) is far OOD from the sparse caterpillar rows (~2 ones) it trained on, so the
+learned "separate components" computation breaks and the bilinear head lights up
+everywhere. Clean evidence the model learns reachability *for its training structure*,
+not a universal algorithm.
+
+### mpGNN: degree generalizes, expressive random features memorize
+
+On connectedness_hard, a 3-layer GIN reaches **0.975 test** with plain **degree**
+features but only **0.53** (memorizes: 0.985 train) with **random** (rGIN) features.
+Expressiveness ≠ generalization: 16-dim random features give the model capacity to
+memorize each graph via its random fingerprint, with no transferable signal. Caveat:
+degree's win comes at depth 3 < diameter (4–8), so it cannot be global reasoning — it
+is **local bridge-detection**, a shortcut connectedness_hard's construction failed to
+kill. (Full writeup: `reports/random-features-gin.typ`.)
+
+### Idea logged: amplify the weak bridge signal
+
+When the discriminative signal is a tiny minority of entries (the cross-cluster /
+bridge pairs in R), up-weight them (focal / weighted loss) to amplify the gradient —
+the analog "amplify + filter the weak signal." Can rescue a stalled optimization but
+cannot create information; over-gain → overfitting. To be tested against the
+no-amplification baseline. (Memory: `amplify-weak-signal-idea`.)
+
+### Tooling / decisions
+
+- **Model persistence**: training saves `checkpoints/<run_id>.pt` (state_dict +
+  config); `--eval <ckpt> --dataset X` evaluates on other (OOD) datasets, `--inspect`
+  prints failing examples (true vs predicted R + within/cross-component probabilities).
+- **`diameter_controlled` dataset generator** (caterpillars with sampled diameter
+  2–18, half connected / half two-component) — for capacity / lever experiments.
+- **Refactor**: extracted the shared stack-of-layers engine into
+  `graph_conv.GraphConvNet`; `GNN` (message passing) and `GraphTransformer`
+  (attention) are now siblings over it, neither importing the other; `model.py` is a
+  pure dispatcher. Added a `model: gnn|transformer` selector and the `Laplacian`
+  zero-eigenvalue filter / lap-via-in_channels work, plus CoT scratchpad tokens.
+- **Visualizer**: metric selector (plot any logged series), per-run details modal
+  (full config/summary/timing), and an epoch-time chart; per-epoch + inference timing
+  now logged for all tasks.
+- **Perf note**: `GlobalAttnConv` does all-pairs attention over the *whole batch*
+  (O(N_total²), most of it masked cross-graph), so cost scales with batch_size —
+  smaller batches are faster. Efficient sparse local attention = use `type: gat`.
+
+---
+
 ## 2026-06-21
 
 ### Isomorphism task: tokenization analysis and 0.85 accuracy ceiling
