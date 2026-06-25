@@ -100,15 +100,20 @@ class GNNConfig:
         return "gnn"
 
     def __post_init__(self):
-        assert self.task in ("node", "graph"), f"task must be 'node' or 'graph', got '{self.task}'"
+        assert self.task in ("node", "graph", "connectivity"), \
+            f"task must be 'node', 'graph', or 'connectivity', got '{self.task}'"
         # resolve the model selector (None -> inferred) so it is concrete everywhere
         if self.model is None:
             self.model = self._infer_model()
         assert self.model in ("gnn", "transformer"), \
             f"model must be 'gnn' or 'transformer' — got '{self.model}'"
         assert self.pooling in ("mean", "add", "max", "pair"), f"unknown pooling '{self.pooling}'"
-        assert self.node_features in ("degree", "constant", "random", "adj_rows", "membership", "lap"), \
+        assert self.node_features in ("degree", "constant", "random", "adj_rows", "adj_self", "membership", "lap"), \
             f"unknown node_features '{self.node_features}'"
+        if self.task == "connectivity":
+            assert self.model == "transformer" and self.tokenization == "node", \
+                "task: connectivity needs model: transformer + tokenization: node " \
+                "(node tokens through the encoder, then a pairwise reachability readout)"
         assert self.input_embedding in (None, "linear", "mlp", "lookup"), \
             f"unknown input_embedding '{self.input_embedding}'"
         assert self.norm_type in (None, "batch", "layer"), \

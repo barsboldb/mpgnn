@@ -22,3 +22,6 @@ yehudai/connectivity_dataset/
 yehudai/graph_dataset/
 yehudai/logs/
 yehudai/randomgraph.mat
+
+# Saved model checkpoints (regenerate by training)
+checkpoints/

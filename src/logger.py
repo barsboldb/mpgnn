@@ -1,6 +1,6 @@
 import json
 import os
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 from datetime import datetime
 
 
@@ -8,10 +8,13 @@ class RunLogger:
     """
     Records one experiment run: config, per-epoch metrics, and final summary.
     Saves to results/<timestamp>_<dataset>_<layers>.json on .save().
+
+    `config` may be a GNNConfig dataclass or a plain dict (e.g. a standalone
+    experiment's argparse settings).
     """
     def __init__(self, dataset: str, config, tag: str = ""):
         self.dataset = dataset
-        self.config = asdict(config)
+        self.config = asdict(config) if is_dataclass(config) else dict(config)
         self.history: list[dict] = []
         self.timing: dict = {}
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -1,0 +1,39 @@
+# Connectivity-MATRIX task on connectedness_hard — folded into GraphTransformer.
+#
+# Input  : self-loop-augmented adjacency rows (node_features: adj_self = A+I).
+# Model  : GraphTransformer (node tokenization, global_attn encoder).
+# Output : per-graph n x n reachability matrix via a pairwise bilinear readout.
+# Target : R_ij = 1 iff i, j in the same component (from node component labels).
+# Metric : exact-match (whole matrix correct).
+#
+# The dense per-pair supervision is what makes connectedness_hard learnable
+# (~0.97 exact-match), where the binary label stalled at ln 2.
+#
+# Run: python main.py --config configs/connectivity_hard.yaml --dataset connectedness_hard
+
+task: connectivity
+model: transformer
+tokenization: node
+node_features: adj_self   # A + I rows (self-loop-augmented adjacency)
+
+in_channels: 24           # max_nodes for connectedness_hard (adj_self pads to this)
+out_channels: 2           # unused by the pairwise head, but GNNConfig requires it
+hidden_channels: 64
+
+input_embedding: linear   # project the 24-dim adjacency rows to hidden
+norm_type: layer
+residual: true
+dropout: 0.0
+
+# encoder depth (number of global-attention layers)
+layers:
+  - type: global_attn
+    heads: 4
+  - type: global_attn
+    heads: 4
+
+# training
+epochs: 300
+lr: 0.001
+weight_decay: 0.0
+batch_size: 128

@@ -171,3 +171,62 @@ def run_graph_experiment(model, train_loader, test_loader, device,
 
     summary = logger._summary() if logger else {}
     print(f"\nBest test acc: {summary.get('test', '-')}  at epoch {summary.get('best_epoch', '-')}")
+
+
+# ── Connectivity matrix (Ye et al. 2026) ───────────────────────────────────────
+
+def _connectivity_loss_acc(model, loader, device, train=False, optimizer=None):
+    """Per-graph BCE over the n_g x n_g reachability target (from node component
+    labels data.comp) + exact-match accuracy. data.comp must be attached upstream."""
+    total_loss = exact = total = 0.0
+    for data in loader:
+        data = data.to(device)
+        logits = model(data)                       # list of [n_g, n_g]
+        batch = data.batch
+        comp = data.comp
+        loss = 0.0
+        for g, lg in enumerate(logits):
+            cg = comp[batch == g]
+            Rg = (cg[:, None] == cg[None, :]).float()
+            loss = loss + F.binary_cross_entropy_with_logits(lg, Rg)
+            exact += float(((lg > 0).float() == Rg).all().item())
+            total += 1
+        loss = loss / len(logits)
+        if train:
+            optimizer.zero_grad(); loss.backward(); optimizer.step()
+        total_loss += loss.item() * len(logits)
+    return total_loss / total, exact / total
+
+
+@torch.no_grad()
+def _connectivity_eval(model, loader, device):
+    model.eval()
+    return _connectivity_loss_acc(model, loader, device, train=False)[1]
+
+
+def run_connectivity_experiment(model, train_loader, test_loader, device,
+                                epochs=200, lr=1e-3, weight_decay=0.0,
+                                logger: RunLogger | None = None):
+    """Train the pairwise reachability readout (R_ij = same component) with the
+    dense matrix target — the supervision that makes connectivity learnable."""
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    for epoch in range(1, epochs + 1):
+        model.train()
+        _sync(device); t0 = time.perf_counter()
+        loss, train_acc = _connectivity_loss_acc(model, train_loader, device, train=True, optimizer=optimizer)
+        _sync(device); t1 = time.perf_counter()
+        test_acc = _connectivity_eval(model, test_loader, device)
+        _sync(device); t2 = time.perf_counter()
+        if logger is not None:
+            logger.log(epoch, loss=round(loss, 4),
+                       train=round(train_acc, 4), test=round(test_acc, 4),
+                       train_time_s=round(t1 - t0, 5), eval_time_s=round(t2 - t1, 5))
+        if epoch % 10 == 0:
+            print(f"Epoch {epoch:03d}  loss={loss:.4f}  train_EM={train_acc:.4f}  test_EM={test_acc:.4f}")
+
+    if logger is not None:
+        sample = next(iter(test_loader))
+        logger.set_timing(device, benchmark_inference(model, sample, device))
+
+    summary = logger._summary() if logger else {}
+    print(f"\nBest test exact-match: {summary.get('test', '-')}  at epoch {summary.get('best_epoch', '-')}")

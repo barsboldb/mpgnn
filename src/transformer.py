@@ -260,6 +260,7 @@ class GraphTransformer(nn.Module):
     def __init__(self, config: GNNConfig):
         super().__init__()
         self.config = config
+        self.connectivity = config.task == "connectivity"
         if config.tokenization == "node_edge" or config.cot_len > 0:
             # node_edge, or node tokenization + CoT: token sequence with a task-token
             # readout (the only path with scratchpad tokens). Edge tokens are included
@@ -268,9 +269,28 @@ class GraphTransformer(nn.Module):
         else:
             from .graph_conv import GraphConvNet
             self.net = GraphConvNet(config)   # node-token attention via the shared engine
+        if self.connectivity:
+            # pairwise reachability readout: R_hat = H W H^T per graph (Ye et al. 2026)
+            self.pair = nn.Linear(config.hidden_channels, config.hidden_channels, bias=False)
 
     def forward(self, data):
+        if self.connectivity:
+            return self._connectivity_forward(data)
         return self.net(data)
+
+    def _connectivity_forward(self, data):
+        """Per-graph n_g x n_g reachability logits from node embeddings.
+        Returns a list of [n_g, n_g] tensors (graphs have different sizes)."""
+        h = self.net.embed(data)                       # [N, d] node embeddings
+        batch = getattr(data, "batch", None)
+        if batch is None:
+            batch = torch.zeros(h.size(0), dtype=torch.long, device=h.device)
+        out = []
+        for g in range(int(batch.max().item()) + 1):
+            hg = h[batch == g]                         # [n_g, d]
+            lg = self.pair(hg) @ hg.transpose(0, 1)    # H W H^T  -> [n_g, n_g]
+            out.append(0.5 * (lg + lg.transpose(0, 1)))  # symmetric, like R
+        return out
 
     def embed(self, data):
         if not hasattr(self.net, "embed"):

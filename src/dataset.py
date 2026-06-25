@@ -161,6 +161,64 @@ def make_connectedness_hard_fixed_dataset(
     )
 
 
+def _caterpillar_edges(nodes: list[int], d: int, rng: np.random.Generator) -> set[tuple[int, int]]:
+    """Undirected edges of a caterpillar on `nodes` with EXACT diameter d: a backbone
+    path of d+1 nodes (so the two ends are distance d apart) plus the remaining nodes
+    attached as leaves to interior backbone nodes (which never extend the diameter).
+    Degrees are ~2, so there is no degree signal — the model must propagate."""
+    edges: set[tuple[int, int]] = set()
+    for i in range(d):
+        a, b = nodes[i], nodes[i + 1]
+        edges.add((min(a, b), max(a, b)))
+    interior = nodes[1:d] if d >= 2 else [nodes[0]]
+    for u in nodes[d + 1:]:
+        v = int(rng.choice(interior))
+        edges.add((min(u, v), max(u, v)))
+    return edges
+
+
+def make_diameter_controlled_dataset(
+    num_graphs: int = 4000,
+    n: int = 24,
+    min_diameter: int = 2,
+    max_diameter: int = 18,
+    seed: int = 42,
+) -> list[Data]:
+    """Graphs with a CONTROLLED diameter (caterpillars), for capacity / data-lever
+    experiments. Half are a single connected caterpillar (label 1); half are two
+    disconnected caterpillars (label 0). The diameter is sampled per graph from
+    [min_diameter, max_diameter], so the distribution can straddle a model's
+    capacity 3^L — unlike ER, whose diameters concentrate. Fixed n.
+    """
+    rng = np.random.default_rng(seed)
+    data_list, counts = [], [0, 0]
+
+    def sampled_diam(m):
+        hi = max(min_diameter, min(max_diameter, m - 1))
+        return int(rng.integers(min_diameter, hi + 1))
+
+    for i in range(num_graphs):
+        if i % 2 == 0:                                    # connected
+            edges = _caterpillar_edges(list(range(n)), sampled_diam(n), rng)
+            label = 1
+        else:                                             # two disconnected pieces
+            h = n // 2
+            edges = _caterpillar_edges(list(range(h)), sampled_diam(h), rng) \
+                | _caterpillar_edges(list(range(h, n)), sampled_diam(n - h), rng)
+            label = 0
+
+        all_edges: list[list[int]] = []
+        for a, b in edges:
+            all_edges += [[a, b], [b, a]]
+        edge_index = torch.tensor(all_edges, dtype=torch.long).t().contiguous()
+        data_list.append(Data(edge_index=edge_index, y=torch.tensor([label], dtype=torch.long), num_nodes=n))
+        counts[label] += 1
+
+    print(f"Generated {num_graphs} diameter-controlled graphs  |  "
+          f"connected: {counts[1]}  disconnected: {counts[0]}  (diam {min_diameter}-{max_diameter}, n={n})")
+    return data_list
+
+
 def _random_undirected_edges(n: int, p: float, rng: np.random.Generator) -> list[tuple[int, int]]:
     return [(i, j) for i in range(n) for j in range(i + 1, n) if rng.random() < p]
 
@@ -292,9 +350,9 @@ def tokenize_dataset(
     # single source of truth and one config works across datasets of different sizes
     # (e.g. connectedness_hard max=24 vs the fixed n=20 variant). Falls back to the
     # dataset max when in_channels is unset.
-    if node_features == "adj_rows" and in_channels > 0:
+    if node_features in ("adj_rows", "adj_self") and in_channels > 0:
         assert max_n <= in_channels, (
-            f"adj_rows needs in_channels >= the dataset's max node count ({max_n}); "
+            f"{node_features} needs in_channels >= the dataset's max node count ({max_n}); "
             f"got in_channels={in_channels}. Raise in_channels to at least {max_n}."
         )
         adj_width = in_channels
@@ -320,13 +378,17 @@ def tokenize_dataset(
             width = in_channels if in_channels > 0 else 1
             g.x = torch.randn(n, width)
 
-        elif node_features == "adj_rows":
+        elif node_features in ("adj_rows", "adj_self"):
             x = torch.zeros(n, adj_width)
             if g.edge_index.size(1) > 0:
                 row, col = g.edge_index
                 # clamp col to the padded width (asserted >= max_n above when set)
                 valid = col < adj_width
                 x[row[valid], col[valid]] = 1.0
+            if node_features == "adj_self":
+                # self-loop-augmented A + I (the Ye et al. connectivity input)
+                idx = torch.arange(min(n, adj_width))
+                x[idx, idx] = 1.0
             g.x = x
 
         elif node_features == "membership":
@@ -360,6 +422,7 @@ GENERATORS: dict[str, object] = {
     "connectedness":           make_connectedness_dataset,
     "connectedness_hard":      make_connectedness_hard_dataset,
     "connectedness_hard_fixed": make_connectedness_hard_fixed_dataset,
+    "diameter_controlled":     make_diameter_controlled_dataset,
     "isomorphism":             make_isomorphism_dataset,
     "yehudai_connectivity":    make_yehudai_connectivity_dataset,
 }
