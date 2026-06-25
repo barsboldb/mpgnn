@@ -145,10 +145,15 @@ class GlobalAttnConv(nn.Module):
     For batched graphs, attention is masked so nodes only attend within
     their own graph.
 
+    local=True restricts attention to graph neighbours (and self) — a node may
+    only attend where there is an edge. Reach then grows one hop per layer, so the
+    model becomes depth-bounded (the regime where capacity / data-lever effects
+    bind), instead of the global all-pairs reach.
+
     out_channels must be divisible by heads.
     """
     def __init__(self, in_channels: int, out_channels: int, heads: int = 1,
-                 dropout: float = 0.0, spd_max_dist: int = 0):
+                 dropout: float = 0.0, spd_max_dist: int = 0, local: bool = False):
         super().__init__()
         assert out_channels % heads == 0, f"out_channels ({out_channels}) must be divisible by heads ({heads})"
         self.heads = heads
@@ -157,6 +162,7 @@ class GlobalAttnConv(nn.Module):
         self.scale = self.head_dim ** -0.5
         self.dropout = dropout
         self.spd_max_dist = spd_max_dist
+        self.local = local
 
         self.W_q = nn.Linear(in_channels, out_channels, bias=False)
         self.W_k = nn.Linear(in_channels, out_channels, bias=False)
@@ -188,6 +194,13 @@ class GlobalAttnConv(nn.Module):
         if batch is not None:
             cross_graph = batch.unsqueeze(0) != batch.unsqueeze(1)  # [N, N]
             attn = attn.masked_fill(cross_graph.unsqueeze(-1), float('-inf'))
+
+        # local mode: a node may attend only to its neighbours and itself (1 hop/layer)
+        if self.local:
+            adj = torch.zeros(N, N, dtype=torch.bool, device=x.device)
+            adj[edge_index[0], edge_index[1]] = True
+            adj[torch.arange(N, device=x.device), torch.arange(N, device=x.device)] = True
+            attn = attn.masked_fill(~adj.unsqueeze(-1), float('-inf'))
 
         attn = torch.softmax(attn, dim=1)  # softmax over source nodes j
         attn = F.dropout(attn, p=self.dropout, training=self.training)
