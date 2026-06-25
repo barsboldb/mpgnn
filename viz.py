@@ -17,7 +17,12 @@ import webbrowser
 
 
 def load_runs(results_dir: str = "results") -> list[dict]:
-    """Read every run JSON into a compact record the dashboard can plot."""
+    """Read every run JSON into a compact record the dashboard can plot.
+
+    Keeps EVERY per-epoch series in history (loss, test, train, test_within,
+    clique_disc, train_time_s, ...) so the dashboard can plot any of them, and
+    carries the full config / summary / timing for the per-run details modal.
+    """
     runs = []
     for fname in sorted(os.listdir(results_dir)):
         if not fname.endswith(".json") or fname == "report.html":
@@ -28,10 +33,17 @@ def load_runs(results_dir: str = "results") -> list[dict]:
         hist = run.get("history", [])
         summary = run.get("summary", {})
         layers = cfg.get("layers", [])
+
+        keys: set[str] = set()
+        for h in hist:
+            keys |= set(h.keys()) - {"epoch"}
+        series = {m: [h.get(m) for h in hist] for m in keys}
+
         runs.append({
             "id": run.get("run_id", fname),
             "dataset": run.get("dataset", "?"),
             "tokenization": cfg.get("tokenization", "node"),
+            "task": cfg.get("task", "graph"),
             "depth": len(layers),
             "layer_type": layers[0]["type"] if layers else "?",
             "hidden": cfg.get("hidden_channels", "-"),
@@ -39,10 +51,10 @@ def load_runs(results_dir: str = "results") -> list[dict]:
             "epochs": cfg.get("epochs", len(hist)),
             "best": summary.get("test", summary.get("val", None)),
             "best_epoch": summary.get("best_epoch", None),
-            # series kept parallel + short to keep the HTML small
             "ep": [h["epoch"] for h in hist],
-            "loss": [h.get("loss") for h in hist],
-            "acc": [h.get("test", h.get("val")) for h in hist],
+            "series": series,                 # {key: [values...]} for ALL logged series
+            # full metadata for the details modal
+            "meta": {"config": cfg, "summary": summary, "timing": run.get("timing", {})},
         })
     return runs
 
@@ -97,6 +109,21 @@ _TEMPLATE = r"""<!doctype html>
   .tip { position:fixed; pointer-events:none; background:#000; border:1px solid var(--line);
          border-radius:6px; padding:5px 8px; font-size:11px; opacity:0; transition:opacity .08s;
          white-space:nowrap; z-index:10; }
+  .run .info { background:none; border:none; color:var(--muted); font-size:14px;
+               padding:0 2px; cursor:pointer; flex:none; }
+  .run .info:hover { color:var(--accent); }
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.62); z-index:50;
+              display:none; align-items:center; justify-content:center; }
+  .modal-bg.show { display:flex; }
+  .modal { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+           width:90%; max-width:760px; max-height:86vh; overflow:auto; padding:16px 18px; }
+  .modal h3 { margin:0 0 6px; font-size:13px; word-break:break-all; }
+  .modal .x { float:right; cursor:pointer; color:var(--muted); font-size:20px; line-height:1; }
+  .modal .x:hover { color:var(--txt); }
+  .modal .sec { color:var(--accent); font-size:12px; font-weight:600; margin:12px 0 4px; }
+  .modal pre { background:var(--bg); border:1px solid var(--line); border-radius:6px;
+               padding:10px; font-size:11px; overflow-x:auto; white-space:pre-wrap;
+               word-break:break-word; margin:0; }
 </style>
 </head>
 <body>
@@ -116,8 +143,8 @@ _TEMPLATE = r"""<!doctype html>
   <main class="main">
     <div class="charts">
       <div class="card">
-        <h2>Test accuracy</h2>
-        <div class="hint">higher is better · 0.5 = chance on a balanced binary task</div>
+        <h2>Metric:&nbsp;<select id="metric"></select></h2>
+        <div class="hint">higher is better · 0.5 reference line · pick any logged metric (test, train, clique_disc, …)</div>
         <canvas id="accC"></canvas>
       </div>
       <div class="card">
@@ -125,10 +152,16 @@ _TEMPLATE = r"""<!doctype html>
         <div class="hint">cross-entropy · 0.693 = ln 2 = predicting 50/50 for everything</div>
         <canvas id="lossC"></canvas>
       </div>
+      <div class="card">
+        <h2>Epoch time (s)</h2>
+        <div class="hint">per-epoch training time · inference latency &amp; timing summary in each run's ⓘ details</div>
+        <canvas id="timeC"></canvas>
+      </div>
     </div>
   </main>
 </div>
 <div class="tip" id="tip"></div>
+<div class="modal-bg" id="modalBg"><div class="modal" id="modal"></div></div>
 
 <script>
 const RUNS = /*DATA*/;
@@ -139,6 +172,23 @@ RUNS.forEach((r,i)=>{ r.color = PALETTE[i % PALETTE.length]; r.on = true; });
 const tip = document.getElementById('tip');
 
 function fmt(v){ return v==null ? "–" : (Math.round(v*1000)/1000).toFixed(3); }
+
+// ── available metrics (any logged series except loss, which has its own chart) ──
+const PRIORITY = ["test","train","test_within","clique_disc","clique_bridge","clique_disc_dens","val"];
+const HIDE = new Set(["loss","train_time_s","eval_time_s"]);  // own charts / not metrics
+const METRICS = (()=>{
+  const s=new Set();
+  RUNS.forEach(r=>Object.keys(r.series||{}).forEach(k=>{ if(!HIDE.has(k)) s.add(k); }));
+  const arr=[...s];
+  arr.sort((a,b)=>{ const ia=PRIORITY.indexOf(a), ib=PRIORITY.indexOf(b);
+    return (ia<0?99:ia)-(ib<0?99:ib) || a.localeCompare(b); });
+  return arr;
+})();
+let metric = METRICS.includes("test") ? "test" : (METRICS[0] || "test");
+const metricSel = document.getElementById('metric');
+METRICS.forEach(m=>{ const o=document.createElement('option'); o.value=m; o.textContent=m; metricSel.appendChild(o); });
+metricSel.value = metric;
+metricSel.onchange = ()=>{ metric = metricSel.value; drawAll(); };
 
 // ── sidebar ──────────────────────────────────────────────────────────────────
 const dsSel = document.getElementById('ds');
@@ -163,11 +213,37 @@ function renderList(){
         <div class="name" title="${r.id}">${shortName(r)}</div>
         <div class="tags">${r.tokenization} · depth ${r.depth} · ${r.layer_type} · lr ${r.lr} · ${r.epochs}ep</div>
       </div>
-      <div class="best" style="color:${r.best>=0.9?'#51cf66':r.best>=0.7?'#fab005':'#ff6b6b'}">${fmt(r.best)}</div>`;
+      <div class="best" style="color:${r.best>=0.9?'#51cf66':r.best>=0.7?'#fab005':'#ff6b6b'}">${fmt(r.best)}</div>
+      <button class="info" title="all data">ⓘ</button>`;
     el.onclick=()=>{ r.on=!r.on; renderList(); drawAll(); };
+    el.querySelector('.info').onclick=(e)=>{ e.stopPropagation(); openModal(r); };
     list.appendChild(el);
   });
 }
+
+// ── per-run details modal (everything the JSON has) ────────────────────────────
+const modalBg=document.getElementById('modalBg'), modal=document.getElementById('modal');
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function sec(name,obj){
+  return `<div class="sec">${name}</div><pre>${esc(JSON.stringify(obj||{},null,2))}</pre>`;
+}
+function openModal(r){
+  const m=r.meta||{};
+  // final value of every logged series, for a quick glance
+  const finals={};
+  Object.keys(r.series||{}).forEach(k=>{ const a=r.series[k].filter(v=>v!=null); if(a.length) finals[k]=a[a.length-1]; });
+  modal.innerHTML=`<span class="x" id="mx">×</span><h3>${r.id}</h3>`
+    + `<div class="tags" style="color:var(--muted)">${r.dataset} · ${r.task}</div>`
+    + sec("final metrics", finals)
+    + sec("config", m.config)
+    + sec("summary", m.summary)
+    + sec("timing", m.timing);
+  document.getElementById('mx').onclick=closeModal;
+  modalBg.classList.add('show');
+}
+function closeModal(){ modalBg.classList.remove('show'); }
+modalBg.onclick=(e)=>{ if(e.target===modalBg) closeModal(); };
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') closeModal(); });
 
 // ── charts ───────────────────────────────────────────────────────────────────
 function setup(canvas){
@@ -182,7 +258,7 @@ function draw(canvas, field, yMin, yMax, refLine){
   const {ctx,w,h}=setup(canvas);
   ctx.clearRect(0,0,w,h);
   const pad={l:42,r:14,t:10,b:26};
-  const active=RUNS.filter(r=>r.on && r[field] && r[field].length);
+  const active=RUNS.filter(r=>r.on && r.series[field] && r.series[field].length);
   const maxEp=Math.max(1,...active.map(r=>Math.max(...r.ep)));
   const X=e=>pad.l+(w-pad.l-pad.r)*(e/maxEp);
   const Y=v=>pad.t+(h-pad.t-pad.b)*(1-(v-yMin)/(yMax-yMin));
@@ -212,7 +288,7 @@ function draw(canvas, field, yMin, yMax, refLine){
     ctx.strokeStyle=r.color; ctx.lineWidth=1.6; ctx.beginPath();
     let started=false;
     r.ep.forEach((e,i)=>{
-      const v=r[field][i]; if(v==null) return;
+      const v=r.series[field][i]; if(v==null) return;
       const x=X(e), y=Y(v);
       started ? ctx.lineTo(x,y) : ctx.moveTo(x,y); started=true;
     });
@@ -224,13 +300,19 @@ function draw(canvas, field, yMin, yMax, refLine){
 }
 
 function drawAll(){
-  draw(document.getElementById('accC'),'acc',0.4,1.0,0.5);
+  draw(document.getElementById('accC'),metric,0.0,1.0,0.5);
   draw(document.getElementById('lossC'),'loss',0.0,Math.max(0.8,lossMax()),0.6931);
+  draw(document.getElementById('timeC'),'train_time_s',0.0,timeMax(),null);
 }
 function lossMax(){
   let m=0.8;
-  RUNS.filter(r=>r.on).forEach(r=>r.loss.forEach(v=>{ if(v!=null&&v>m)m=v; }));
+  RUNS.filter(r=>r.on).forEach(r=>(r.series.loss||[]).forEach(v=>{ if(v!=null&&v>m)m=v; }));
   return Math.min(m,1.2);
+}
+function timeMax(){
+  let m=0;
+  RUNS.filter(r=>r.on).forEach(r=>(r.series.train_time_s||[]).forEach(v=>{ if(v!=null&&v>m)m=v; }));
+  return Math.max(m*1.1,0.05);
 }
 
 // hover tooltip: nearest epoch across active runs
@@ -244,13 +326,13 @@ function onMove(ev){
   hit.active.forEach(r=>{
     let bi=-1,bd=1e9;
     r.ep.forEach((e,i)=>{ const d=Math.abs(e-ep); if(d<bd){bd=d;bi=i;} });
-    if(bi>=0) lines.push(`<span style="color:${r.color}">●</span> ${fmt(r[hit.field][bi])}`);
+    if(bi>=0) lines.push(`<span style="color:${r.color}">●</span> ${fmt((r.series[hit.field]||[])[bi])}`);
   });
   tip.innerHTML=lines.join("<br>");
   tip.style.left=(ev.clientX+14)+'px'; tip.style.top=(ev.clientY+14)+'px';
   tip.style.opacity=1;
 }
-['accC','lossC'].forEach(id=>{
+['accC','lossC','timeC'].forEach(id=>{
   const c=document.getElementById(id);
   c.addEventListener('mousemove',onMove);
   c.addEventListener('mouseleave',()=>tip.style.opacity=0);
