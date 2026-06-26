@@ -1,0 +1,39 @@
+# Connectivity-matrix task with a 2-layer GAT (message-passing baseline).
+#
+# Input  : self-loop-augmented adjacency rows (adj_self) as node features.
+# Output : per-graph n x n reachability matrix R via the pairwise readout
+#          R_hat = H W H^T (same readout as the transformer connectivity path).
+#
+# GAT is attention restricted to graph edges (Veličković 2018) — i.e. a transformer
+# on the edge set, reach growing one hop per layer. With 2 layers a node sees its
+# 2-hop neighbourhood, so this is the depth-bounded / capacity-bound regime (cf.
+# connectivity_local.yaml's neighbour-masked global_attn, but using the efficient
+# message-passing GAT conv instead of dense O(N^2) attention). Use it as the direct
+# GNN-vs-transformer comparison: same embed engine + same pairwise readout, the only
+# difference is the conv type.
+#
+# Run: python main.py --config configs/connectivity_gat.yaml --dataset diameter_controlled
+
+task: connectivity
+model: transformer        # the connectivity pairwise readout lives in GraphTransformer
+tokenization: node
+node_features: adj_rows
+
+in_channels: 24
+out_channels: 2           # unused by the pairwise readout (kept for the shared engine)
+hidden_channels: 64
+
+input_embedding: linear
+norm_type: layer
+residual: true
+dropout: 0.0
+
+# 2 GAT layers -> 2-hop receptive field. out_channels(64) must be divisible by heads.
+layers:
+  - {type: gat, heads: 4}
+  - {type: gat, heads: 4}
+
+epochs: 200
+lr: 0.001
+weight_decay: 0.0
+batch_size: 128

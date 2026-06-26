@@ -1,0 +1,38 @@
+# Connectivity-matrix task with a 2-layer GLOBAL-attention transformer.
+#
+# Input  : self-loop-augmented adjacency rows (adj_self) as node features.
+# Output : per-graph n x n reachability matrix R via the pairwise readout
+#          R_hat = H W H^T.
+#
+# Every node attends to every other node in the same graph (bidirectional,
+# all-pairs self-attention — no edge restriction, no causal mask). Reach is NOT
+# one hop/layer: a single global-attention layer can already relate any two nodes,
+# and with the doubling trick depth ~ O(log n) suffices for connectivity
+# (Sanford et al. 2024). So 2 layers here is far more reach than 2 GAT hops — this
+# is the un-capacity-bound counterpart to connectivity_gat.yaml / connectivity_local.yaml.
+#
+# Run: python main.py --config configs/connectivity_global.yaml --dataset diameter_controlled
+
+task: connectivity
+model: transformer
+tokenization: node
+node_features: adj_self
+
+in_channels: 24
+out_channels: 2           # unused by the pairwise readout (kept for the shared engine)
+hidden_channels: 64
+
+input_embedding: linear
+norm_type: layer
+residual: true
+dropout: 0.0
+
+# 2 global (all-pairs) attention layers. out_channels(64) must be divisible by heads.
+layers:
+  - {type: global_attn, heads: 4}
+  - {type: global_attn, heads: 4}
+
+epochs: 200
+lr: 0.001
+weight_decay: 0.0
+batch_size: 128

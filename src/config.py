@@ -146,11 +146,14 @@ class GNNConfig:
                 assert t in message_passing, \
                     f"layer {i}: model 'gnn' supports message-passing layers {message_passing}; " \
                     f"got '{t}'. Use model: transformer for global_attn."
-            elif node_conv_stack:
+            elif node_conv_stack and self.task != "connectivity":
                 # transformer + node tokenization, no CoT: a stack of global_attn layers
                 assert t == "global_attn", \
                     f"layer {i}: model 'transformer' with tokenization 'node' uses global_attn " \
                     f"layers; got '{t}'."
+            # task: connectivity runs the same embed -> pairwise readout for ANY layer
+            # type (global_attn for the Sanford/Ye transformer, or message-passing
+            # gat/gin/gcn for the GNN baseline — same engine, different conv).
             # transformer + node_edge (or node + CoT): layers only supply depth and per-layer heads
 
     @classmethod
