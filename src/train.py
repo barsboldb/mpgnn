@@ -204,6 +204,40 @@ def _connectivity_eval(model, loader, device):
     return _connectivity_loss_acc(model, loader, device, train=False)[1]
 
 
+@torch.no_grad()
+def connectivity_metrics(model, loader, device):
+    """Evaluation-only scoring of the connectivity readout. Returns
+    (exact_match, conn_verdict_acc):
+
+      exact_match       — fraction of graphs whose *entire* n_g x n_g reachability
+                          matrix is predicted correctly (the strict target).
+      conn_verdict_acc  — fraction of graphs whose connected/disconnected verdict
+                          is correct. The verdict reads the matrix: a graph is
+                          connected iff every pair is reachable (R all-ones), so
+                          predicted-connected iff (lg > 0).all() — one predicted-
+                          unreachable entry => predicted disconnected. Recovers the
+                          original binary connectedness question from the dense
+                          prediction; strictly easier than EM (EM correct =>
+                          verdict correct, but not vice-versa).
+
+    Kept separate from _connectivity_loss_acc so the training path is untouched."""
+    model.eval()
+    exact = conn = total = 0.0
+    for data in loader:
+        data = data.to(device)
+        logits = model(data)                       # list of [n_g, n_g]
+        batch = data.batch
+        comp = data.comp
+        for g, lg in enumerate(logits):
+            cg = comp[batch == g]
+            Rg = (cg[:, None] == cg[None, :]).float()
+            pred = (lg > 0).float()
+            exact += float((pred == Rg).all().item())
+            conn += float(pred.bool().all().item() == Rg.bool().all().item())
+            total += 1
+    return exact / total, conn / total
+
+
 def run_connectivity_experiment(model, train_loader, test_loader, device,
                                 epochs=200, lr=1e-3, weight_decay=0.0,
                                 logger: RunLogger | None = None):

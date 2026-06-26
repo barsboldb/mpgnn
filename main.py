@@ -172,10 +172,11 @@ def evaluate_checkpoint(ckpt_path: str, dataset_name: str, limit: int = 0):
     print(f"\nLoaded {ckpt_path}  (task={config.task}, trained on {trained_on})")
     print(f"Evaluating on {dataset_name}  |  {len(data_list)} graphs")
     if config.task == "connectivity":
-        from src.train import _connectivity_eval
+        from src.train import connectivity_metrics
         _attach_components(data_list)
-        em = _connectivity_eval(model, loader, DEVICE)
-        print(f"  connectivity exact-match = {em:.4f}")
+        em, conn = connectivity_metrics(model, loader, DEVICE)
+        print(f"  exact-match (full matrix) = {em:.4f}")
+        print(f"  connectivity verdict acc  = {conn:.4f}")
     else:
         from src.train import eval_graph
         acc = eval_graph(model, loader, DEVICE)
