@@ -161,6 +161,41 @@ def make_connectedness_hard_fixed_dataset(
     )
 
 
+def make_er_dataset(
+    num_graphs: int = 2000,
+    n: int = 24,
+    p_min: float = 0.08,
+    p_max: float = 0.15,
+    seed: int = 42,
+) -> list[Data]:
+    """Erdos-Renyi graphs at fixed n, as an OOD test set for models trained on the
+    caterpillar `diameter_controlled` distribution. Each graph draws its own edge
+    probability p ~ U[p_min, p_max] (around the n=24 connectivity threshold
+    ln n / n ~= 0.13), so the set spans connected (label 1) and multi-component
+    (label 0) graphs with dense, high-degree nodes — a genuinely different
+    distribution from the degree-~2 caterpillars. The label is the graph's ACTUAL
+    connectivity; the per-pair target is rebuilt from components downstream.
+    """
+    rng = np.random.default_rng(seed)
+    data_list, counts = [], [0, 0]
+    for _ in range(num_graphs):
+        p = rng.uniform(p_min, p_max)
+        edges = _random_undirected_edges(n, p, rng)
+        all_edges: list[list[int]] = []
+        for a, b in edges:
+            all_edges += [[a, b], [b, a]]
+        edge_index = (torch.tensor(all_edges, dtype=torch.long).t().contiguous()
+                      if all_edges else torch.empty(2, 0, dtype=torch.long))
+        # label = is the whole graph connected? (one component covering all n nodes)
+        label = 1 if _is_connected(n, edge_index) else 0
+        data_list.append(Data(edge_index=edge_index,
+                              y=torch.tensor([label], dtype=torch.long), num_nodes=n))
+        counts[label] += 1
+    print(f"Generated {num_graphs} ER graphs  |  connected: {counts[1]}  "
+          f"disconnected: {counts[0]}  (p in [{p_min}, {p_max}], n={n})")
+    return data_list
+
+
 def _caterpillar_edges(nodes: list[int], d: int, rng: np.random.Generator) -> set[tuple[int, int]]:
     """Undirected edges of a caterpillar on `nodes` with EXACT diameter d: a backbone
     path of d+1 nodes (so the two ends are distance d apart) plus the remaining nodes
@@ -423,6 +458,7 @@ GENERATORS: dict[str, object] = {
     "connectedness_hard":      make_connectedness_hard_dataset,
     "connectedness_hard_fixed": make_connectedness_hard_fixed_dataset,
     "diameter_controlled":     make_diameter_controlled_dataset,
+    "er":                      make_er_dataset,
     "isomorphism":             make_isomorphism_dataset,
     "yehudai_connectivity":    make_yehudai_connectivity_dataset,
 }
