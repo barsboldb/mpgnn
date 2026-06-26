@@ -163,6 +163,11 @@ class GlobalAttnConv(nn.Module):
         self.dropout = dropout
         self.spd_max_dist = spd_max_dist
         self.local = local
+        # inspection hook: when True, forward stashes the post-softmax attention
+        # weights [N, N, heads] in self.last_attn. Off by default so training/eval
+        # pay nothing; inspect_activations.py flips it on.
+        self.store_attn = False
+        self.last_attn: torch.Tensor | None = None
 
         self.W_q = nn.Linear(in_channels, out_channels, bias=False)
         self.W_k = nn.Linear(in_channels, out_channels, bias=False)
@@ -203,6 +208,8 @@ class GlobalAttnConv(nn.Module):
             attn = attn.masked_fill(~adj.unsqueeze(-1), float('-inf'))
 
         attn = torch.softmax(attn, dim=1)  # softmax over source nodes j
+        if self.store_attn:
+            self.last_attn = attn.detach()  # [N, N, heads] for inspection
         attn = F.dropout(attn, p=self.dropout, training=self.training)
 
         # weighted sum of values
