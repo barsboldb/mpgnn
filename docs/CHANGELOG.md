@@ -4,6 +4,124 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-07-03
+
+Session centered on chain-of-thought: why the scratchpad CoT never worked, replacing
+it with genuine autoregressive CoT, and the two traps that surfaced immediately — a
+dataset leak only a token model can see, and the next-token-prediction pitfall.
+
+### Scratchpad CoT post-mortem: it was never chain-of-thought
+
+The `cot_len` scratchpad (K learnable tokens spliced into the encoder sequence)
+never beat the no-CoT baseline, and the reasons are structural, not tuning:
+
+- **No supervision on the scratchpad** — only the task token gets a loss, so nothing
+  teaches slot `c_k` to hold the k-hop frontier (that reading was aspiration, not
+  objective).
+- **Input-independent slots** — the same K learned vectors for every graph: extra
+  compute positions (pause/register tokens), not content-carrying steps.
+- **Bypassable** — the task token attends to all graph tokens directly; the
+  optimizer can (and did) ignore the scratchpad entirely.
+- **Inert at depth 1** — in an encoder, `c_2` sees only `c_1`'s *initial* (constant)
+  value unless there is one layer per hop. The causal chain the mask draws needs
+  depth ≥ chain length, which defeats the "sequential steps orthogonal to depth"
+  purpose.
+
+**Lesson: CoT gains come from supervised (or generated-and-conditioned-on)
+intermediate steps; unsupervised extra positions in a single forward pass are just
+width.** Replaced with `cot_mode: autoregressive`: the graph serialized to discrete
+tokens (`N nodes.. E edges.. TRACE`), a canonical BFS trace as the supervised
+target, a decoder-only transformer (`src/cot.py`) teacher-forced on trace + answer,
+greedy decoding at eval. Answer-only ablation = identical architecture with
+`max_trace_len: 0`. Scratchpad kept as `cot_mode: scratchpad` for comparison.
+Overfit-32 sanity: decoded accuracy and trace exact-match reach 1.0. (Two
+implementation notes: tied embeddings need std-0.02 init — the default N(0,1) blows
+tied logits up to initial loss ~12.5 and stalls training; and node ids must be
+randomly permuted per graph, see next.)
+
+### Edge count leaked the label in diameter_controlled — via sequence length
+
+First real AR-CoT run: decoded accuracy 1.0 by epoch 5, trace exact-match 0.0,
+ER OOD probe at 0.37. Diagnosis: connected caterpillars have exactly n-1 edges, the
+two disconnected ones n-2 — **edge count WAS the label**. Invisible to every
+GNN/encoder baseline (they don't see edge count as a feature), but the token model's
+prompt is 2 tokens longer for connected graphs, so the learned positional embedding
+of `TRACE` reads the answer off sequence length. Fixed by padding every graph to
+n-1+k edges (k ~ U{1..3}, label-independent) with **diameter-safe chords** (leaf →
+backbone neighbour of its own attachment; property-tested over 500 caterpillars that
+the exact diameter survives). Pre-fix caches/results are not comparable. **Lesson
+(rhymes with 2026-06-19's degree-0 shortcut): every model family gets its own leak
+audit — a representation change (graph → token sequence) creates observables that
+did not exist before, sequence length first among them.**
+
+### The next-token pitfall: format learns, computation doesn't
+
+Post-fix runs (depth 1 and 2, full 8k data, 20k steps): teacher-forced answer
+accuracy 1.0 (the model reads YES/NO off the *gold* trace — the trace does carry the
+answer), decoded accuracy at chance, trace loss pinned at ~1.87. A per-position
+teacher-forced diagnostic localized the failure: **level-1 accuracy 5.6%** — the
+model cannot retrieve "the tokens paired with node 0 in the edge list" even with the
+whole gold prefix given — while everything statistical (SEP placement, trace-end,
+answer-given-trace, EOS) sits at 0.88–1.0. Inspected decodes confirm it: perfectly
+*shaped* traces (ascending levels, plausible sizes, short-before-NO) with garbage
+membership. This is Bachmann & Nagarajan 2024's pitfall: teacher forcing fits every
+easy conditional and gives the one hard computation no partial credit — the compact
+`bfs_levels` target makes it worse because each level's first token is the *minimum
+of the whole frontier set* (a global computation, all-or-nothing gradient).
+
+Mitigation: `trace_format: bfs_expand` — verbose `EXP parent children` rounds, every
+next token locally computable (parents = copy of the previous level in order, i.e.
+an induction head; children = lookup keyed by the adjacent parent token). ~2x longer
+traces. A short under-scaled probe (520 steps) showed even parent-copy at 10% —
+induction heads form after thousands of steps, so the decisive full-data depth-2 run
+is in flight as of this entry. **Lesson: a CoT trace is a curriculum, not a log —
+design each next-token to be computable from local context, or the gradient never
+finds the algorithm.**
+
+### connectedness_hard_diam: the bridge task gets a diameter axis
+
+`connectedness_hard`'s dense blobs (extra_p=0.3) pin every diameter at ~2-3 —
+nothing to stratify. New generator keeps the adversarial single-edge difference
+(bridge vs intra-blob chord; edge counts and degrees matched exactly) but builds
+blobs as sparse Hamiltonian cycles + 0-3 chords, spreading diameters over ~3-13.
+Caveat for figures: diam ≤ 4 is all-disconnected, ≥ 11 all-connected (a
+through-bridge path outruns either blob) — class-vs-class comparison lives in the
+5-10 overlap zone; `diameter_controlled` remains the instrument for exact sweeps.
+
+### Housekeeping
+
+The `bfs_expand` vocab token (`EXP`) grew the CoT vocabulary 41 → 42: AR-CoT
+checkpoints saved before it no longer load (results JSONs unaffected). Everything
+through today committed in logical groups (harness rework, config restructure, BDH,
+AR-CoT, leak fix, hard_diam, results).
+
+## 2026-07-02
+
+### BDH (Dragon Hatchling) joins the connectivity lineup
+
+Graph-native BDH (Kosowski et al. 2025; reading notes in
+`reports/kosowski-2025-notes.typ`): shared-parameter rounds, positive-sparse neuron
+space, linear/Hebbian attention; `bdh_adj_mask` toggles all-pairs vs edge-restricted
+attention. On the connectivity-matrix task over diameter_controlled, all three
+families land in the same band in-distribution — global_attn 0.99-1.0 EM,
+gat 0.84-0.95, bdh 0.91-0.95 — and **all collapse on the ER OOD probe**
+(EM 0.13-0.24). The 06-25 conclusion (distribution-learning, not
+algorithm-learning) survives an architecture swap; BDH's inductive bias does not by
+itself buy OOD reachability.
+
+### Infrastructure: one YAML = one run, provenance in every result
+
+- Config schema now owns experiment identity (`dataset`, `dataset_kwargs`, `seed`,
+  `train_frac`, explicit `model` selector) and supports `extends:` inheritance; the
+  config suite collapsed onto `_graph_base` / `_connectivity_base` with redundant
+  variants folded into `-o` overrides (`configs/README.md` is the catalogue).
+- RunLogger records provenance (git commit + dirty flag, argv, library versions) and
+  parameter counts in every results JSON — a result is now traceable to the code
+  that produced it.
+- Runner: `-o key=value` overrides, `--limit`/`--overfit` slices, best-epoch
+  checkpoints, `--eval`/`--inspect` on saved checkpoints, and an automatic ER OOD
+  probe attached to every connectivity run.
+
 ## 2026-06-25
 
 Long session (work spanned 06-23 → 06-25) centered on graph connectivity: why our

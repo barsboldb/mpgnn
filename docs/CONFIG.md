@@ -147,8 +147,16 @@ Without this fix, `lpe_dim > 0` on `connectedness_hard` would hand the model C�
 |---|---|---|
 | `tokenization` | `node` / `node_edge` | How the graph is presented to the model. |
 | `node_id_dim` | int | Random per-node identity width for the `node_edge` model. `0` disables. |
-| `cot_len` | int | Number of chain-of-thought scratchpad tokens (`model: transformer`). `0` disables. |
-| `cot_mask` | `causal` / `full` | Attention structure over the scratchpad. |
+| `cot_mode` | `none` / `scratchpad` / `autoregressive` | Chain-of-thought mechanism (see below). `cot_len > 0` with `cot_mode` unset implies `scratchpad` (legacy configs keep working). |
+| `cot_len` | int | Scratchpad only: number of learnable scratchpad tokens. `0` disables. |
+| `cot_mask` | `causal` / `full` | Scratchpad only: attention structure over the scratchpad. |
+| `trace_format` | `bfs_levels` / `bfs_expand` | Autoregressive only: compact sorted frontiers vs verbose `EXP parent children` rounds (locally computable next-tokens; ~2x longer). |
+| `max_trace_len` | int | Autoregressive only: decode budget at eval. **`0` = answer-only ablation** (same architecture, completion is just `ANS YES\|NO EOS`). |
+| `max_seq_len` | int | Autoregressive only: position-table size and hard bound on prompt+trace length (asserted at sequence build). |
+| `permute_node_ids` | bool | Autoregressive only: randomly relabel nodes per graph. Keep `true` — generators lay components on contiguous id ranges, which otherwise leaks the label. |
+| `cot_pos` | `learned` / `none` | Autoregressive only: absolute positions vs NoPE (for length-OOD runs). |
+| `answer_loss_weight` | float | Autoregressive only: extra CE weight on the YES/NO target position (1.0 = off). |
+| `cot_eval_every` | int | Autoregressive only: greedy-decode eval cadence in epochs (teacher-forced answer accuracy logs every epoch as `test_tf`). |
 
 - `node` (default) — vertices are the only tokens. With `model: gnn` edges enter via message passing (`gcn`/`gin`/`gat`/`sage`); with `model: transformer` they enter via all-pairs `global_attn` (plus the SPD bias and/or LPE). Built by `src.gnn.GNN` (the shared conv engine, which `GraphTransformer` reuses for `node` tokenization).
 - `node_edge` — **Sanford et al. 2024a** style. The input sequence is `[vertex tokens] + [edge tokens] + [task token]`, so edges are *first-class tokens* the transformer reasons over. The prediction is read out from the task token. Built by `src.transformer.GraphTransformer` (requires `model: transformer`).
@@ -157,7 +165,7 @@ For `node_edge`, each node is given a random identity vector of width `node_id_d
 
 > The `node_edge` model always uses pre-norm residual transformer blocks (LayerNorm + residual around attention and FFN) with a 4× FFN. The `norm_type`, `residual`, `input_embedding`, and `pooling` fields apply **only to the `node` path** and are ignored here. The `layers` list is used only for its length (depth) and per-entry `heads`; the `type`/`spd_max_dist` keys are ignored.
 
-#### Chain-of-thought scratchpad (`cot_len > 0`)
+#### Chain-of-thought scratchpad (`cot_mode: scratchpad`)
 
 With `cot_len = K`, `K` learnable scratchpad tokens are inserted before the task token, giving the model **sequential** computation (one round per token) that is orthogonal to depth. They carry no input — blank slots the model fills with intermediate state. Requires `model: transformer`; works with either tokenization:
 
@@ -174,6 +182,43 @@ A structured attention mask makes the scratchpad behave like algorithm rounds:
 Under the BFS reading, round `c_k` can hold the `k`-hop reachable set, so connectivity needs `cot_len ≥ diameter`. Sweep `cot_len` (and keep depth shallow) to look for a phase transition at the diameter — keep `lpe_dim: 0` and no SPD so the structural answer isn't precomputed into the features. Full writeup: `reports/cot-tokens.typ`.
 
 This is the representation for reproducing Sanford's depth-vs-task results: connectivity is parallelizable and expected to need ~log(n) depth when the model must compute reachability itself (no SPD/LPE shortcut). Sweep depth by adding/removing entries in `layers`.
+
+> **Status (2026-07-03):** the scratchpad never beat the no-CoT baseline and the reasons are structural — the slots are unsupervised, input-independent, bypassable by the task token, and at depth 1 the causal chain c_1 → c_2 → … is inert (an encoder needs one layer per hop). Kept for comparison; the live CoT experiment is `cot_mode: autoregressive` below. See CHANGELOG 2026-07-03.
+
+#### Autoregressive chain-of-thought (`cot_mode: autoregressive`)
+
+Genuine CoT: the graph is serialized to a discrete token sequence and a decoder-only
+transformer (`src/cot.py`, tied embeddings, causal mask) is **teacher-forced on a
+supervised BFS trace + answer**, decoding greedily at eval. Every generated token
+re-enters the network, so a shallow model gets one full sequential step per token —
+the Merrill & Sabharwal 2024 mechanism, as opposed to the scratchpad's single pass.
+
+```
+prompt:     N v_0 .. v_{n-1}  E u_1 w_1 .. u_m w_m  TRACE
+bfs_levels: l0 SEP l1 SEP .. lk                      ANS YES|NO EOS
+bfs_expand: 0 SEP EXP p [children..] EXP p' [..] SEP ..  ANS YES|NO EOS
+```
+
+- The trace is the canonical BFS from the lowest node id (levels sorted ascending) —
+  deterministic, so teacher forcing has a unique target. `#SEP` = BFS depth, which is
+  the sequential-steps quantity for depth-vs-diameter plots.
+- `bfs_expand` exists because the compact target hits the **next-token pitfall**
+  (Bachmann & Nagarajan 2024): each level's first token is the minimum of the whole
+  frontier — a global computation with no partial credit, and the lookup circuit never
+  forms (CHANGELOG 2026-07-03). The verbose format makes every next token locally
+  computable: parents are a copy of the previous level (induction head), children a
+  lookup keyed by the adjacent parent token.
+- `node_features` / `tokenization` / `pooling` / `norm_type` are **unused** on this
+  path — the prompt is the edge list itself. `layers` supplies depth + `heads` as
+  usual; `max_nodes` sizes the vocabulary (node ids `0..max_nodes-1` + 10 specials).
+- Training logs: `test` = greedy-decoded answer accuracy (only on `cot_eval_every`
+  epochs; best-epoch selection uses it), `test_tf` = teacher-forced answer accuracy
+  (cheap upper bound, logged every epoch), `trace_em` = decoded trace exact-match,
+  `mean_levels`, `parse_fail`. A by-diameter breakdown and an ER OOD probe are
+  attached to the results JSON automatically.
+- The matched-parameters baseline is the **same config with `max_trace_len: 0`**
+  (answer-only). Configs: `configs/cot_ar.yaml` (compact), `configs/cot_ar_expand.yaml`
+  (verbose), `configs/cot_ar_hard.yaml` / `cot_ar_hard_diam.yaml` (adversarial datasets).
 
 ---
 
@@ -346,8 +391,21 @@ layers:             # number of entries = depth; sweep this
     heads: 4
 ```
 
+### Autoregressive chain-of-thought (trace vs answer-only)
+Decoder-only LM over graph tokens with a supervised BFS trace; the ablation is the same architecture without the trace. See `configs/cot_ar_expand.yaml`.
+```yaml
+cot_mode: autoregressive
+trace_format: bfs_expand   # local next-tokens; bfs_levels = compact variant
+max_seq_len: 224
+max_trace_len: 112         # set 0 for the matched answer-only baseline
+permute_node_ids: true     # required: contiguous ids leak the label
+layers:                    # depth buys per-token circuit capacity, the trace buys steps
+  - {type: global_attn, heads: 4}
+  - {type: global_attn, heads: 4}
+```
+
 ### Chain-of-thought scratchpad (sequential-step sweep)
-Shallow depth + `K` scratchpad tokens; sweep `cot_len` and look for a phase transition at the graph diameter (`reports/cot-tokens.typ`). See `configs/cot.yaml`.
+Shallow depth + `K` scratchpad tokens; sweep `cot_len` and look for a phase transition at the graph diameter (`reports/cot-tokens.typ`). See `configs/cot.yaml`. **Superseded by autoregressive CoT** (see above); kept as the comparison baseline.
 ```yaml
 tokenization: node_edge
 node_id_dim: 16

@@ -159,6 +159,84 @@ to read a precomputed spectral feature.
 
 ---
 
+## Connectedness Hard Diam (`--dataset connectedness_hard_diam`)
+
+**Task:** Graph classification (`task: graph`)  
+**Source:** Synthetic — `src/dataset.py:make_connectedness_hard_diam_dataset`  
+**Cache:** `data/connectedness_hard_diam.pt`
+
+The two-blob ± bridge scheme of Connectedness Hard **with a controlled diameter
+spread**. Same adversarial structure — label 1: one bridge joins the blobs;
+label 0: one extra intra-blob chord instead, so edge counts and degree
+distributions match exactly — but the blobs are **sparse Hamiltonian cycles +
+c ~ U{0..3} chords** (label-independent) instead of dense chord soup. A pure
+cycle on m nodes has diameter m/2 and every degree exactly 2; each chord
+roughly halves distances in its arc, so diameters spread over ~3–13 instead of
+collapsing to ~2-3 like the `extra_p: 0.3` blobs.
+
+| Property | Value |
+|---|---|
+| Node range | 16 – 24 (uneven blob split `na ~ U[3, n-3]` widens the diameter range) |
+| Classes | 2, exactly balanced (alternating) |
+| Edge counts | 17 – 31, identically distributed across classes |
+| Degrees | mostly 2; 2 degree-3 endpoints per chord/bridge — matched across classes |
+| Diameter | label 0: 3 – 10 (max over components), label 1: 5 – 13 (through the bridge) |
+
+**⚠️ Class-pure diameter tails:** diam ≤ 4 is all-disconnected and diam ≥ 11
+all-connected — inherent (a through-bridge path outruns either blob), and not an
+observable shortcut, but per-diameter accuracy curves should compare classes in
+the **5–10 overlap zone**. Use Diameter Controlled below for exact single-diameter
+sweeps.
+
+---
+
+## Diameter Controlled (`--dataset diameter_controlled`)
+
+**Task:** Graph classification (`task: graph`) or connectivity matrix (`task: connectivity`)  
+**Source:** Synthetic — `src/dataset.py:make_diameter_controlled_dataset`  
+**Cache:** `data/diameter_controlled_<kwargs>.pt`
+
+Caterpillar graphs with an **exact, per-graph-sampled diameter** — the instrument
+for depth-vs-reachability and trace-length-vs-diameter curves. Label 1: one
+connected caterpillar on all n nodes (backbone path of d+1 nodes + leaves on
+interior nodes → diameter exactly d). Label 0: two disconnected caterpillars on
+n/2 nodes each. Diameter d ~ U[min_diameter, max_diameter] per graph (component
+size − 2 cap), fixed n.
+
+| Property | Value |
+|---|---|
+| Defaults | n=24, diam 2–18, 4000 graphs (`dataset_kwargs` overrides; part of the cache key) |
+| Classes | 2, exactly balanced (alternating) |
+| Edges per graph | exactly n−1+k with k ~ U{1..3}, **independent of the label** |
+| Degrees | ~2 (backbone) with leaf degree-1 and chord degree-3 tails, matched by class |
+
+**⚠️ Edge-count leak (fixed 2026-07-03):** originally connected graphs had exactly
+n−1 edges and disconnected n−2 — edge count *was* the label. Harmless for
+GNN/encoder models but fatal for token-sequence models: the prompt is 2 tokens
+longer for connected graphs, and a learned positional embedding reads the answer
+off sequence length (a fresh AR-CoT model hit decoded accuracy 1.0 by epoch 5 with
+trace exact-match 0.0). Every graph is now padded to n−1+k edges with
+**diameter-safe chords** (a leaf connected to a backbone neighbour of its own
+attachment — property-tested to preserve the exact diameter). Caches and results
+from before the fix are not comparable. See CHANGELOG 2026-07-03.
+
+---
+
+## Erdős–Rényi OOD probe (`--dataset er`)
+
+**Task:** OOD evaluation set (connectivity / graph)  
+**Source:** Synthetic — `src/dataset.py:make_er_dataset`  
+**Cache:** `data/er.pt`
+
+Fixed-n ER graphs (n=24, per-graph p ~ U[0.08, 0.15], around the connectivity
+threshold ln n / n ≈ 0.13) used as the automatic **distribution-shift probe**
+attached to every connectivity and AR-CoT run: dense high-degree structure vs the
+degree-~2 caterpillars the models train on. Label = actual connectedness;
+**imbalanced** (~25% connected at 2000 graphs) — compare against the class prior,
+not 0.5.
+
+---
+
 ## Isomorphism (`--dataset isomorphism`)
 
 **Task:** Graph classification (`task: graph`)  
