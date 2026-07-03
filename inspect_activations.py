@@ -26,9 +26,9 @@ import torch
 
 from src.config import GNNConfig
 from src.model import build_model
-from src.dataset import load_or_create
+from src.dataset import load_or_create, attach_components as _attach_components
 from src.layers import GlobalAttnConv
-from main import _attach_components, DEVICE
+from main import DEVICE
 
 
 def _component_perm(comp: torch.Tensor):
