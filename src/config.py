@@ -126,6 +126,14 @@ class GNNConfig:
     # answer_loss_weight: CE weight on the YES/NO target position.
     # cot_eval_every: greedy-decode eval cadence in epochs (decode is ~L sequential
     #                forwards; teacher-forced answer accuracy is logged every epoch).
+    # prompt_roster: include the `N v_0..v_{n-1}` node roster in the prompt. At
+    #                fixed n it carries no information but gives every node id a
+    #                guaranteed occurrence outside the edge list — distractor mass
+    #                for content-matching heads. Set false to drop it (prompt
+    #                becomes `E u w .. TRACE`).
+    # tie_embeddings: share lm_head with tok_emb (standard LM tying). Tying forces
+    #                "match X as a key" and "emit X as output" into one vector,
+    #                which can conflict in lookup circuits on tiny vocabularies.
     max_trace_len: int = 64
     max_seq_len: int = 320
     trace_format: str = "bfs_levels"
@@ -133,6 +141,8 @@ class GNNConfig:
     cot_pos: str = "learned"
     answer_loss_weight: float = 1.0
     cot_eval_every: int = 1
+    prompt_roster: bool = True
+    tie_embeddings: bool = True
     # BDH (model: bdh) — graph-native Dragon Hatchling (Kosowski et al. 2025).
     # Depth L and per-model head count nh come from `layers` (each entry type: bdh,
     # len(layers) = number of shared-parameter rounds, layers[0].heads = nh).

@@ -251,7 +251,8 @@ def _prepare_cot_sequences(config: GNNConfig, dataset_name: str, vocab: CoTVocab
         trace=config.max_trace_len > 0,
         seed=config.seed if seed is None else seed,
         max_seq_len=config.max_seq_len,
-        trace_format=config.trace_format)
+        trace_format=config.trace_format,
+        roster=config.prompt_roster)
 
 
 def cot_experiment(config: GNNConfig, dataset_name: str, overfit: int = 0, limit: int = 0):

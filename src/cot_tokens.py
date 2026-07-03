@@ -119,6 +119,7 @@ def build_cot_sequences(
     seed: int = 0,
     max_seq_len: int = 0,
     trace_format: str = "bfs_levels",
+    roster: bool = True,
 ) -> list[dict]:
     """Token sequences for every graph: {tokens, prompt_len, y, diam}.
 
@@ -143,7 +144,9 @@ def build_cot_sequences(
         edges = [(min(u, v), max(u, v)) for u, v in edges]
         rng.shuffle(edges)
 
-        prompt = [vocab.N, *range(n), vocab.E]
+        # roster=False drops `N v_0..v_{n-1}`: at fixed n it is informationless
+        # distractor mass (a guaranteed non-edge occurrence of every node id)
+        prompt = [vocab.N, *range(n), vocab.E] if roster else [vocab.E]
         for u, v in edges:
             prompt += [u, v]
         prompt.append(vocab.TRACE)

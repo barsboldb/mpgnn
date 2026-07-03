@@ -38,10 +38,13 @@ class CoTTransformer(nn.Module):
         ])
         self.norm = nn.LayerNorm(d)
         self.lm_head = nn.Linear(d, self.vocab.size, bias=False)
-        self.lm_head.weight = self.tok_emb.weight   # weight tying
+        if config.tie_embeddings:
+            self.lm_head.weight = self.tok_emb.weight   # weight tying
         # small-std init (matches the 0.02 used for the scratchpad/task tokens);
         # the default N(0,1) embedding init blows up the tied logits (~sqrt(d))
         nn.init.normal_(self.tok_emb.weight, std=0.02)
+        if not config.tie_embeddings:
+            nn.init.normal_(self.lm_head.weight, std=0.02)
         if self.pos_emb is not None:
             nn.init.normal_(self.pos_emb.weight, std=0.02)
 
