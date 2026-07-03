@@ -150,6 +150,12 @@ def build_cot_sequences(
 
         if trace and trace_format == "bfs_expand":
             completion, answer = bfs_expand_trace(n, edges, start=0, vocab=vocab)
+        elif trace and trace_format == "bfs_l1":
+            # diagnostic probe: emit ONLY the sorted neighbours of node 0 — the
+            # atomic lookup circuit, isolated from all BFS composition. trace_em
+            # then measures exactly "can the model do one content lookup".
+            levels, answer = bfs_levels(n, edges, start=0)
+            completion = list(levels[1]) if len(levels) > 1 else []
         else:
             levels, answer = bfs_levels(n, edges, start=0)
             completion = []

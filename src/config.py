@@ -203,9 +203,9 @@ class GNNConfig:
                 "(decoder-only LM over graph tokens with a YES/NO answer)"
             assert self.cot_pos in ("learned", "none"), \
                 f"cot_pos must be 'learned' or 'none' — got '{self.cot_pos}'"
-            assert self.trace_format in ("bfs_levels", "bfs_expand"), \
+            assert self.trace_format in ("bfs_levels", "bfs_expand", "bfs_l1"), \
                 f"unknown trace_format '{self.trace_format}' " \
-                "(choose 'bfs_levels' or 'bfs_expand')"
+                "(choose 'bfs_levels', 'bfs_expand', or the 'bfs_l1' lookup probe)"
             assert self.max_trace_len >= 0 and self.max_seq_len > 0 and self.cot_eval_every >= 1
         message_passing = ("gcn", "sage", "gat", "gin")
         # node tokenization runs the global_attn conv stack ONLY when there is no
