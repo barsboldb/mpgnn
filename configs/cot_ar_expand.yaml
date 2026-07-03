@@ -1,0 +1,19 @@
+# cot_ar with the VERBOSE expansion trace (`EXP parent children` rounds).
+#
+# The compact bfs_levels target never trained past loss ~1.87 at depth 1-2 even
+# with full data: the first token of each level is the minimum of the whole
+# frontier — a global set computation with no partial credit, exactly the
+# next-token-prediction pitfall of Bachmann & Nagarajan 2024 (the model fits
+# every easy conditional and the one hard computation never gets a gradient
+# path). bfs_expand makes each step local: parents are copied from the previous
+# level in order (induction head), children are a lookup keyed by the adjacent
+# parent token. ~2x longer traces, hence the larger max_seq_len.
+#
+#   python main.py --config configs/cot_ar_expand.yaml
+#   python main.py --config configs/cot_ar_expand.yaml -o max_trace_len=0  # ablation
+
+extends: cot_ar.yaml
+
+trace_format: bfs_expand
+max_seq_len: 224
+max_trace_len: 112

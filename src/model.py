@@ -17,6 +17,9 @@ def build_model(config: GNNConfig) -> nn.Module:
     'bdh'         -> BDHGraph (graph-native Dragon Hatchling: shared-parameter rounds,
                      positive-sparse neuron space, linear/Hebbian attention)
     """
+    if config.model == "transformer" and config.cot_mode == "autoregressive":
+        from .cot import CoTTransformer
+        return CoTTransformer(config)   # decoder-only LM over graph/trace tokens
     if config.model == "transformer":
         from .transformer import GraphTransformer
         return GraphTransformer(config)

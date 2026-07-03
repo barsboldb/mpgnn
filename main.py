@@ -22,8 +22,10 @@ from torch_geometric.loader import DataLoader
 
 from src.config import GNNConfig
 from src.model import build_model
-from src.train import run_node_experiment, run_graph_experiment, run_connectivity_experiment
+from src.train import (run_node_experiment, run_graph_experiment,
+                       run_connectivity_experiment, run_cot_experiment, eval_cot)
 from src.dataset import GENERATORS, load_or_create, attach_components
+from src.cot_tokens import CoTVocab, build_cot_sequences, make_cot_loader
 from src.logger import RunLogger, print_results_table
 
 
@@ -231,6 +233,117 @@ def connectivity_experiment(config: GNNConfig, dataset_name: str, limit: int = 0
                     final_state=info["final_state"], best_epoch=info["best_epoch"])
 
 
+def _prepare_cot_sequences(config: GNNConfig, dataset_name: str, vocab: CoTVocab,
+                           limit: int = 0, seed: int | None = None,
+                           gen_kwargs: dict | None = None):
+    """Raw graphs -> attach_components (diam) -> token sequences.
+    gen_kwargs=None uses config.dataset_kwargs; pass {} for generator defaults
+    (the OOD probe — its generator doesn't take the training set's kwargs)."""
+    data_list = load_or_create(dataset_name, node_features="constant",
+                               **(config.dataset_kwargs if gen_kwargs is None else gen_kwargs))
+    if 0 < limit < len(data_list):
+        data_list = data_list[:limit]
+        print(f"[--limit {limit}] using {len(data_list)} of the cached graphs")
+    attach_components(data_list)
+    return build_cot_sequences(
+        data_list, vocab,
+        permute=config.permute_node_ids,
+        trace=config.max_trace_len > 0,
+        seed=config.seed if seed is None else seed,
+        max_seq_len=config.max_seq_len,
+        trace_format=config.trace_format)
+
+
+def cot_experiment(config: GNNConfig, dataset_name: str, overfit: int = 0, limit: int = 0):
+    """Autoregressive-CoT run: graphs are serialized to token sequences (with the
+    supervised BFS trace unless max_trace_len == 0) and a decoder-only LM is
+    trained with teacher forcing; eval decodes greedily."""
+    vocab = CoTVocab(config.max_nodes)
+    sequences = _prepare_cot_sequences(config, dataset_name, vocab, limit=limit)
+
+    if overfit > 0:
+        class0 = [s for s in sequences if s["y"] == 0][:overfit // 2]
+        class1 = [s for s in sequences if s["y"] == 1][:overfit // 2]
+        train_seq = test_seq = class0 + class1
+        print(f"\n[OVERFIT MODE] Dataset: {dataset_name}  |  Sequences: {len(train_seq)}  "
+              f"(all used for train+test, AR-CoT task)")
+    else:
+        train_seq, test_seq = split_head_tail(sequences, config.train_frac)
+        print(f"\nDataset: {dataset_name}  |  Sequences: {len(sequences)}  "
+              f"Train: {len(train_seq)}  Test: {len(test_seq)}  (AR-CoT task)")
+
+    train_loader = make_cot_loader(train_seq, vocab, config.batch_size, shuffle=True)
+    test_loader = make_cot_loader(test_seq, vocab, config.batch_size, shuffle=False)
+    model = build_and_describe(config)
+
+    tag = ("cot_ar_" if config.max_trace_len > 0 else "cot_ar_ansonly_") \
+        + (f"overfit{overfit}_" if overfit > 0 else "")
+    logger = RunLogger(dataset_name, config, tag=tag, params=model.num_parameters())
+    max_new = config.max_trace_len + 8  # trace + `SEP.. ANS YES|NO EOS` slack
+    info = run_cot_experiment(model, train_loader, test_loader, DEVICE,
+                              epochs=config.epochs, lr=config.lr,
+                              weight_decay=config.weight_decay,
+                              answer_loss_weight=config.answer_loss_weight,
+                              max_new=max_new, eval_every=config.cot_eval_every,
+                              logger=logger)
+    cot_ood_probe(model, config, logger, vocab, trained_on=dataset_name, max_new=max_new)
+    logger.save()
+    save_checkpoint(model, config, logger.run_id, dataset_name,
+                    final_state=info["final_state"], best_epoch=info["best_epoch"])
+
+
+def cot_ood_probe(model, config: GNNConfig, logger: RunLogger, vocab: CoTVocab,
+                  trained_on: str, max_new: int, ood_dataset: str = "er",
+                  n_graphs: int = 400):
+    """Decode the (best-epoch) CoT model on the ER OOD set and attach the result
+    to the run JSON. A different permutation seed so OOD sequences never reuse
+    the training relabelings."""
+    if trained_on == ood_dataset:
+        return
+    try:
+        sequences = _prepare_cot_sequences(config, ood_dataset, vocab,
+                                           limit=n_graphs, seed=config.seed + 1,
+                                           gen_kwargs={})
+        loader = make_cot_loader(sequences, vocab, config.batch_size, shuffle=False)
+        stats = eval_cot(model, loader, DEVICE, max_new=max_new, by_diameter=True)
+        by_diam = stats.pop("by_diameter", None)
+        result = {"dataset": ood_dataset, "n": len(sequences),
+                  **{k: round(v, 4) for k, v in stats.items()},
+                  "by_diameter": by_diam}
+        logger.set_extra(ood=result)
+        print(f"OOD probe on {ood_dataset} (n={len(sequences)}): "
+              f"answer_acc={result['answer_acc']}  trace_em={result['trace_em']}")
+    except Exception as e:
+        print(f"(OOD probe on {ood_dataset} skipped: {e})")
+
+
+def inspect_cot_checkpoint(ckpt_path: str, dataset_name: str, limit: int = 0, show: int = 4):
+    """Print prompt / gold trace / decoded trace side by side for a few test
+    graphs — the direct view of whether the model performs BFS or guesses."""
+    model, config, _ = load_checkpoint(ckpt_path)
+    vocab = model.vocab
+    sequences = _prepare_cot_sequences(config, dataset_name, vocab, limit=limit or 512)
+    _, test_seq = split_head_tail(sequences, config.train_frac)
+    loader = make_cot_loader(test_seq[:show], vocab, batch_size=show, shuffle=False)
+
+    print(f"\nInspecting {ckpt_path} on {dataset_name} — {show} test sequence(s):")
+    batch = next(iter(loader))
+    tokens = batch["tokens"].to(DEVICE)
+    prompt_len = batch["prompt_len"].to(DEVICE)
+    out = model.generate(tokens, prompt_len, max_new=config.max_trace_len + 8)
+    for i in range(tokens.size(0)):
+        pl = int(prompt_len[i].item())
+        gold = [t for t in tokens[i, pl:].tolist() if t != vocab.PAD]
+        gen = out[i, pl:].tolist()
+        if vocab.EOS in gen:
+            gen = gen[:gen.index(vocab.EOS) + 1]
+        print(f"\n  --- graph {i}  (y={int(batch['y'][i])}, diam={int(batch['diam'][i])}) ---")
+        print(f"  prompt:  {vocab.decode(tokens[i, :pl])}")
+        print(f"  gold:    {vocab.decode(gold)}")
+        print(f"  decoded: {vocab.decode(gen)}"
+              + ("   [MATCH]" if gen == gold else "   [DIFF]"))
+
+
 def ood_probe(model, config: GNNConfig, logger: RunLogger, trained_on: str,
               ood_dataset: str = "er", n_graphs: int = 400):
     """Evaluate the (best-epoch) model on the ER OOD set and attach the result
@@ -262,6 +375,24 @@ def ood_probe(model, config: GNNConfig, logger: RunLogger, trained_on: str,
 def evaluate_checkpoint(ckpt_path: str, dataset_name: str, limit: int = 0):
     """Load a trained model and evaluate it on `dataset_name` (no training)."""
     model, config, ckpt = load_checkpoint(ckpt_path)
+    if config.cot_mode == "autoregressive":
+        vocab = model.vocab
+        sequences = _prepare_cot_sequences(config, dataset_name, vocab, limit=limit,
+                                           gen_kwargs=None if dataset_name == config.dataset else {})
+        loader = make_cot_loader(sequences, vocab, config.batch_size, shuffle=False)
+        print(f"\nLoaded {ckpt_path}  (AR-CoT, trained on {ckpt.get('train_dataset', '?')})")
+        print(f"Evaluating on {dataset_name}  |  {len(sequences)} sequences")
+        from src.train import eval_cot as _eval_cot
+        stats = _eval_cot(model, loader, DEVICE, max_new=config.max_trace_len + 8,
+                          by_diameter=True)
+        by_diam = stats.pop("by_diameter", None)
+        for k, v in stats.items():
+            print(f"  {k:12s} = {v:.4f}")
+        if by_diam:
+            print("  by diameter:")
+            for d, b in by_diam.items():
+                print(f"    diam {d:>2}:  acc={b['acc']:.3f}  (n={b['n']})")
+        return
     data_list = prepare_generated(config, dataset_name, limit=limit)
     loader = DataLoader(data_list, batch_size=config.batch_size)
 
@@ -366,7 +497,11 @@ def main():
         if args.eval:
             evaluate_checkpoint(args.eval, args.dataset, limit=args.limit)
         else:
-            inspect_checkpoint(args.inspect, args.dataset, limit=args.limit)
+            ckpt = torch.load(args.inspect, weights_only=False)
+            if ckpt["config"].get("cot_mode") == "autoregressive":
+                inspect_cot_checkpoint(args.inspect, args.dataset, limit=args.limit)
+            else:
+                inspect_checkpoint(args.inspect, args.dataset, limit=args.limit)
         return
 
     config = load_config(args)
@@ -381,6 +516,8 @@ def main():
         node_experiment(config, dataset_name)
     elif config.task == "connectivity":
         connectivity_experiment(config, dataset_name, limit=args.limit)
+    elif config.cot_mode == "autoregressive":
+        cot_experiment(config, dataset_name, overfit=args.overfit, limit=args.limit)
     else:
         graph_experiment(config, dataset_name, overfit=args.overfit, limit=args.limit)
 

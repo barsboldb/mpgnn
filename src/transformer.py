@@ -261,10 +261,12 @@ class GraphTransformer(nn.Module):
         super().__init__()
         self.config = config
         self.connectivity = config.task == "connectivity"
-        if config.tokenization == "node_edge" or config.cot_len > 0:
-            # node_edge, or node tokenization + CoT: token sequence with a task-token
-            # readout (the only path with scratchpad tokens). Edge tokens are included
-            # only for node_edge (see _GraphTokenTransformer.use_edges).
+        if config.tokenization == "node_edge" or config.cot_mode == "scratchpad":
+            # node_edge, or node tokenization + scratchpad CoT: token sequence with a
+            # task-token readout (the only path with scratchpad tokens). Edge tokens are
+            # included only for node_edge (see _GraphTokenTransformer.use_edges).
+            # (cot_mode: autoregressive never reaches this class — model.py routes it
+            # to cot.CoTTransformer.)
             self.net: nn.Module = _GraphTokenTransformer(config)
         else:
             from .graph_conv import GraphConvNet

@@ -90,9 +90,21 @@ class GNNConfig:
     # max_nodes: size of the learned node-position embedding table (must exceed the
     # largest single-graph node count in the dataset).
     max_nodes: int = 128
-    # Chain-of-thought scratchpad tokens (node_edge tokenization only).
+    # Chain-of-thought. cot_mode selects the mechanism:
+    #   'none'           — no CoT (default).
+    #   'scratchpad'     — K learnable scratchpad tokens spliced into the encoder
+    #                      sequence (the original cot_len experiment; kept for
+    #                      comparison). Configured by cot_len / cot_mask below.
+    #   'autoregressive' — genuine CoT: the graph is serialized to discrete tokens,
+    #                      the dataset supplies a supervised BFS trace, a decoder-only
+    #                      transformer (src/cot.py) is teacher-forced on trace+answer
+    #                      and decodes greedily at eval. node_features/tokenization
+    #                      are unused on this path (the prompt is the edge list).
+    cot_mode: str = "none"
+    # ── scratchpad knobs (cot_mode: scratchpad) ──
     # cot_len: number K of learnable scratchpad tokens inserted between the edge
-    #          tokens and the task token. 0 disables CoT (default = original model).
+    #          tokens and the task token. cot_len > 0 with cot_mode unset implies
+    #          cot_mode: scratchpad (backward compat with old configs/checkpoints).
     # cot_mask: attention structure over the scratchpad —
     #   'causal' — c_i attends to the graph and c_{<=i} (BFS-style rounds)
     #   'full'   — c_i attends to the graph and all scratchpad tokens
@@ -100,6 +112,27 @@ class GNNConfig:
     #   a read-only problem statement) and the task token attends to everything.
     cot_len: int = 0
     cot_mask: str = "causal"
+    # ── autoregressive knobs (cot_mode: autoregressive) ──
+    # max_trace_len: cap on generated tokens at eval; 0 = answer-only ablation
+    #                (the completion is just `ANS YES|NO EOS`, same architecture).
+    # max_seq_len:   position-table size and hard bound on prompt+trace length.
+    # trace_format:  'bfs_levels' — compact frontier-by-frontier BFS trace;
+    #                'bfs_expand' — verbose `EXP parent children` rounds (~2x
+    #                longer, every next token locally computable — the target
+    #                that survives the Bachmann & Nagarajan next-token pitfall).
+    # permute_node_ids: randomly relabel nodes per graph so contiguous-id layouts
+    #                (connectedness_hard blobs, caterpillar backbones) don't leak.
+    # cot_pos:       'learned' absolute positions | 'none' (NoPE; length OOD).
+    # answer_loss_weight: CE weight on the YES/NO target position.
+    # cot_eval_every: greedy-decode eval cadence in epochs (decode is ~L sequential
+    #                forwards; teacher-forced answer accuracy is logged every epoch).
+    max_trace_len: int = 64
+    max_seq_len: int = 320
+    trace_format: str = "bfs_levels"
+    permute_node_ids: bool = True
+    cot_pos: str = "learned"
+    answer_loss_weight: float = 1.0
+    cot_eval_every: int = 1
     # BDH (model: bdh) — graph-native Dragon Hatchling (Kosowski et al. 2025).
     # Depth L and per-model head count nh come from `layers` (each entry type: bdh,
     # len(layers) = number of shared-parameter rounds, layers[0].heads = nh).
@@ -155,14 +188,29 @@ class GNNConfig:
         assert self.cot_len >= 0, f"cot_len must be >= 0, got {self.cot_len}"
         assert self.cot_mask in ("causal", "full"), \
             f"cot_mask must be 'causal' or 'full' — got '{self.cot_mask}'"
-        if self.cot_len > 0:
+        assert self.cot_mode in ("none", "scratchpad", "autoregressive"), \
+            f"cot_mode must be 'none', 'scratchpad', or 'autoregressive' — got '{self.cot_mode}'"
+        if self.cot_mode == "none" and self.cot_len > 0:
+            self.cot_mode = "scratchpad"   # legacy configs/checkpoints set only cot_len
+        if self.cot_mode == "scratchpad":
+            assert self.cot_len > 0, "cot_mode: scratchpad needs cot_len > 0"
             assert self.model == "transformer", \
-                "cot_len > 0 requires model: transformer (scratchpad lives in the token sequence)"
+                "scratchpad CoT requires model: transformer (scratchpad lives in the token sequence)"
             # node + CoT and node_edge both run the token transformer; layers only set depth/heads
+        if self.cot_mode == "autoregressive":
+            assert self.model == "transformer" and self.task == "graph", \
+                "cot_mode: autoregressive needs model: transformer and task: graph " \
+                "(decoder-only LM over graph tokens with a YES/NO answer)"
+            assert self.cot_pos in ("learned", "none"), \
+                f"cot_pos must be 'learned' or 'none' — got '{self.cot_pos}'"
+            assert self.trace_format in ("bfs_levels", "bfs_expand"), \
+                f"unknown trace_format '{self.trace_format}' " \
+                "(choose 'bfs_levels' or 'bfs_expand')"
+            assert self.max_trace_len >= 0 and self.max_seq_len > 0 and self.cot_eval_every >= 1
         message_passing = ("gcn", "sage", "gat", "gin")
-        # node tokenization runs the global_attn conv stack ONLY when there is no CoT;
-        # with CoT it runs the token transformer (layer entries become depth/heads).
-        node_conv_stack = self.tokenization == "node" and self.cot_len == 0
+        # node tokenization runs the global_attn conv stack ONLY when there is no
+        # scratchpad; with one it runs the token transformer (layers = depth/heads).
+        node_conv_stack = self.tokenization == "node" and self.cot_mode != "scratchpad"
         for i, layer in enumerate(self.layers):
             assert "type" in layer, f"layer {i} is missing 'type'"
             t = layer["type"]
@@ -243,7 +291,13 @@ class GNNConfig:
             f"Architecture: {self.architecture_family()}  |  Engine: {self.model}",
             f"Tokenization: {self.tokenization}"
             + (f"  |  node_id_dim: {self.node_id_dim}" if self.tokenization == "node_edge" else "")
-            + (f"  |  CoT: {self.cot_len} tokens ({self.cot_mask})" if self.cot_len > 0 else ""),
+            + (f"  |  CoT: {self.cot_len} scratchpad tokens ({self.cot_mask})"
+               if self.cot_mode == "scratchpad" else "")
+            + (f"  |  CoT: autoregressive ({self.trace_format}, "
+               f"{'trace' if self.max_trace_len > 0 else 'ANSWER-ONLY'}, "
+               f"pos={self.cot_pos}, max_seq={self.max_seq_len}, "
+               f"permute_ids={self.permute_node_ids})"
+               if self.cot_mode == "autoregressive" else ""),
             f"Task: {self.task}  |  Pooling: {self.pooling if self.task == 'graph' else '-'}",
             f"In: {self.in_channels}  +{lpe}  ->  [{emb} emb]  ->  Hidden: {self.hidden_channels}  ->  Out: {self.out_channels}",
             # node_edge uses fixed pre-norm residual transformer blocks; norm_type/residual

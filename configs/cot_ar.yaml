@@ -1,0 +1,47 @@
+# Autoregressive chain-of-thought on diameter-controlled caterpillars.
+#
+# The graph is serialized to discrete tokens (`N nodes.. E edges.. TRACE`), the
+# dataset supplies the canonical BFS trace frontier-by-frontier, and a
+# decoder-only transformer (src/cot.py) is teacher-forced on trace + answer,
+# decoding greedily at eval. Unlike the scratchpad CoT (configs/cot.yaml), each
+# generated token re-enters the network, so a DEPTH-1 model gets one full
+# sequential step per token — the Merrill & Sabharwal mechanism.
+#
+# Depth is kept at 1 so any accuracy the trace buys over the answer-only
+# ablation is attributable to the sequential decoding axis, not layers:
+#   python main.py --config configs/cot_ar.yaml                     # with trace
+#   python main.py --config configs/cot_ar.yaml -o max_trace_len=0  # answer-only
+# Sanity check first: python main.py --config configs/cot_ar.yaml --overfit 32
+
+task: graph
+dataset: diameter_controlled
+dataset_kwargs: {num_graphs: 8000, n: 24, min_diameter: 2, max_diameter: 18}
+model: transformer
+cot_mode: autoregressive
+
+# vocabulary/sequence geometry: n=24 caterpillars -> prompt ~= 78 tokens,
+# trace <= 24 nodes + 18 SEPs + 3; 192 leaves headroom
+max_nodes: 32
+max_seq_len: 192
+max_trace_len: 64
+trace_format: bfs_levels
+permute_node_ids: true      # caterpillar backbones are 0..d — ids leak otherwise
+cot_pos: learned            # swap to 'none' (NoPE) for length-OOD runs
+answer_loss_weight: 1.0
+cot_eval_every: 5           # greedy decode every 5th epoch (tf proxy in between)
+
+# unused on the AR path but required fields
+in_channels: 1
+out_channels: 2
+
+hidden_channels: 128
+dropout: 0.1
+
+# depth 1: the sequential work must come from the generated tokens
+layers:
+  - {type: global_attn, heads: 4}
+
+epochs: 200
+lr: 0.001
+weight_decay: 0.01
+batch_size: 64

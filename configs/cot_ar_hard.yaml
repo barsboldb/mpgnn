@@ -1,0 +1,14 @@
+# Autoregressive CoT on connectedness_hard — the degree-matched two-blob
+# dataset where every non-CoT model stalls near chance. Denser graphs than the
+# caterpillars (extra_p=0.3 chords), so longer prompts: n<=24 gives ~110 edges
+# -> ~250 prompt tokens; max_seq_len sized accordingly.
+#
+#   python main.py --config configs/cot_ar_hard.yaml
+#   python main.py --config configs/cot_ar_hard.yaml -o max_trace_len=0  # ablation
+
+extends: cot_ar.yaml
+
+dataset: connectedness_hard
+dataset_kwargs: {num_graphs: 10000}
+
+max_seq_len: 320
