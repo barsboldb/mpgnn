@@ -25,3 +25,6 @@ yehudai/randomgraph.mat
 
 # Saved model checkpoints (regenerate by training)
 checkpoints/
+
+# Vendored BDH reference repo (Pathway) — separate git clone, not project code
+bdh-research-emergency/

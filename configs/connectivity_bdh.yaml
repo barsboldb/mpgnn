@@ -1,0 +1,25 @@
+# Connectivity matrix with the graph-native BDH ("Dragon Hatchling").
+#
+# BDH (Kosowski et al. 2025, arXiv 2509.26507) reads each node as a token and runs
+# `len(layers)` shared-parameter rounds: encoder -> wide positive-sparse neuron space
+# (N = hidden_channels * bdh_neuron_mult / heads) -> linear ("Hebbian") attention with
+# Q=K = the sparse activations -> multiplicative gate -> decoder back to hidden. Rounds
+# share one parameter set (Universal-Transformer style), so depth is free to grow.
+#
+# bdh_adj_mask: false -> all-pairs attention within a graph (graph-transformer BDH,
+#   like connectivity_global); true -> attention restricted to edges + self (local
+#   message-passing BDH, reach one hop per round, like connectivity_gat).
+#
+# Run: python main.py --config configs/connectivity_bdh.yaml
+
+extends: _connectivity_base.yaml
+
+model: bdh
+
+bdh_neuron_mult: 16       # neuron-space width N = 64 * 16 / 4 = 256 per head
+bdh_adj_mask: true        # local message-passing BDH (false = all-pairs)
+
+# 2 shared-parameter rounds; heads set the head count nh used across all rounds.
+layers:
+  - {type: bdh, heads: 4}
+  - {type: bdh, heads: 4}
