@@ -1,4 +1,5 @@
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass, field, fields
 from typing import Any
 import yaml
 
@@ -22,9 +23,22 @@ class GNNConfig:
     in_channels: int
     out_channels: int
     hidden_channels: int = 64
+    # experiment identity: which dataset to run on and how to generate it, so one
+    # YAML fully specifies a run. CLI --dataset takes precedence over `dataset`.
+    # dataset_kwargs are forwarded to the generator (and become part of the cache
+    # key), e.g. {num_graphs: 8000, max_diameter: 12} for diameter_controlled.
+    dataset: str | None = None
+    dataset_kwargs: dict[str, Any] = field(default_factory=dict)
+    # seed: global RNG seed (python/numpy/torch) set at the start of every run,
+    # covering weight init and the per-load "random" node features.
+    seed: int = 42
+    # train_frac: head/tail split fraction. Generators alternate labels (i % 2),
+    # so a sequential split stays class-balanced and is stable across runs.
+    train_frac: float = 0.8
     # model: which architecture the front program initializes.
     #   'gnn'         — message passing (gcn/sage/gat/gin)            -> gnn.GNN
     #   'transformer' — attention; tokenization selects the layout    -> transformer.GraphTransformer
+    #   'bdh'         — graph-native Dragon Hatchling (Kosowski 2025)  -> bdh.BDHGraph
     #   None          — inferred: node_edge or any global_attn layer => transformer, else gnn
     model: str | None = None
     layers: list[dict[str, Any]] = field(default_factory=lambda: [
@@ -86,6 +100,16 @@ class GNNConfig:
     #   a read-only problem statement) and the task token attends to everything.
     cot_len: int = 0
     cot_mask: str = "causal"
+    # BDH (model: bdh) — graph-native Dragon Hatchling (Kosowski et al. 2025).
+    # Depth L and per-model head count nh come from `layers` (each entry type: bdh,
+    # len(layers) = number of shared-parameter rounds, layers[0].heads = nh).
+    # bdh_neuron_mult: neuron-space width multiplier; N = hidden_channels·mult/nh is
+    #                  the wide, positive-sparse dimension where BDH's attention happens.
+    # bdh_adj_mask:    False — all-pairs attention within a graph (graph-transformer BDH);
+    #                  True  — attention restricted to edges + self (local message-passing
+    #                          BDH, reach one hop per round).
+    bdh_neuron_mult: int = 16
+    bdh_adj_mask: bool = False
     # training
     epochs: int = 200
     lr: float = 0.01
@@ -102,17 +126,19 @@ class GNNConfig:
     def __post_init__(self):
         assert self.task in ("node", "graph", "connectivity"), \
             f"task must be 'node', 'graph', or 'connectivity', got '{self.task}'"
+        assert 0.0 < self.train_frac < 1.0, \
+            f"train_frac must be in (0, 1), got {self.train_frac}"
         # resolve the model selector (None -> inferred) so it is concrete everywhere
         if self.model is None:
             self.model = self._infer_model()
-        assert self.model in ("gnn", "transformer"), \
-            f"model must be 'gnn' or 'transformer' — got '{self.model}'"
+        assert self.model in ("gnn", "transformer", "bdh"), \
+            f"model must be 'gnn', 'transformer', or 'bdh' — got '{self.model}'"
         assert self.pooling in ("mean", "add", "max", "pair"), f"unknown pooling '{self.pooling}'"
         assert self.node_features in ("degree", "constant", "random", "adj_rows", "adj_self", "membership", "lap"), \
             f"unknown node_features '{self.node_features}'"
         if self.task == "connectivity":
-            assert self.model == "transformer" and self.tokenization == "node", \
-                "task: connectivity needs model: transformer + tokenization: node " \
+            assert self.model in ("transformer", "bdh") and self.tokenization == "node", \
+                "task: connectivity needs model: transformer or bdh + tokenization: node " \
                 "(node tokens through the encoder, then a pairwise reachability readout)"
         assert self.input_embedding in (None, "linear", "mlp", "lookup"), \
             f"unknown input_embedding '{self.input_embedding}'"
@@ -140,12 +166,16 @@ class GNNConfig:
         for i, layer in enumerate(self.layers):
             assert "type" in layer, f"layer {i} is missing 'type'"
             t = layer["type"]
-            assert t in message_passing + ("global_attn",), \
+            assert t in message_passing + ("global_attn", "bdh"), \
                 f"layer {i}: unknown type '{t}'"
             if self.model == "gnn":
                 assert t in message_passing, \
                     f"layer {i}: model 'gnn' supports message-passing layers {message_passing}; " \
                     f"got '{t}'. Use model: transformer for global_attn."
+            elif self.model == "bdh":
+                # layers only supply depth (len) and heads; each must be type: bdh
+                assert t == "bdh", \
+                    f"layer {i}: model 'bdh' uses 'bdh' layers (they set depth L and heads); got '{t}'."
             elif node_conv_stack and self.task != "connectivity":
                 # transformer + node tokenization, no CoT: a stack of global_attn layers
                 assert t == "global_attn", \
@@ -157,21 +187,60 @@ class GNNConfig:
             # transformer + node_edge (or node + CoT): layers only supply depth and per-layer heads
 
     @classmethod
-    def from_yaml(cls, path: str) -> "GNNConfig":
+    def yaml_dict(cls, path: str) -> dict:
+        """Load a config YAML, resolving `extends: <relative-path>` recursively.
+        Child fields wholly replace base fields (including `layers` and
+        `dataset_kwargs` — no deep merge, so a config always reads literally)."""
         with open(path) as f:
-            d = yaml.safe_load(f)
-        return cls(**d)
+            d = yaml.safe_load(f) or {}
+        base = d.pop("extends", None)
+        if base:
+            merged = cls.yaml_dict(os.path.join(os.path.dirname(path), base))
+            merged.update(d)
+            d = merged
+        return d
+
+    @classmethod
+    def from_yaml(cls, path: str) -> "GNNConfig":
+        return cls(**cls.yaml_dict(path))
 
     @classmethod
     def from_dict(cls, d: dict) -> "GNNConfig":
-        return cls(**d)
+        """Build from a dict, dropping unknown keys so checkpoints saved with an
+        older/newer config schema still load."""
+        known = {f.name for f in fields(cls)}
+        unknown = set(d) - known
+        if unknown:
+            print(f"[config] ignoring unknown keys from checkpoint: {sorted(unknown)}")
+        return cls(**{k: v for k, v in d.items() if k in known})
+
+    def architecture_family(self) -> str:
+        """The reasoning mechanism, independent of the host engine class:
+        message-passing GNN (edge-restricted convs), global-attention transformer,
+        or BDH. For the connectivity task every run reports model == 'transformer'
+        or 'bdh' because the pairwise readout lives in those classes — the layer
+        type is what actually distinguishes the architectures."""
+        lt = self.layers[0]["type"] if self.layers else None
+        if self.model == "bdh" or lt == "bdh":
+            return "BDH"
+        if lt in ("gcn", "sage", "gat", "gin"):
+            return "message-passing GNN"
+        if lt == "global_attn":
+            return "global-attention transformer"
+        return self.model or "gnn"
 
     def describe(self) -> str:
         emb = self.input_embedding or "none"
         lpe = f"lap({self.lpe_dim}) as features" if self.node_features == "lap" \
             else (f"+LPE({self.lpe_dim})" if self.lpe_dim > 0 else "no LPE")
         lines = [
-            f"Model: {self.model}",
+            f"Dataset: {self.dataset or '(from CLI)'}"
+            + (f"  {self.dataset_kwargs}" if self.dataset_kwargs else "")
+            + f"  |  Seed: {self.seed}  |  Train frac: {self.train_frac}",
+            # 'engine' is the host class (gnn/transformer/bdh); for connectivity the
+            # transformer engine may run message-passing (gat/gin) layers — the family
+            # line names the actual mechanism so the two never look contradictory.
+            f"Architecture: {self.architecture_family()}  |  Engine: {self.model}",
             f"Tokenization: {self.tokenization}"
             + (f"  |  node_id_dim: {self.node_id_dim}" if self.tokenization == "node_edge" else "")
             + (f"  |  CoT: {self.cot_len} tokens ({self.cot_mask})" if self.cot_len > 0 else ""),

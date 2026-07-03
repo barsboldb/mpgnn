@@ -1,11 +1,37 @@
 # Config Reference
 
-All experiments are configured via a single YAML file passed with `--config config.yaml`.
-Every field maps 1-to-1 to `GNNConfig` in `src/config.py`.
+All experiments are configured via a single YAML file passed with `--config configs/<name>.yaml`.
+Every field maps 1-to-1 to `GNNConfig` in `src/config.py`. See `configs/README.md` for the
+catalogue of experiments.
+
+Configs can inherit shared defaults with `extends: <relative-path>`: the base file is
+loaded first and child fields wholly replace base fields (no deep merge — `layers` and
+`dataset_kwargs` are taken from whichever file defines them last). Files starting with
+`_` (e.g. `_connectivity_base.yaml`, `_graph_base.yaml`) are bases, not runnable experiments.
 
 ---
 
 ## Top-level fields
+
+### Experiment identity
+
+| Field | Type | Description |
+|---|---|---|
+| `dataset` | str / *null* | Which dataset to run on (any `GENERATORS` key, or `cora`/`mutag`/…). CLI `--dataset` takes precedence. |
+| `dataset_kwargs` | dict | Forwarded to the generator and included in the cache key, e.g. `{num_graphs: 8000, max_diameter: 12}`. |
+| `seed` | int | Global RNG seed (python/numpy/torch) set at run start; covers weight init and `random` node features (default: 42). |
+| `train_frac` | float | Head/tail split fraction (default: 0.8). Generators alternate labels, so a sequential split stays balanced. |
+
+Any config field can be overridden from the CLI without editing the YAML:
+
+```bash
+python main.py --config configs/connectivity_gat.yaml -o epochs=50 -o lr=0.003 \
+    -o dataset_kwargs.num_graphs=500
+```
+
+Values are YAML-parsed; one dot reaches into dict fields.
+
+---
 
 ### Model selection
 

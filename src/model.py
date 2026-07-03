@@ -14,9 +14,14 @@ def build_model(config: GNNConfig) -> nn.Module:
     'gnn'         -> GNN (message passing: gcn / sage / gat / gin)
     'transformer' -> GraphTransformer (attention; tokenization selects node vs
                      node_edge layout, with CoT available)
+    'bdh'         -> BDHGraph (graph-native Dragon Hatchling: shared-parameter rounds,
+                     positive-sparse neuron space, linear/Hebbian attention)
     """
     if config.model == "transformer":
         from .transformer import GraphTransformer
         return GraphTransformer(config)
+    if config.model == "bdh":
+        from .bdh import BDHGraph
+        return BDHGraph(config)
     from .gnn import GNN
     return GNN(config)

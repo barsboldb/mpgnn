@@ -451,6 +451,60 @@ def tokenize_dataset(
     return data_list
 
 
+def attach_components(data_list: list[Data]) -> list[Data]:
+    """Attach connectivity-task targets to each graph:
+
+    data.comp [n] — per-node connected-component labels; the target is
+        R_ij = 1 iff comp[i] == comp[j]. As a node attribute it batches
+        cleanly (unlike a ragged n x n matrix).
+    data.diam [1] — the graph's diameter, defined for disconnected graphs as
+        the max diameter over components (all-pairs BFS; n <= ~50 here so the
+        O(n^2 + nm) cost is negligible). Lets evals stratify accuracy by the
+        reachability distance the model must cover (depth-vs-diameter curves).
+    """
+    for g in data_list:
+        n = int(g.num_nodes)
+        adj: list[list[int]] = [[] for _ in range(n)]
+        ei = g.edge_index
+        for a, b in zip(ei[0].tolist(), ei[1].tolist()):
+            adj[a].append(b)
+
+        comp = [-1] * n
+        diam = 0
+        ncomp = 0
+        for src in range(n):
+            if comp[src] == -1:                    # BFS labels one component
+                comp[src] = ncomp
+                q = [src]
+                while q:
+                    nxt = []
+                    for u in q:
+                        for v in adj[u]:
+                            if comp[v] == -1:
+                                comp[v] = ncomp
+                                nxt.append(v)
+                    q = nxt
+                ncomp += 1
+        for src in range(n):                       # eccentricity of every node
+            dist = [-1] * n
+            dist[src] = 0
+            q, ecc = [src], 0
+            while q:
+                nxt = []
+                for u in q:
+                    for v in adj[u]:
+                        if dist[v] == -1:
+                            dist[v] = dist[u] + 1
+                            ecc = dist[v]
+                            nxt.append(v)
+                q = nxt
+            diam = max(diam, ecc)
+
+        g.comp = torch.tensor(comp, dtype=torch.long)
+        g.diam = torch.tensor([diam], dtype=torch.long)
+    return data_list
+
+
 # ── Dataset registry and caching ─────────────────────────────────────────────
 
 GENERATORS: dict[str, object] = {
