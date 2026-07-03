@@ -196,20 +196,33 @@ def make_er_dataset(
     return data_list
 
 
-def _caterpillar_edges(nodes: list[int], d: int, rng: np.random.Generator) -> set[tuple[int, int]]:
+def _caterpillar_edges(
+    nodes: list[int], d: int, rng: np.random.Generator,
+) -> tuple[set[tuple[int, int]], list[tuple[int, int]]]:
     """Undirected edges of a caterpillar on `nodes` with EXACT diameter d: a backbone
     path of d+1 nodes (so the two ends are distance d apart) plus the remaining nodes
     attached as leaves to interior backbone nodes (which never extend the diameter).
-    Degrees are ~2, so there is no degree signal — the model must propagate."""
+    Degrees are ~2, so there is no degree signal — the model must propagate.
+
+    Also returns the graph's diameter-safe chord candidates: edges (leaf u, w) where
+    w is a backbone neighbour of u's attachment v. Any path through u costs
+    d(x,v) + 2 + d(w,y) with d(v,w) = 1, so it never beats the direct route —
+    adding such a chord changes neither connectivity nor the exact diameter.
+    The generator uses them to decouple edge count from the label (a connected
+    caterpillar has n-1 edges vs n-2 for two pieces — without padding, edge
+    count IS the label, which leaks through sequence length to token models)."""
     edges: set[tuple[int, int]] = set()
     for i in range(d):
         a, b = nodes[i], nodes[i + 1]
         edges.add((min(a, b), max(a, b)))
-    interior = nodes[1:d] if d >= 2 else [nodes[0]]
+    chords: list[tuple[int, int]] = []
     for u in nodes[d + 1:]:
-        v = int(rng.choice(interior))
+        j = int(rng.integers(1, d)) if d >= 2 else 0    # attachment's backbone index
+        v = nodes[j]
         edges.add((min(u, v), max(u, v)))
-    return edges
+        for w in (nodes[j - 1], nodes[j + 1]) if d >= 2 else ():
+            chords.append((min(u, w), max(u, w)))
+    return edges, [c for c in set(chords) if c not in edges]
 
 
 def make_diameter_controlled_dataset(
@@ -224,23 +237,35 @@ def make_diameter_controlled_dataset(
     disconnected caterpillars (label 0). The diameter is sampled per graph from
     [min_diameter, max_diameter], so the distribution can straddle a model's
     capacity 3^L — unlike ER, whose diameters concentrate. Fixed n.
+
+    Every graph has exactly n - 1 + k edges with k ~ U{1..3} sampled per graph,
+    independent of the label: the connected class pads its n-1 tree edges with k
+    diameter-safe chords, the disconnected class pads its n-2 with k+1. Without
+    this, edge count = label (23 vs 22 at n=24) — invisible to GNN baselines but
+    a fatal sequence-length leak for token/CoT models. Diameters are capped at
+    component size - 2 so every component has at least one leaf to chord through.
     """
     rng = np.random.default_rng(seed)
     data_list, counts = [], [0, 0]
 
     def sampled_diam(m):
-        hi = max(min_diameter, min(max_diameter, m - 1))
+        hi = max(min_diameter, min(max_diameter, m - 2))  # -2: keep >= 1 leaf for chords
         return int(rng.integers(min_diameter, hi + 1))
 
     for i in range(num_graphs):
+        k = int(rng.integers(1, 4))                       # edge-count pad, label-independent
         if i % 2 == 0:                                    # connected
-            edges = _caterpillar_edges(list(range(n)), sampled_diam(n), rng)
-            label = 1
+            edges, pool = _caterpillar_edges(list(range(n)), sampled_diam(n), rng)
+            need, label = k, 1
         else:                                             # two disconnected pieces
             h = n // 2
-            edges = _caterpillar_edges(list(range(h)), sampled_diam(h), rng) \
-                | _caterpillar_edges(list(range(h, n)), sampled_diam(n - h), rng)
-            label = 0
+            e1, p1 = _caterpillar_edges(list(range(h)), sampled_diam(h), rng)
+            e2, p2 = _caterpillar_edges(list(range(h, n)), sampled_diam(n - h), rng)
+            edges, pool = e1 | e2, p1 + p2
+            need, label = k + 1, 0                        # +1 matches the tree-edge deficit
+        assert len(pool) >= need, \
+            f"only {len(pool)} safe chords for {need} (n={n}, diam range too tight)"
+        edges |= {pool[j] for j in rng.choice(len(pool), size=need, replace=False)}
 
         all_edges: list[list[int]] = []
         for a, b in edges:
