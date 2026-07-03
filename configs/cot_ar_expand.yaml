@@ -15,5 +15,5 @@
 extends: cot_ar.yaml
 
 trace_format: bfs_expand
-max_seq_len: 224
+max_seq_len: 288    # ER OOD probe graphs are denser (m~60 -> prompt ~147 + trace)
 max_trace_len: 112
