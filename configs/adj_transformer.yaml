@@ -1,45 +1,23 @@
 # Adjacency-row transformer for graph connectivity.
 #
 # Each node's token is its row in the adjacency matrix — a binary vector of
-# length max_nodes (padded with zeros). This gives every node a structural
-# identity derived purely from its neighborhood, with no learned position
-# embeddings and no cross-graph parameter sharing.
+# length max_nodes (padded with zeros). Every node gets a structural identity
+# derived purely from its neighborhood: no learned positions, no LPE, no edge
+# tokens. The transformer attends over the n node tokens and mean-pools.
 #
-# The transformer attends over these n tokens (one per node) and mean-pools
-# the final representations for graph-level classification. No edge tokens,
-# no task token — just nodes described by who they're connected to.
+# Depth sweep: add `layers` entries (or -o "layers=[...]").
+# Historical note: variants of this config (no_lpe / fixed-n / Yehudai's data)
+# established that the ~0.59 plateau on connectedness_hard is a dataset-hardness
+# result, not a pipeline bug — see docs/yehudai-empirical.md. Reproduce the
+# Yehudai check with: -o dataset=yehudai_connectivity -o in_channels=50
 #
-# Run: python main.py --config configs/adj_transformer.yaml --dataset connectedness_hard
+# Run: python main.py --config configs/adj_transformer.yaml
 
-in_channels: 24       # max_nodes for connectedness_hard (adj_rows pads to dataset max)
-out_channels: 2
-hidden_channels: 128
+extends: _graph_base.yaml
 
-model: transformer    # attention model; node tokenization = global_attn over node tokens
 node_features: adj_rows
-tokenization: node
-input_embedding: linear
-norm_type: layer
-residual: true
-lpe_dim: 0
+in_channels: 24       # max_nodes for connectedness_hard (adj_rows pads to this)
+hidden_channels: 128  # tuned width for this tokenization
 
-task: graph
-pooling: mean
-dropout: 0.1
-
-# training
-epochs: 300
-lr: 0.001
-weight_decay: 0.0005
-batch_size: 32
-
-# depth sweep: add/remove entries to change number of transformer layers
 layers:
-  - type: global_attn
-    heads: 4
-  # - type: global_attn
-  #   heads: 4
-  # - type: global_attn
-  #   heads: 4
-  # - type: global_attn
-  #   heads: 4
+  - {type: global_attn, heads: 4}

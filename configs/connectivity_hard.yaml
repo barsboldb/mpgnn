@@ -1,39 +1,14 @@
-# Connectivity-MATRIX task on connectedness_hard — folded into GraphTransformer.
+# Connectivity matrix on connectedness_hard (variable-n, bridge-edge adversarial).
 #
-# Input  : self-loop-augmented adjacency rows (node_features: adj_self = A+I).
-# Model  : GraphTransformer (node tokenization, global_attn encoder).
-# Output : per-graph n x n reachability matrix via a pairwise bilinear readout.
-# Target : R_ij = 1 iff i, j in the same component (from node component labels).
-# Metric : exact-match (whole matrix correct).
+# Same global-attention encoder as connectivity_global, but on the degree- and
+# edge-count-matched two-blob dataset where the only class signal is one bridge
+# edge. The dense per-pair supervision reaches ~0.97 exact-match here, where the
+# binary graph label stalled at ln 2.
 #
-# The dense per-pair supervision is what makes connectedness_hard learnable
-# (~0.97 exact-match), where the binary label stalled at ln 2.
-#
-# Run: python main.py --config configs/connectivity_hard.yaml --dataset connectedness_hard
+# Run: python main.py --config configs/connectivity_hard.yaml
 
-task: connectivity
-model: transformer
-tokenization: node
-node_features: adj_self   # A + I rows (self-loop-augmented adjacency)
+extends: _connectivity_base.yaml
 
-in_channels: 24           # max_nodes for connectedness_hard (adj_self pads to this)
-out_channels: 2           # unused by the pairwise head, but GNNConfig requires it
-hidden_channels: 64
+dataset: connectedness_hard
 
-input_embedding: linear   # project the 24-dim adjacency rows to hidden
-norm_type: layer
-residual: true
-dropout: 0.0
-
-# encoder depth (number of global-attention layers)
-layers:
-  - type: global_attn
-    heads: 4
-  - type: global_attn
-    heads: 4
-
-# training
 epochs: 300
-lr: 0.001
-weight_decay: 0.0
-batch_size: 128

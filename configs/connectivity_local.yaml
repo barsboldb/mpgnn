@@ -1,37 +1,14 @@
-# Connectivity-matrix task with LOCAL attention (neighbour-masked).
+# Connectivity matrix with LOCAL attention (neighbour-masked global_attn).
 #
-# Same as connectivity_hard.yaml but each global_attn layer has `local: true`,
-# so a node attends only to its graph neighbours (+self). Reach grows one hop per
-# layer, so the model is depth-bounded — the regime where capacity / data-lever
-# effects bind (vs global attention's unbounded reach). Depth must be >= the graph
-# diameter you want to solve, hence more layers here.
+# Each layer has `local: true`, so a node attends only to its graph neighbours
+# (+self). Reach grows one hop per layer — the depth-bounded regime where
+# capacity / data-lever effects bind (vs global attention's unbounded reach).
+# Depth must be >= the graph diameter you want to solve: sweep by adding layers.
 #
-# Run: python main.py --config configs/connectivity_local.yaml --dataset diameter_controlled
+# Run: python main.py --config configs/connectivity_local.yaml
 
-task: connectivity
-model: transformer
-tokenization: node
-node_features: adj_self
+extends: _connectivity_base.yaml
 
-in_channels: 24
-out_channels: 2
-hidden_channels: 64
-
-input_embedding: linear
-norm_type: layer
-residual: true
-dropout: 0.0
-
-# local attention: 1 hop/layer -> depth ~ reachable diameter. Sweep depth here.
 layers:
   - {type: global_attn, heads: 4, local: true}
   - {type: global_attn, heads: 4, local: true}
-  # - {type: global_attn, heads: 4, local: true}
-  # - {type: global_attn, heads: 4, local: true}
-  # - {type: global_attn, heads: 4, local: true}
-  # - {type: global_attn, heads: 4, local: true}
-
-epochs: 200
-lr: 0.001
-weight_decay: 0.0
-batch_size: 128

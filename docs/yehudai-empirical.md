@@ -73,7 +73,8 @@ Connectivity, **n=50, 1 layer, width 64, n_train=100, 100 epochs**:
 
 ## 2b. Controlled experiment: our model on their data
 
-The decisive test. Run **our** adjacency-rows global-attention GNN (`configs/adj_yehudai.yaml`)
+The decisive test. Run **our** adjacency-rows global-attention GNN (now: `configs/adj_transformer.yaml -o dataset=yehudai_connectivity -o in_channels=50`;
+the original `adj_yehudai.yaml` was folded in the 2026-07-02 config cleanup)
 on **Yehudai's** connectivity graphs (`--dataset yehudai_connectivity_adj`, a balanced
 1000-graph subset of their n=50 pool). Only the data changes; the model and training loop
 are ours.

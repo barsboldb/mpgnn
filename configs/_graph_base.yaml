@@ -1,0 +1,34 @@
+# Shared base for binary graph-classification experiments (do not run directly).
+#
+# Transformer path (pre-norm residual blocks), connectedness_hard by default —
+# the degree- and edge-count-matched dataset where connected vs disconnected
+# differs by a single bridge edge, so local shortcuts are at chance (see
+# docs/CHANGELOG.md 2026-06-19: the plain `connectedness` dataset is solvable
+# by "is there a degree-0 node?" and is retired as an experiment target).
+#
+# Children override: node_features / in_channels (the tokenization under test),
+# `layers` (depth sweeps), and dataset (e.g. isomorphism + pooling: pair).
+
+task: graph
+dataset: connectedness_hard
+model: transformer
+tokenization: node
+pooling: mean
+
+out_channels: 2
+hidden_channels: 64
+lpe_dim: 0                # keep 0 for honest connectivity (Laplacian zero-modes
+                          # leak component membership; see CHANGELOG)
+
+input_embedding: linear
+norm_type: layer
+residual: true
+dropout: 0.1
+
+layers:
+  - {type: global_attn, heads: 4}
+
+epochs: 300
+lr: 0.001
+weight_decay: 0.0005
+batch_size: 32

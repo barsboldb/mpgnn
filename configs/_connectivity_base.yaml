@@ -1,0 +1,38 @@
+# Shared base for the connectivity-MATRIX task family (do not run directly).
+#
+# Input  : self-loop-augmented adjacency rows (adj_self = A + I) as node features.
+# Model  : node tokens through the configured encoder, then a pairwise bilinear
+#          readout R_hat = H W H^T — identical across the family, so any two
+#          configs that extend this are a drop-in architecture comparison.
+# Target : R_ij = 1 iff nodes i, j are in the same component (dense per-pair
+#          supervision — what makes connectedness_hard learnable where the
+#          binary label stalled at ln 2).
+# Metric : exact-match (whole n x n matrix correct) + connectivity verdict.
+#
+# Children override: `layers` (the conv/attention type under comparison), and
+# optionally node_features / dataset / model. Child fields wholly replace base
+# fields (no deep merge).
+
+task: connectivity
+dataset: diameter_controlled
+model: transformer
+tokenization: node
+node_features: adj_self
+
+in_channels: 24           # fixed n=24 for diameter_controlled (adj rows pad to this)
+out_channels: 2           # unused by the pairwise readout (kept for the shared engine)
+hidden_channels: 64
+
+input_embedding: linear
+norm_type: layer
+residual: true
+dropout: 0.0
+
+layers:
+  - {type: global_attn, heads: 4}
+  - {type: global_attn, heads: 4}
+
+epochs: 200
+lr: 0.001
+weight_decay: 0.0
+batch_size: 128
