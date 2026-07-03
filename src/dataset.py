@@ -151,6 +151,94 @@ def make_connectedness_hard_dataset(
     return data_list
 
 
+def _cycle_blob_edges(
+    nodes: list[int], n_chords: int, rng: np.random.Generator,
+) -> set[tuple[int, int]]:
+    """A connected blob over `nodes` with min degree >= 2 and a TUNABLE diameter:
+    a random Hamiltonian cycle (diameter len(nodes)//2, every degree exactly 2)
+    plus `n_chords` random chords, each of which roughly halves distances in its
+    arc. n_chords=0 keeps the maximal diameter; a few chords collapse it toward 2.
+    The sparse counterpart of _connected_component_edges (which draws ~30% of all
+    chords and pins the diameter at ~2 regardless of size)."""
+    perm = list(rng.permutation(nodes))
+    m = len(perm)
+    edges: set[tuple[int, int]] = set()
+    for i in range(m):
+        u, v = perm[i], perm[(i + 1) % m]
+        edges.add((min(u, v), max(u, v)))
+    n_chords = min(n_chords, m * (m - 1) // 2 - m)   # tiny blobs saturate (K3 has no room)
+    added = 0
+    while added < n_chords:
+        u, v = (int(x) for x in rng.choice(nodes, size=2, replace=False))
+        e = (min(u, v), max(u, v))
+        if e not in edges:
+            edges.add(e)
+            added += 1
+    return edges
+
+
+def make_connectedness_hard_diam_dataset(
+    num_graphs: int = 10000,
+    min_nodes: int = 16,
+    max_nodes: int = 24,
+    max_chords: int = 3,
+    seed: int = 42,
+) -> list[Data]:
+    """connectedness_hard's two-blob +-bridge scheme with a CONTROLLED diameter.
+
+    Same adversarial structure — label 1: one bridge joins the blobs; label 0: no
+    bridge, one extra intra-blob chord instead, so edge counts and degree
+    distributions match exactly (2 degree-3 endpoints from the differing edge,
+    +2 per chord, everything else degree 2). The only change is the blobs:
+    sparse cycles + c ~ U{0..max_chords} chords each (label-independent), so the
+    blob diameter spreads from ~2 (chorded) up to blob_size//2 (pure cycle)
+    instead of collapsing to ~2 like extra_p=0.3 blobs. Connected graphs reach
+    diameters up to ~n/2 through the bridge. Diameter is measured per graph by
+    attach_components and stratified at eval — spread, not per-graph exactness,
+    is what the depth/trace-vs-diameter curves need. Blob split is uneven
+    (na ~ U[3, n-3]) so single-blob diameters cover a wide range too."""
+    rng = np.random.default_rng(seed)
+    data_list, counts = [], [0, 0]
+
+    for i in range(num_graphs):
+        label = i % 2
+        n = int(rng.integers(min_nodes, max_nodes + 1))
+        na = int(rng.integers(3, n - 2))
+        a_nodes = list(range(na))
+        b_nodes = list(range(na, n))
+
+        edges = _cycle_blob_edges(a_nodes, int(rng.integers(0, max_chords + 1)), rng)
+        edges |= _cycle_blob_edges(b_nodes, int(rng.integers(0, max_chords + 1)), rng)
+
+        if label == 1:
+            u, v = int(rng.choice(a_nodes)), int(rng.choice(b_nodes))
+            edges.add((min(u, v), max(u, v)))
+        else:
+            def has_room(blob):   # a saturated blob (e.g. K3) can't take the extra chord
+                mb = len(blob)
+                return sum(u in blob and v in blob for u, v in edges) < mb * (mb - 1) // 2
+            open_blobs = [b for b in (a_nodes, b_nodes) if has_room(b)]
+            assert open_blobs, f"both blobs complete (n={n}, na={na}) — raise min_nodes"
+            while True:
+                blob = open_blobs[int(rng.integers(len(open_blobs)))]
+                u, v = (int(x) for x in rng.choice(blob, size=2, replace=False))
+                e = (min(u, v), max(u, v))
+                if e not in edges:
+                    edges.add(e)
+                    break
+
+        all_edges: list[list[int]] = []
+        for a, b in edges:
+            all_edges += [[a, b], [b, a]]
+        edge_index = torch.tensor(all_edges, dtype=torch.long).t().contiguous()
+        counts[label] += 1
+        data_list.append(Data(edge_index=edge_index, y=torch.tensor([label], dtype=torch.long), num_nodes=n))
+
+    print(f"Generated {num_graphs} hard-diam graphs  |  connected: {counts[1]}  "
+          f"disconnected: {counts[0]}  (n {min_nodes}-{max_nodes}, chords 0-{max_chords}/blob)")
+    return data_list
+
+
 def make_connectedness_hard_fixed_dataset(
     num_graphs: int = 10000,
     seed: int = 42,
@@ -535,6 +623,7 @@ def attach_components(data_list: list[Data]) -> list[Data]:
 GENERATORS: dict[str, object] = {
     "connectedness":           make_connectedness_dataset,
     "connectedness_hard":      make_connectedness_hard_dataset,
+    "connectedness_hard_diam": make_connectedness_hard_diam_dataset,
     "connectedness_hard_fixed": make_connectedness_hard_fixed_dataset,
     "diameter_controlled":     make_diameter_controlled_dataset,
     "er":                      make_er_dataset,

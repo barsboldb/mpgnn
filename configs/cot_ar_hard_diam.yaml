@@ -1,0 +1,14 @@
+# Autoregressive CoT on connectedness_hard_diam — the two-blob +-bridge
+# adversarial structure (single differing edge, matched edge counts and degrees)
+# with a CONTROLLED diameter spread: sparse cycle blobs + 0-3 chords each, so
+# diameters span ~3-13 instead of collapsing to ~2 like extra_p=0.3 blobs.
+# Note: diam <= 4 is all-disconnected and diam >= 11 all-connected (a bridge
+# path is longer than either blob); compare classes in the 5-10 overlap zone.
+#
+#   python main.py --config configs/cot_ar_hard_diam.yaml
+#   python main.py --config configs/cot_ar_hard_diam.yaml -o max_trace_len=0  # ablation
+
+extends: cot_ar.yaml
+
+dataset: connectedness_hard_diam
+dataset_kwargs: {num_graphs: 10000}
