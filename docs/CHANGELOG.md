@@ -4,6 +4,36 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-07-04
+
+### Regularization was suppressing circuit formation (the CoT unblocking)
+
+The bfs_l1 probe (atomic lookup: emit the sorted neighbours of node 0, nothing
+else) plateaued at trace_em ~0.15 — barely 3x guess rate — at depth 2 with full
+data. Sweeping the knob ladder found the culprit immediately: with
+**weight_decay 0 + dropout 0** the same probe hits **trace_em 0.95 by epoch 10,
+0.999 by 20** — the circuit forms ~10x faster and completely, with no other
+change. Mechanism: Adam's L2-in-gradient decay pulls constantly on the precise,
+low-redundancy weights a retrieval circuit needs (tied embeddings on a 42-token
+vocab have nowhere to hide), and attention dropout injects noise into exactly
+the sharp attention patterns being formed; a ~430k-param model has no redundancy
+to absorb either. This retroactively explains every AR-CoT plateau of 07-03:
+format statistics (SEP/ANS/EOS) survive regularization, content circuits don't.
+`cot_ar.yaml` now ships zero regularization for the AR-CoT family. Which of the
+two regularizers dominates is not yet isolated (the first bisect attempt
+accidentally ran with both off after the config default changed mid-session).
+**Lesson: regularizers tuned for statistical fitting can be *the* blocker for
+algorithmic circuit formation at small scale — sweep them to zero before
+touching the representation.**
+
+**First OOD-positive result of the project:** the zero-reg lookup circuit,
+trained only on sparse caterpillars, scores trace_em 0.55 on dense ER graphs
+(vs ~0 for every distribution-bound model so far) — evidence of an algorithmic
+circuit rather than distribution memorization.
+
+Next: rerun bfs_expand depth-2 with zero regularization (the run everything has
+been building toward), then the depth x trace grid.
+
 ## 2026-07-03
 
 Session centered on chain-of-thought: why the scratchpad CoT never worked, replacing

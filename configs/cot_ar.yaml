@@ -35,7 +35,12 @@ in_channels: 1
 out_channels: 2
 
 hidden_channels: 128
-dropout: 0.1
+# ZERO regularization — measured, not taste (CHANGELOG 2026-07-04): with
+# weight_decay 0.01 + dropout 0.1 the bfs_l1 lookup probe plateaus at
+# trace_em ~0.15 (the retrieval circuit never forms); with both at 0 it hits
+# 0.95 by epoch 10. Adam's L2 pull on tied embeddings and attention-dropout
+# noise suppress precise circuits at this scale (~430k params, 42-token vocab).
+dropout: 0.0
 
 # depth 1: the sequential work must come from the generated tokens
 layers:
@@ -43,5 +48,5 @@ layers:
 
 epochs: 200
 lr: 0.001
-weight_decay: 0.01
+weight_decay: 0.0   # see the regularization note above
 batch_size: 64
