@@ -6,6 +6,22 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-07-05
 
+### The adversarial dataset falls too: hard_diam at 0.9925
+
+Same recipe on connectedness_hard_diam (two blobs, single-edge class
+difference, matched degrees/edge counts — no statistical shortcut exists):
+grokking transition at epoch 40-50, **decoded 0.9925, trace exact-match 0.90,
+flat 0.988-1.000 across diameters 3-13** including the 5-10 zone where both
+classes coexist. The single-pass architectures' chance-level record on this
+family was set on connectedness_hard; the matched answer-only AR baseline and
+an encoder baseline on hard_diam itself are queued to make the comparison
+airtight on one dataset.
+
+Second signal: the ER OOD probe improved to 0.54 / trace_em 0.12 (vs 0.32 /
+0.0075 for the caterpillar-trained model) — denser, more heterogeneous
+training blobs transfer better. OOD generalization looks like a
+training-diversity problem, not a mechanism limit. Future work.
+
 ### AR-CoT works: depth-2, diameter-flat connectivity via grokking at 32k graphs
 
 The run everything built toward: bfs_expand, depth 2, zero regularization,
