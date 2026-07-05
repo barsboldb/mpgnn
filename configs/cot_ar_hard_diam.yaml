@@ -11,4 +11,10 @@
 extends: cot_ar.yaml
 
 dataset: connectedness_hard_diam
-dataset_kwargs: {num_graphs: 10000}
+dataset_kwargs: {num_graphs: 32000}   # circuits need data to beat memorization (CHANGELOG 2026-07-05)
+
+# the winning recipe from diameter_controlled: local trace target + zero reg
+# (inherited) + enough data; blobs are denser than caterpillars, so more headroom
+trace_format: bfs_expand
+max_seq_len: 224
+max_trace_len: 112
