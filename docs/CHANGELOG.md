@@ -40,8 +40,12 @@ stuck set-minus levels 0.985–0.996 — nothing partially formed remains.
 Caveats: not converged at epoch 100 (rerun longer for the final figure), and
 ER OOD still fails (answer 0.32, trace_em 0.01) — the full pipeline does not
 yet transfer to dense graphs the way the isolated lookup did (trace_em 0.55
-OOD). In-distribution algorithm execution: demonstrated. Distribution-general
-algorithm: open. Remaining grid: depth-1 @ 32k (theory says the trace can't
+OOD). Checkpoint-eval on connectedness_hard makes the same point harder:
+answer 0.29 (below chance = systematic misreading of its own derailed traces,
+not noise), trace_em 0.0002, and 42% of decodes never form a well-formed
+`ANS` — the trace machinery is calibrated to caterpillar statistics and fails
+structurally on 90-edge blobs. In-distribution algorithm execution:
+demonstrated. Distribution-general algorithm: open. Remaining grid: depth-1 @ 32k (theory says the trace can't
 rescue one layer — induction needs two), length-OOD with cot_pos: none, the
 wd-vs-dropout bisect, connectedness_hard_diam headline run.
 
