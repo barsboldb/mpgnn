@@ -120,6 +120,7 @@ def build_cot_sequences(
     max_seq_len: int = 0,
     trace_format: str = "bfs_levels",
     roster: bool = True,
+    drop_overlong: bool = False,
 ) -> list[dict]:
     """Token sequences for every graph: {tokens, prompt_len, y, diam}.
 
@@ -129,9 +130,13 @@ def build_cot_sequences(
     (verbose `EXP parent children` rounds; ~2x longer, every token local).
     max_seq_len > 0 asserts every sequence fits (catches config/dataset drift
     before the position table does, with a message that names the culprit).
+    drop_overlong=True skips oversized graphs with a report instead — for
+    evaluating a trained checkpoint (fixed position table) on denser datasets,
+    where one big graph must not kill the whole probe. Never use in training.
     """
     rng = np.random.default_rng(seed)
     out = []
+    dropped = 0
     for g in data_list:
         n = int(g.num_nodes)
         assert n <= vocab.max_nodes, \
@@ -172,13 +177,19 @@ def build_cot_sequences(
         completion += [vocab.ANS, vocab.answer_token(answer), vocab.EOS]
 
         tokens = torch.tensor(prompt + completion, dtype=torch.long)
-        if max_seq_len > 0:
-            assert tokens.numel() <= max_seq_len, (
+        if max_seq_len > 0 and tokens.numel() > max_seq_len:
+            if drop_overlong:
+                dropped += 1
+                continue
+            raise AssertionError(
                 f"sequence of length {tokens.numel()} (n={n}, m={len(edges)}) exceeds "
                 f"max_seq_len={max_seq_len}; raise max_seq_len in the config")
         diam = int(g.diam.item()) if hasattr(g, "diam") and g.diam is not None else -1
         out.append({"tokens": tokens, "prompt_len": len(prompt),
                     "y": int(g.y.item()), "diam": diam})
+    if dropped:
+        print(f"[cot] dropped {dropped}/{len(data_list)} graphs whose sequences exceed "
+              f"max_seq_len={max_seq_len} (eval on the {len(out)} that fit)")
     return out
 
 

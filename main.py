@@ -235,10 +235,13 @@ def connectivity_experiment(config: GNNConfig, dataset_name: str, limit: int = 0
 
 def _prepare_cot_sequences(config: GNNConfig, dataset_name: str, vocab: CoTVocab,
                            limit: int = 0, seed: int | None = None,
-                           gen_kwargs: dict | None = None):
+                           gen_kwargs: dict | None = None,
+                           drop_overlong: bool = False):
     """Raw graphs -> attach_components (diam) -> token sequences.
     gen_kwargs=None uses config.dataset_kwargs; pass {} for generator defaults
-    (the OOD probe — its generator doesn't take the training set's kwargs)."""
+    (the OOD probe — its generator doesn't take the training set's kwargs).
+    drop_overlong=True for eval on datasets denser than the training one
+    (a trained position table can't grow; skip what doesn't fit, loudly)."""
     data_list = load_or_create(dataset_name, node_features="constant",
                                **(config.dataset_kwargs if gen_kwargs is None else gen_kwargs))
     if 0 < limit < len(data_list):
@@ -252,7 +255,8 @@ def _prepare_cot_sequences(config: GNNConfig, dataset_name: str, vocab: CoTVocab
         seed=config.seed if seed is None else seed,
         max_seq_len=config.max_seq_len,
         trace_format=config.trace_format,
-        roster=config.prompt_roster)
+        roster=config.prompt_roster,
+        drop_overlong=drop_overlong)
 
 
 def cot_experiment(config: GNNConfig, dataset_name: str, overfit: int = 0, limit: int = 0):
@@ -304,7 +308,7 @@ def cot_ood_probe(model, config: GNNConfig, logger: RunLogger, vocab: CoTVocab,
     try:
         sequences = _prepare_cot_sequences(config, ood_dataset, vocab,
                                            limit=n_graphs, seed=config.seed + 1,
-                                           gen_kwargs={})
+                                           gen_kwargs={}, drop_overlong=True)
         loader = make_cot_loader(sequences, vocab, config.batch_size, shuffle=False)
         stats = eval_cot(model, loader, DEVICE, max_new=max_new, by_diameter=True)
         by_diam = stats.pop("by_diameter", None)
@@ -379,7 +383,8 @@ def evaluate_checkpoint(ckpt_path: str, dataset_name: str, limit: int = 0):
     if config.cot_mode == "autoregressive":
         vocab = model.vocab
         sequences = _prepare_cot_sequences(config, dataset_name, vocab, limit=limit,
-                                           gen_kwargs=None if dataset_name == config.dataset else {})
+                                           gen_kwargs=None if dataset_name == config.dataset else {},
+                                           drop_overlong=True)
         loader = make_cot_loader(sequences, vocab, config.batch_size, shuffle=False)
         print(f"\nLoaded {ckpt_path}  (AR-CoT, trained on {ckpt.get('train_dataset', '?')})")
         print(f"Evaluating on {dataset_name}  |  {len(sequences)} sequences")
