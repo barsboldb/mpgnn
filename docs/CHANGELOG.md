@@ -4,6 +4,37 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-07-05
+
+### AR-CoT works: depth-2, diameter-flat connectivity via grokking at 32k graphs
+
+The run everything built toward: bfs_expand, depth 2, zero regularization,
+**32k graphs** (4x data — the anti-memorization lever after depth-4/8k drove
+train loss to literally 0.0000 while decode *worsened*). Textbook grokking:
+trace_em flat at ~0.03 through epoch 50, phase transition at 60–70, and by
+epoch 100 **decoded answer accuracy 0.964, trace exact-match 0.80, still
+climbing**. The by-diameter curve is the thesis figure: **0.92–0.99 flat from
+diameter 2 to 18 at depth 2** — the diam≥11 buckets that scored 0.25 the night
+before (the model faithfully reading its own derailed trace as "disconnected")
+included. Sequential decoding substitutes for depth (Merrill & Sabharwal),
+measured.
+
+The sub-skill ladder that got here, each rung its own experiment: copy
+(induction) and level-1 lookup form at depth 2 once regularization is zero
+(both 0.99 test-TF); lookup-minus-visited (levels 2+) stalls at ~0.6 with 8k
+graphs; depth 4 at 8k memorizes instead of fixing it (capacity substitutes for
+generalization — trace_em *declines* as train loss → 0); 4x data at depth 2
+tips the balance to circuits. **Lesson: circuits vs memorization is an
+economics problem — permuted-id data makes memorization expensive; capacity
+makes it cheap; add data before depth.**
+
+Caveats: not converged at epoch 100 (rerun longer for the final figure), and
+ER OOD still fails (answer 0.32, trace_em 0.01) — the full pipeline does not
+yet transfer to dense graphs the way the isolated lookup did (trace_em 0.55
+OOD). In-distribution algorithm execution: demonstrated. Distribution-general
+algorithm: open. Next: the answer-only baseline at matched scale (the contrast
+figure), then the depth x trace grid.
+
 ## 2026-07-04
 
 ### Regularization was suppressing circuit formation (the CoT unblocking)
