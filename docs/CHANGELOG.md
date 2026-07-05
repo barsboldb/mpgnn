@@ -12,10 +12,14 @@ Same recipe on connectedness_hard_diam (two blobs, single-edge class
 difference, matched degrees/edge counts — no statistical shortcut exists):
 grokking transition at epoch 40-50, **decoded 0.9925, trace exact-match 0.90,
 flat 0.988-1.000 across diameters 3-13** including the 5-10 zone where both
-classes coexist. The single-pass architectures' chance-level record on this
-family was set on connectedness_hard; the matched answer-only AR baseline and
-an encoder baseline on hard_diam itself are queued to make the comparison
-airtight on one dataset.
+classes coexist. The matched answer-only control (same model/data/optimizer,
+`max_trace_len: 0`) sits at **0.5108 for all 100 epochs** — loss pinned at the
+marginal predictor, tf_test never leaves 0.50. Trace 0.9925 vs answer-only
+0.51 on one dataset, trace the only difference. (The answer-only by-diameter
+"decay" is a class-composition artifact of a NO-biased chance model — the
+honest statement is flat 0.51 overall, not degradation. An encoder baseline
+on hard_diam remains optional garnish; the matched-architecture control is
+the one that matters.)
 
 Second signal: the ER OOD probe improved to 0.54 / trace_em 0.12 (vs 0.32 /
 0.0075 for the caterpillar-trained model) — denser, more heterogeneous
