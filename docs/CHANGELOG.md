@@ -28,12 +28,22 @@ tips the balance to circuits. **Lesson: circuits vs memorization is an
 economics problem — permuted-id data makes memorization expensive; capacity
 makes it cheap; add data before depth.**
 
+**The contrast (headline table):** the answer-only baseline at identical scale
+(same depth-2 model, same 32k graphs, same zero-reg optimizer, `max_trace_len:
+0`) sits at **0.51 — flat chance at every diameter for all 100 epochs**. It
+never learns at all, echoing 06-25's supervision-density finding (1 bit/graph
+gives gradient descent nothing to grip). Trace 0.964 vs answer-only 0.510 with
+the trace as the only difference. And the diagnostic on the grokked model shows
+the sub-skill ladder complete: copy 0.998, level-1 lookup 1.000, the previously
+stuck set-minus levels 0.985–0.996 — nothing partially formed remains.
+
 Caveats: not converged at epoch 100 (rerun longer for the final figure), and
 ER OOD still fails (answer 0.32, trace_em 0.01) — the full pipeline does not
 yet transfer to dense graphs the way the isolated lookup did (trace_em 0.55
 OOD). In-distribution algorithm execution: demonstrated. Distribution-general
-algorithm: open. Next: the answer-only baseline at matched scale (the contrast
-figure), then the depth x trace grid.
+algorithm: open. Remaining grid: depth-1 @ 32k (theory says the trace can't
+rescue one layer — induction needs two), length-OOD with cot_pos: none, the
+wd-vs-dropout bisect, connectedness_hard_diam headline run.
 
 ## 2026-07-04
 
