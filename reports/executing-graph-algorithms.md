@@ -240,7 +240,34 @@ For a fixed-depth transformer to execute a graph algorithm:
 6. Depth ≥ the per-step circuit requirement (2, for copy + lookup), and no more than the
    data can discipline.
 
-## 7. Relation to prior work
+## 7. Novelty assessment (deep-research pass, 2026-07-06)
+
+A literature search (Claude Research) found **no exact published precedent for any of
+the six core claims**; verdicts per claim, with the closest neighbors:
+
+| # | claim | verdict | closest prior work |
+|---|---|---|---|
+| 1 | traces give diameter-flat accuracy at fixed depth | similar-but-different | Sanford et al. 2024 (log-depth necessary, answer-only); Ye/Fu/Jia/Sharan ICML 2026 (same task, 3^L capacity, no traces); Merrill & Sabharwal 2024 (theory permitting it) |
+| 2 | trace locality determines learnability (bfs_levels vs bfs_expand) | similar-but-different; **cleanest novel contribution** | Abbe et al. 2024 "globality barrier / inductive scratchpad"; Bachmann & Nagarajan 2024 (Clever Hans); no BFS/connectivity instance published |
+| 3 | regularization prevents circuit formation | **no direct precedent — high-risk/high-reward** | ⚠ opposite-sign: Lv et al. "LMs Grok to Copy" (NAACL 2025, dropout/wd *help* at scale). Mechanisms available: Kobayashi et al. 2024 (wd → low-rank attention, 2-layer recall); DropAttention smoothing; Varma et al. 2024 (circuit norm-efficiency) |
+| 4 | data threshold + grokking; depth worsens memorization | similar-but-different | Ye et al. (capacity-driven heuristics, no traces); Zhu et al. 2024 (critical data size); depth-hurts direction is the fresh piece |
+| 5 | sequence-length serialization leak | no direct precedent for the specific leak | general: seq-length shortcut (2212.08399), positional-embedding leaks (Charformer), degree shortcut (Yehudai et al. 2025) — present as a benchmark-artifact family |
+| 6 | role-stratified per-position accuracy as circuit diagnostic | technique exists piecemeal, unnamed | CLRS-Text per-step eval; Nanda et al. progress measures; coin a term ("token-role-stratified accuracy"), don't claim the primitive |
+
+**Consequences for the writeup:**
+- Frame Claim 1 as *trading depth for trace length* — exactly what CoT expressivity
+  theory (Merrill & Sabharwal; Li et al. 2024) permits; we supply the empirical closure
+  for BFS-connectivity at 2 layers.
+- Claim 3 **requires the wd-only vs dropout-only bisect** before publication-grade
+  claims: "Grok to Copy" is a same-values opposite-sign result at large scale, so the
+  contribution must be scoped to the small-model / exact-retrieval regime with the
+  bisect determining which mechanism story to foreground.
+- "Supervision density arranged in time" is our framing, not a citable result — present
+  as a lens, cross-referencing CLRS hint supervision and arXiv 2503.10542.
+- Verify Ye et al.'s experimental scale directly from the paper (the research pass could
+  not extract its full text) before asserting differences in print.
+
+## 8. Relation to prior work
 
 - **Sanford et al. 2024** — depth ↔ parallel rounds for graph reasoning; our answer-only
   baselines instantiate the negative side.
