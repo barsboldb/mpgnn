@@ -329,15 +329,18 @@ and 0.999 by 20:
 ) <fig-probe>
 
 *Why that happens.* A retrieval circuit is a small set of _precise_ weights: a key that
-must match a query exactly, an attention pattern that must be sharp. Weight decay (as
+must match a query exactly, an attention pattern that must be sharp. The follow-up bisect
+(one regularizer at a time) showed *weight decay is the whole story*: dropout-only
+reaches 0.93 by epoch 10, weight-decay-only reproduces the plateau. Weight decay (as
 Adam's L2 pull) shrinks all weights toward zero every step — for a big model a nuisance,
 for a 430k-parameter model with tied embeddings on a 42-token vocabulary it is a constant
-tax on exactly the weights the circuit needs, with no redundancy to pay it from. Dropout,
-meanwhile, injects noise into the very attention pattern that is trying to become sharp.
-Both settings are habits imported from _statistical_ fitting, where they fight
-overfitting; here they fought _learning itself_. Notably this is the mirror image of the
-famous grokking result (Power et al. 2022), where weight decay *enables* delayed
-generalization — at our scale and task it *prevented* the circuit from ever forming.
+tax on exactly the weights the circuit needs, with no redundancy to pay it from; at this
+scale it is known to push attention toward _low rank_ (Kobayashi et al. 2024), and a
+lookup needs high-rank, precise key–query alignment. A habit imported from _statistical_
+fitting, where it fights overfitting, here fought _learning itself_. Notably this is the
+mirror image of the famous grokking result (Power et al. 2022), where weight decay
+*enables* delayed generalization — at our scale and task it *prevented* the circuit from
+ever forming.
 
 #lesson[Regularizers tuned for statistical learning can be _the_ blocker for algorithmic
 circuit formation at small scale. They are one `-o weight_decay=0 -o dropout=0` away from
