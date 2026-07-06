@@ -125,10 +125,14 @@ hypothesis: the **atomic lookup probe** (`trace_format: bfs_l1` — emit only no
 sorted neighbours) went from a 0.15 plateau to **0.95 by epoch 10, 0.999 by 20** when
 `weight_decay 0.01 → 0` and `dropout 0.1 → 0`, with no other change.
 
-Mechanism: Adam's L2-in-gradient pull constantly erodes the precise, low-redundancy
-weights a retrieval circuit needs (tied embeddings on a 42-token vocabulary have nowhere
-to hide), and attention dropout injects noise into exactly the sharp attention patterns
-being formed. A 430k-parameter model has no redundancy to absorb either. This
+**Bisect (2026-07-06): weight decay alone is the suppressor.** Dropout-only (0.1)
+reaches trace-EM 0.93 by epoch 10; weight-decay-only (0.01) reproduces the plateau
+(0.11 at epoch 30). Mechanism, with same-scale published support: weight decay induces
+low-rank attention in 2-layer transformers on associative recall (Kobayashi et al.
+2024), and a retrieval circuit needs high-rank, precise key–query alignment; under a
+norm penalty the degenerate marginal-statistics solution is cheaper, so the penalty
+selects the wrong circuit (Varma et al. 2024). Note the knob is torch Adam's
+L2-in-gradient, not decoupled AdamW decay. This
 retroactively explained every earlier plateau: format statistics survive regularization;
 content circuits don't. Bonus: the zero-reg lookup circuit was the project's **first
 OOD-positive result** — trained on sparse caterpillars, it transferred to dense ER graphs
@@ -249,7 +253,7 @@ the six core claims**; verdicts per claim, with the closest neighbors:
 |---|---|---|---|
 | 1 | traces give diameter-flat accuracy at fixed depth | similar-but-different | Sanford et al. 2024 (log-depth necessary, answer-only); Ye/Fu/Jia/Sharan ICML 2026 (same task, 3^L capacity, no traces); Merrill & Sabharwal 2024 (theory permitting it) |
 | 2 | trace locality determines learnability (bfs_levels vs bfs_expand) | similar-but-different; **cleanest novel contribution** | Abbe et al. 2024 "globality barrier / inductive scratchpad"; Bachmann & Nagarajan 2024 (Clever Hans); no BFS/connectivity instance published |
-| 3 | regularization prevents circuit formation | **no direct precedent — high-risk/high-reward** | ⚠ opposite-sign: Lv et al. "LMs Grok to Copy" (NAACL 2025, dropout/wd *help* at scale). Mechanisms available: Kobayashi et al. 2024 (wd → low-rank attention, 2-layer recall); DropAttention smoothing; Varma et al. 2024 (circuit norm-efficiency) |
+| 3 | **weight decay** prevents circuit formation (bisect 07-06: dropout benign) | **no direct precedent** — scoped to small-model exact-retrieval regime | opposite-sign at scale: Lv et al. "LMs Grok to Copy" (NAACL 2025). Mechanism support: Kobayashi et al. 2024 (wd → low-rank attention, 2-layer recall); Varma et al. 2024 (circuit norm-efficiency) |
 | 4 | data threshold + grokking; depth worsens memorization | similar-but-different | Ye et al. (capacity-driven heuristics, no traces); Zhu et al. 2024 (critical data size); depth-hurts direction is the fresh piece |
 | 5 | sequence-length serialization leak | no direct precedent for the specific leak | general: seq-length shortcut (2212.08399), positional-embedding leaks (Charformer), degree shortcut (Yehudai et al. 2025) — present as a benchmark-artifact family |
 | 6 | role-stratified per-position accuracy as circuit diagnostic | technique exists piecemeal, unnamed | CLRS-Text per-step eval; Nanda et al. progress measures; coin a term ("token-role-stratified accuracy"), don't claim the primitive |
@@ -258,10 +262,10 @@ the six core claims**; verdicts per claim, with the closest neighbors:
 - Frame Claim 1 as *trading depth for trace length* — exactly what CoT expressivity
   theory (Merrill & Sabharwal; Li et al. 2024) permits; we supply the empirical closure
   for BFS-connectivity at 2 layers.
-- Claim 3 **requires the wd-only vs dropout-only bisect** before publication-grade
-  claims: "Grok to Copy" is a same-values opposite-sign result at large scale, so the
-  contribution must be scoped to the small-model / exact-retrieval regime with the
-  bisect determining which mechanism story to foreground.
+- Claim 3's bisect is **done** (07-06): weight decay is the suppressor, dropout benign
+  — foreground the low-rank-attention mechanism (Kobayashi) and contrast "Grok to Copy"
+  on both regime and mechanism. Optional refinement: AdamW (decoupled) vs Adam (L2)
+  at the same λ.
 - "Supervision density arranged in time" is our framing, not a citable result — present
   as a lens, cross-referencing CLRS hint supervision and arXiv 2503.10542.
 - Verify Ye et al.'s experimental scale directly from the paper (the research pass could

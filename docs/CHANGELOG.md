@@ -4,6 +4,39 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-07-06
+
+### The bisect: weight decay alone blocks the circuit; dropout is benign
+
+The regularization finding (07-04) resolved into a sharper claim. On the bfs_l1
+lookup probe, 30 epochs each, one knob at a time: **dropout 0.1 alone** —
+trace_em 0.93 by epoch 10, 0.98 by 20 (circuit forms, marginally slower and a
+hair below the 0.999 clean ceiling); **weight decay 0.01 alone** — trace_em
+0.06/0.09/0.11, the original crawling plateau reproduced exactly. Weight decay
+is the suppressor; dropout was a bystander.
+
+Mechanism now has published support at the same scale: Kobayashi et al. 2024
+show weight decay induces low-rank attention in 2-layer transformers on
+associative recall — and a retrieval circuit needs high-rank, precise
+key–query alignment. Varma et al.'s circuit-efficiency account supplies the
+selection story (under a norm penalty, degenerate marginal statistics are
+cheaper than the retrieval circuit). The opposite-sign "LMs Grok to Copy"
+(NAACL 2025, wd helps copying at billion scale) is now contrasted on both
+regime and mechanism. Nuance for the writeup: our knob is torch Adam's
+L2-in-gradient, not decoupled AdamW decay — an AdamW-at-same-λ probe is a
+cheap optional follow-up. (Runs 20260706_133219 (dropout-only),
+20260706_134019 (wd-only).)
+
+### Novelty assessment (deep-research pass)
+
+Literature search across all six core claims: no exact precedent for any;
+per-claim verdicts, closest neighbors, and writeup consequences recorded in
+reports/executing-graph-algorithms.md §7. Cleanest novel contribution: the
+trace-locality result (constructive instance of Abbe et al.'s globality
+barrier). Closest overall prior art: Ye/Fu/Jia/Sharan (ICML 2026) — the paper
+this repo has built on since June; answer-only, no traces (verify scale from
+the paper before asserting differences in print).
+
 ## 2026-07-05
 
 ### The adversarial dataset falls too: hard_diam at 0.9925
