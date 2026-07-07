@@ -1,0 +1,25 @@
+# bfs_check on connectedness_hard — the dense-graph rung of the trace-locality
+# ladder (CHANGELOG 2026-07-07). bfs_expand failed here (decoded ~0.52 flat for
+# 200 epochs, run 20260707_142843) because the visited-set subtraction is
+# silent: rejected neighbors emit no token, so at mean degree ~9 the hardest
+# membership tests get no gradient (diag: levels 2-3 at ~0.25 tf while
+# parent-copy 0.986 and level-1 lookup 0.998). bfs_check makes every rejection
+# a supervised token: each parent scans ALL its neighbors in ascending order,
+# each followed by YES (new, joins frontier) or NO (already visited).
+#
+# Same A/B as the bfs_levels -> bfs_expand rung: identical dataset, model, and
+# optimizer as cot_ar_hard.yaml; the trace target is the only difference.
+#
+#   python main.py --config configs/cot_ar_hard_check.yaml
+#   python main.py --config configs/cot_ar_hard_check.yaml -o max_trace_len=0  # ablation
+# Sanity: python main.py --config configs/cot_ar_hard_check.yaml --overfit 32 \
+#           -o batch_size=8 -o epochs=150
+
+extends: cot_ar_hard.yaml
+
+trace_format: bfs_check
+
+# measured on the FULL 32k (the 4k-sample max was 620 — tails matter):
+# total max 665, completion max 444
+max_seq_len: 704
+max_trace_len: 456

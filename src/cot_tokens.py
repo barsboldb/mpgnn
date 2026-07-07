@@ -106,6 +106,51 @@ def bfs_expand_trace(n: int, edges: list[tuple[int, int]], start: int,
     return tokens, int(len(seen) == n)
 
 
+def bfs_check_trace(n: int, edges: list[tuple[int, int]], start: int,
+                    vocab: CoTVocab) -> tuple[list[int], int]:
+    """bfs_expand with the visited-set subtraction made explicit — the next
+    rung of the trace-locality ladder (CHANGELOG 2026-07-07).
+
+    On dense graphs bfs_expand's per-parent children are `sorted(adj[u] - seen)`:
+    every REJECTED neighbor is a membership test against the whole trace so far
+    that emits no token, so the hardest op never gets its own gradient (levels
+    2-3 collapse to ~0.25 tf acc at mean degree ~9). Here each parent is an
+    explicit scan — every neighbor in ascending order, each followed by a
+    supervised verdict:
+
+        SEP  [per parent u: EXP u  [v YES | v NO  for each v in sorted(adj[u])]]
+
+    YES = v is new (it joins the next frontier), NO = already visited. The v
+    tokens are a local scan of the parent's prompt edges (the circuit that
+    formed at 0.998); each verdict is a 1-bit membership lookup graded with
+    partial credit. YES/NO are reused from the answer slot — no vocab change,
+    no parsing ambiguity (the answer is always the token after ANS). ~2x the
+    bfs_expand length (2 tokens per edge-visit instead of ~1 per accepted
+    child); the final all-NO round is the explicit frontier-exhausted proof."""
+    adj: list[list[int]] = [[] for _ in range(n)]
+    for u, v in edges:
+        adj[u].append(v)
+        adj[v].append(u)
+    seen = {start}
+    tokens = [start]
+    frontier = [start]
+    while frontier:
+        nxt: list[int] = []
+        tokens.append(vocab.SEP)
+        for u in frontier:
+            tokens += [vocab.EXP, u]
+            for v in sorted(adj[u]):
+                tokens.append(v)
+                if v in seen:
+                    tokens.append(vocab.NO)
+                else:
+                    tokens.append(vocab.YES)
+                    seen.add(v)
+                    nxt.append(v)
+        frontier = nxt
+    return tokens, int(len(seen) == n)
+
+
 def wl_expand_trace(n: int, n1: int, edges: list[tuple[int, int]], rounds: int,
                     vocab: CoTVocab) -> tuple[list[int], int]:
     """Verbose 1-WL colour-refinement trace on the disjoint union of a graph
@@ -226,6 +271,8 @@ def build_cot_sequences(
                 "not screened for WL-divergence within wl_R rounds?"
         elif trace and trace_format == "bfs_expand":
             completion, answer = bfs_expand_trace(n, edges, start=0, vocab=vocab)
+        elif trace and trace_format == "bfs_check":
+            completion, answer = bfs_check_trace(n, edges, start=0, vocab=vocab)
         elif trace and trace_format == "bfs_l1":
             # diagnostic probe: emit ONLY the sorted neighbours of node 0 — the
             # atomic lookup circuit, isolated from all BFS composition. trace_em

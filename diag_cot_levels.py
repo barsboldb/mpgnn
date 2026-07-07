@@ -46,7 +46,12 @@ def level_table(model, loader, vocab) -> dict[str, tuple[int, int]]:
                     elif tok == vocab.ANS:
                         key = "ANS"
                     elif tok in (vocab.YES, vocab.NO):
-                        key = "YES/NO"
+                        # bfs_check reuses YES/NO as per-neighbor visited verdicts;
+                        # only the token right after ANS is the answer slot
+                        if row[t - 1] == vocab.ANS:
+                            key = "YES/NO"
+                        else:
+                            key = "check YES(new)" if tok == vocab.YES else "check NO(seen)"
                     elif tok == vocab.EOS:
                         key = "EOS"
                     elif row[t - 1] == vocab.EXP:
@@ -76,6 +81,7 @@ def main():
 
     table = level_table(model, loader, model.vocab)
     order = [f"level {k}" for k in range(7)] + ["level 7+", "parent(copy)", "EXP",
+                                                "check YES(new)", "check NO(seen)",
                                                 "SEP", "ANS", "YES/NO", "EOS"]
     print(f"\n{dataset} test split ({len(test_seq)} seqs), teacher-forced accuracy by position class:")
     print(f"{'position class':>14}  {'tf acc':>7}  {'n':>6}")
