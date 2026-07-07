@@ -4,6 +4,69 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-07-07
+
+### Density breaks bfs_expand: the visited-set subtraction is the silent op
+
+The winning recipe (bfs_expand, depth 2, zero reg, 32k graphs) does NOT
+transfer to connectedness_hard — the dense extra_p=0.3 blobs (~110 edges,
+mean degree ~9). 200 epochs, no grok: decoded flat at ~0.52, trace_em ~0.02
+and *declining* late, loss grinding linearly (0.58 -> 0.22) with none of the
+collapse that heralded the hard_diam transition. tf_test ~1.0 throughout —
+the model reads answers off gold traces fine; free decoding derails. By
+diameter: 0.78-0.80 at diam 2-3, decaying to ~0.2 at 5-7. parse_fail ~0 —
+the failure is computation, not format. (Run 20260707_142843.)
+
+diag_cot_levels on the best checkpoint localizes it exactly: parent-copy
+0.986 and level-1 children 0.998 (induction and pure lookup+sort both fine —
+emitting a sorted 9-child list is NOT the problem), but level-2 at 0.272 and
+level-3 at 0.242. The wall is specifically the visited-set subtraction: at
+level 1 it is "minus {start}"; at levels 2-3 in a dense blob nearly every
+neighbor is already visited, and each rejection is a membership test against
+the whole trace so far that emits NO token — the hardest op in the dense
+regime is unsupervised (Bachmann & Nagarajan again, one level down). Same
+sub-skill that stalled at ~0.6 on 8k caterpillars (07-05); there 4x data
+fixed it, here visited sets are ~2x larger and 32k does not.
+
+**Lesson: trace locality is not binary — it is parameterized by branching
+factor.** bfs_expand made the frontier-min local but left the set-minus
+implicit; density is the knob that exposes it. Candidate next rung:
+`bfs_check` — expand each parent as an explicit per-neighbor scan with an
+emit-or-reject mark, so every membership test is a supervised binary token
+(~2x longer traces again; the same move that fixed bfs_levels). Data (64k)
+is the fallback lever, but the scaling trend (0.6 @ 8k sparse -> 0.27 @ 32k
+dense) says density outpaces data. A second constructive instance of the
+globality barrier for the writeup either way.
+
+### Isomorphism chapter opened: iso_wl dataset + wl_expand trace (Q1)
+
+QUESTIONS.md Q1 infrastructure built and smoke-tested. Dataset `iso_wl`
+(ladder rung b): degree-matched pairs at fixed n and m — negatives are
+degree-preserving double-edge swaps of G1 accepted only if 1-WL separates
+the pair within wl_rounds, so labels are provably sound and neither degree
+histograms nor sequence length leak (measured: mean len 419.7 vs 420.6).
+trace_format `wl_expand`: per round per node `EXP u c_old [sorted neighbor
+colors] c_new`, canonical colors shared across the pair, fixed round count
+regardless of label, explicit final-histogram comparison before ANS. The
+difficulty knob (divergence round) rides the diam metadata channel, so
+by-diameter tooling reads as accuracy-by-WL-round. Caveat: negatives
+concentrate at divergence round 2 (~95%) — random sparse graphs refine
+fast; regular-graph negatives are the widening lever if the round-3 bucket
+is too thin. Overfit-32 sanity: decoded 1.0, trace_em 0.94. (Gotcha for
+future overfit checks: batch 64 > overfit set = 1 update/epoch — drop
+batch_size alongside.) Real run + answer-only control queued.
+
+### Engineering: KV cache, per-epoch result flush, kill-safe runs
+
+generate() now keeps per-layer KV caches (token-identical outputs verified
+against the naive loop on the trained hard_diam checkpoint; 3.5x on MPS at
+max_new=120, more at longer traces). RunLogger flushes the results JSON
+every epoch (atomic replace), and SIGTERM/Ctrl-C now stops the epoch loop
+gracefully: best-so-far weights restored, checkpoint + JSON saved,
+interrupted_at_epoch recorded, slow tail evals skipped. Killed runs no
+longer lose everything — the 07-07 hard run was only allowed to burn its
+full 200 epochs because killing it would have.
+
 ## 2026-07-06
 
 ### The bisect: weight decay alone blocks the circuit; dropout is benign

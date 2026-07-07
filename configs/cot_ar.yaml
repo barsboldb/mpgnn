@@ -7,8 +7,9 @@
 # generated token re-enters the network, so a DEPTH-1 model gets one full
 # sequential step per token — the Merrill & Sabharwal mechanism.
 #
-# Depth is kept at 1 so any accuracy the trace buys over the answer-only
-# ablation is attributable to the sequential decoding axis, not layers:
+# Depth is kept minimal (2 — the winning recipe, CHANGELOG 2026-07-05) so any
+# accuracy the trace buys over the answer-only ablation is attributable to the
+# sequential decoding axis, not layers:
 #   python main.py --config configs/cot_ar.yaml                     # with trace
 #   python main.py --config configs/cot_ar.yaml -o max_trace_len=0  # answer-only
 # Sanity check first: python main.py --config configs/cot_ar.yaml --overfit 32
@@ -43,8 +44,10 @@ hidden_channels: 128
 # et al. 2024); note torch Adam wd = L2-in-gradient, not AdamW.
 dropout: 0.0
 
-# depth 1: the sequential work must come from the generated tokens
+# depth 2: copy + level-1 lookup circuits need two layers (CHANGELOG 2026-07-05);
+# the sequential work still comes from the generated tokens
 layers:
+  - {type: global_attn, heads: 4}
   - {type: global_attn, heads: 4}
 
 epochs: 200
