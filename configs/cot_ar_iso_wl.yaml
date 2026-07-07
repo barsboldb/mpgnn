@@ -1,0 +1,33 @@
+# Autoregressive CoT on isomorphism — QUESTIONS.md Q1: does the five-ingredient
+# recipe generalize beyond BFS to color refinement (1-WL)?
+#
+# Dataset iso_wl is ladder rung (b): degree-matched pairs (fixed n, matched m,
+# negatives = degree-preserving rewires screened for WL-divergence within
+# wl_rounds), so neither the degree histogram nor sequence length leaks the
+# label. trace_format wl_expand supervises refinement round by round with every
+# token local (the bfs_expand trick applied to WL's multiset hash) plus an
+# explicit final-histogram comparison before ANS.
+#
+# The difficulty knob (divergence round for negatives / stabilization round for
+# positives) rides the `diam` metadata channel, so the by-diameter eval curve
+# reads as accuracy-by-WL-round. Caveat measured at generation: negatives
+# concentrate at round 2 (~95%) — random sparse graphs refine fast; widen with
+# regular-graph negatives if the round-3 bucket is too thin for the figure.
+#
+#   python main.py --config configs/cot_ar_iso_wl.yaml
+#   python main.py --config configs/cot_ar_iso_wl.yaml -o max_trace_len=0  # ablation
+# Sanity: python main.py --config configs/cot_ar_iso_wl.yaml --overfit 32
+
+extends: cot_ar.yaml
+
+dataset: iso_wl
+dataset_kwargs: {num_graphs: 32000, n: 8, wl_rounds: 3}
+
+trace_format: wl_expand
+
+# 2 * n tokens per pair; colors reuse the node-id token range (<= 2n colors)
+max_nodes: 16
+
+# measured on 2k samples: prompt <= 79, completion <= 397, total <= 476
+max_seq_len: 512
+max_trace_len: 416

@@ -106,6 +106,57 @@ def bfs_expand_trace(n: int, edges: list[tuple[int, int]], start: int,
     return tokens, int(len(seen) == n)
 
 
+def wl_expand_trace(n: int, n1: int, edges: list[tuple[int, int]], rounds: int,
+                    vocab: CoTVocab) -> tuple[list[int], int]:
+    """Verbose 1-WL colour-refinement trace on the disjoint union of a graph
+    pair (G1 = nodes 0..n1-1, G2 = nodes n1..n-1) — the isomorphism analog of
+    bfs_expand. Colours reuse the node-id token range (canonical ints, first
+    appearance in node-id order mints the next colour, scanning the union so
+    colour names are shared across the pair). Each round:
+
+        SEP  [per node u: EXP u c_old(u) [sorted neighbour colours] c_new(u)]
+
+    Every token is locally computable: c_old is a copy of the previous round's
+    c_new at EXP u (induction head), neighbour colours are lookups keyed by the
+    prompt's edge tokens, and c_new is an associative match against this
+    round's earlier identical signature (or the next fresh colour) — the same
+    retrieval-circuit family the BFS recipe trains. Exactly `rounds` rounds are
+    emitted for EVERY pair regardless of when refinement stabilises or
+    diverges, so trace length depends only on (n, m) — never on the label.
+
+    The final section makes the multiset comparison explicit instead of leaving
+    it as one unsupervised global step over the last round (the Bachmann &
+    Nagarajan pitfall the compact bfs_levels target died of):
+
+        SEP SEP [sorted final colours of G1] SEP [sorted final colours of G2]
+
+    Answer: YES iff the two sorted colour lists match (a copy-compare over the
+    just-emitted section). Known residual globality: the first token of each
+    sorted list is a set-minimum. If trace_em stalls exactly there, switch the
+    section to per-colour counts (fixed 0..C-1 enumeration) — noted in the
+    config."""
+    adj: list[list[int]] = [[] for _ in range(n)]
+    for u, v in edges:
+        adj[u].append(v)
+        adj[v].append(u)
+    colors = [0] * n
+    tokens: list[int] = []
+    for _ in range(rounds):
+        sigs = [(colors[u], tuple(sorted(colors[v] for v in adj[u]))) for u in range(n)]
+        palette: dict = {}
+        for s in sigs:
+            palette.setdefault(s, len(palette))
+        new = [palette[s] for s in sigs]
+        tokens.append(vocab.SEP)
+        for u in range(n):
+            tokens += [vocab.EXP, u, colors[u],
+                       *sorted(colors[v] for v in adj[u]), new[u]]
+        colors = new
+    h1, h2 = sorted(colors[:n1]), sorted(colors[n1:])
+    tokens += [vocab.SEP, vocab.SEP, *h1, vocab.SEP, *h2]
+    return tokens, int(h1 == h2)
+
+
 def _undirected_edges(edge_index: torch.Tensor) -> list[tuple[int, int]]:
     und = edge_index[0] < edge_index[1]
     return list(zip(edge_index[0][und].tolist(), edge_index[1][und].tolist()))
@@ -143,8 +194,15 @@ def build_cot_sequences(
             f"graph has {n} nodes but the vocab covers max_nodes={vocab.max_nodes}"
         edges = _undirected_edges(g.edge_index)
 
+        # pair graphs (isomorphism): G1 lives at ids 0..n1-1, G2 at n1..n-1.
+        # Permute WITHIN each half, independently — membership must stay
+        # readable from the id range, but any literal id correspondence between
+        # the halves (negatives are rewires of G1) must not survive.
+        n1 = int(g.n1.item()) if hasattr(g, "n1") and g.n1 is not None else 0
+
         if permute:
-            perm = rng.permutation(n)
+            perm = (np.concatenate([rng.permutation(n1), n1 + rng.permutation(n - n1)])
+                    if n1 else rng.permutation(n))
             edges = [(int(perm[u]), int(perm[v])) for u, v in edges]
         edges = [(min(u, v), max(u, v)) for u, v in edges]
         rng.shuffle(edges)
@@ -156,7 +214,17 @@ def build_cot_sequences(
             prompt += [u, v]
         prompt.append(vocab.TRACE)
 
-        if trace and trace_format == "bfs_expand":
+        if trace_format == "wl_expand":
+            assert n1 > 0, \
+                "trace_format 'wl_expand' needs pair graphs with n1 (dataset: iso_wl)"
+            rounds = int(g.wl_R.item())
+            completion, answer = wl_expand_trace(n, n1, edges, rounds, vocab)
+            if not trace:            # answer-only ablation: same prompt, no trace
+                completion = []
+            assert answer == int(g.y.item()), \
+                "WL histogram answer disagrees with the dataset label — was the pair " \
+                "not screened for WL-divergence within wl_R rounds?"
+        elif trace and trace_format == "bfs_expand":
             completion, answer = bfs_expand_trace(n, edges, start=0, vocab=vocab)
         elif trace and trace_format == "bfs_l1":
             # diagnostic probe: emit ONLY the sorted neighbours of node 0 — the
@@ -172,8 +240,9 @@ def build_cot_sequences(
                     if i > 0:
                         completion.append(vocab.SEP)
                     completion += level
-        assert answer == int(g.y.item()), \
-            "BFS-from-0 answer disagrees with the dataset label — is y not connectedness?"
+        if trace_format != "wl_expand":
+            assert answer == int(g.y.item()), \
+                "BFS-from-0 answer disagrees with the dataset label — is y not connectedness?"
         completion += [vocab.ANS, vocab.answer_token(answer), vocab.EOS]
 
         tokens = torch.tensor(prompt + completion, dtype=torch.long)
@@ -184,7 +253,13 @@ def build_cot_sequences(
             raise AssertionError(
                 f"sequence of length {tokens.numel()} (n={n}, m={len(edges)}) exceeds "
                 f"max_seq_len={max_seq_len}; raise max_seq_len in the config")
-        diam = int(g.diam.item()) if hasattr(g, "diam") and g.diam is not None else -1
+        # difficulty knob rides the `diam` field so by-diameter bucketing works
+        # unchanged: for WL pairs it is the divergence round (negatives) /
+        # stabilisation round (positives), not a graph diameter.
+        if hasattr(g, "wl_round") and g.wl_round is not None:
+            diam = int(g.wl_round.item())
+        else:
+            diam = int(g.diam.item()) if hasattr(g, "diam") and g.diam is not None else -1
         out.append({"tokens": tokens, "prompt_len": len(prompt),
                     "y": int(g.y.item()), "diam": diam})
     if dropped:

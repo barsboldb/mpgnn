@@ -119,7 +119,10 @@ class GNNConfig:
     # trace_format:  'bfs_levels' — compact frontier-by-frontier BFS trace;
     #                'bfs_expand' — verbose `EXP parent children` rounds (~2x
     #                longer, every next token locally computable — the target
-    #                that survives the Bachmann & Nagarajan next-token pitfall).
+    #                that survives the Bachmann & Nagarajan next-token pitfall);
+    #                'wl_expand' — 1-WL colour refinement on isomorphism pairs
+    #                (dataset: iso_wl), same local-decomposition trick per round
+    #                plus an explicit final-histogram comparison section.
     # permute_node_ids: randomly relabel nodes per graph so contiguous-id layouts
     #                (connectedness_hard blobs, caterpillar backbones) don't leak.
     # cot_pos:       'learned' absolute positions | 'none' (NoPE; length OOD).
@@ -213,9 +216,9 @@ class GNNConfig:
                 "(decoder-only LM over graph tokens with a YES/NO answer)"
             assert self.cot_pos in ("learned", "none"), \
                 f"cot_pos must be 'learned' or 'none' — got '{self.cot_pos}'"
-            assert self.trace_format in ("bfs_levels", "bfs_expand", "bfs_l1"), \
+            assert self.trace_format in ("bfs_levels", "bfs_expand", "bfs_l1", "wl_expand"), \
                 f"unknown trace_format '{self.trace_format}' " \
-                "(choose 'bfs_levels', 'bfs_expand', or the 'bfs_l1' lookup probe)"
+                "(choose 'bfs_levels', 'bfs_expand', 'wl_expand', or the 'bfs_l1' lookup probe)"
             assert self.max_trace_len >= 0 and self.max_seq_len > 0 and self.cot_eval_every >= 1
         message_passing = ("gcn", "sage", "gat", "gin")
         # node tokenization runs the global_attn conv stack ONLY when there is no

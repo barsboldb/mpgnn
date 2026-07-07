@@ -435,6 +435,136 @@ def make_isomorphism_dataset(
     return data_list
 
 
+def _wl_color_rounds(n: int, edges: list[tuple[int, int]], rounds: int) -> list[list[int]]:
+    """Canonical 1-WL colour refinement: colour lists after each of `rounds`
+    refinements (first appearance in node order mints the next colour id).
+    Mirrors cot_tokens.wl_expand_trace exactly — the label screen and the
+    supervised trace must agree or build_cot_sequences' assert fires."""
+    adj: list[list[int]] = [[] for _ in range(n)]
+    for i, j in edges:
+        adj[i].append(j)
+        adj[j].append(i)
+    colors, out = [0] * n, []
+    for _ in range(rounds):
+        sigs = [(colors[u], tuple(sorted(colors[v] for v in adj[u]))) for u in range(n)]
+        palette: dict = {}
+        for s in sigs:
+            palette.setdefault(s, len(palette))
+        colors = [palette[s] for s in sigs]
+        out.append(colors)
+    return out
+
+
+def _double_edge_swaps(edges: list[tuple[int, int]], k: int,
+                       rng: np.random.Generator) -> list[tuple[int, int]] | None:
+    """k degree-preserving rewires: (a,b),(c,d) -> (a,d),(c,b). Returns None if
+    a valid swap can't be found (dense/degenerate edge sets)."""
+    es = {(min(a, b), max(a, b)) for a, b in edges}
+    for _ in range(k):
+        for _attempt in range(50):
+            e1, e2 = (list(es)[i] for i in rng.choice(len(es), size=2, replace=False))
+            a, b = e1
+            c, d = e2
+            if rng.random() < 0.5:
+                c, d = d, c
+            if len({a, b, c, d}) < 4:
+                continue
+            n1, n2 = (min(a, d), max(a, d)), (min(c, b), max(c, b))
+            if n1 in es or n2 in es:
+                continue
+            es -= {e1, e2}
+            es |= {n1, n2}
+            break
+        else:
+            return None
+    return sorted(es)
+
+
+def make_iso_wl_dataset(
+    num_graphs: int = 1000,
+    n: int = 8,
+    wl_rounds: int = 3,
+    seed: int = 42,
+) -> list[Data]:
+    """Degree-matched isomorphism pairs, WL-round-controlled — ladder rung (b)
+    of the QUESTIONS.md shortcut ladder (rung (a), `make_isomorphism_dataset`,
+    guarantees different degree sequences: every negative falls to a degree
+    histogram; rung (c), WL-equivalent pairs, is past the 1-WL ceiling this
+    dataset's traces compute).
+
+    Each sample is (G1, G2) as one disconnected graph, G1 at 0..n-1, G2 at
+    n..2n-1, both with IDENTICAL n, edge count, and degree sequence:
+    - label 1: G2 is a random permutation of G1 (isomorphic).
+    - label 0: G2 is G1 after 1-3 degree-preserving double-edge swaps, accepted
+      only if 1-WL separates the pair's colour histograms within `wl_rounds`
+      (divergence => provably non-isomorphic, so labels are sound; pairs WL
+      can't separate are resampled).
+
+    No leak channels: fixed n, matched m (sequence length and degree statistics
+    are label-independent by construction). `wl_round` = divergence round for
+    negatives, stabilisation round for positives — the difficulty knob,
+    analogous to `diam` on diameter_controlled. `wl_R` = the fixed trace depth
+    every sample is refined for."""
+    rng = np.random.default_rng(seed)
+    data_list, counts = [], [0, 0]
+    round_hist: dict[tuple[int, int], int] = {}
+
+    for i in range(num_graphs):
+        label = i % 2
+        while True:
+            m_target = int(rng.integers(n, 2 * n))       # sparse: WL needs >1 round
+            pairs = [(a, b) for a in range(n) for b in range(a + 1, n)]
+            idx = rng.choice(len(pairs), size=m_target, replace=False)
+            edges1 = sorted(pairs[j] for j in idx)
+
+            if label == 1:
+                perm = rng.permutation(n)
+                edges2 = [(int(perm[a]), int(perm[b])) for a, b in edges1]
+                union = edges1 + [(a + n, b + n) for a, b in edges2]
+                per_round = _wl_color_rounds(2 * n, union, wl_rounds)
+                # stabilisation round: first round whose partition stops refining
+                wl_round = wl_rounds
+                for r in range(1, wl_rounds):
+                    if len(set(per_round[r])) == len(set(per_round[r - 1])):
+                        wl_round = r
+                        break
+                break
+            else:
+                swapped = _double_edge_swaps(edges1, k=int(rng.integers(1, 4)), rng=rng)
+                if swapped is None:
+                    continue
+                edges2 = swapped
+                union = edges1 + [(a + n, b + n) for a, b in edges2]
+                per_round = _wl_color_rounds(2 * n, union, wl_rounds)
+                wl_round = next(
+                    (r + 1 for r, cols in enumerate(per_round)
+                     if sorted(cols[:n]) != sorted(cols[n:])), 0)
+                if wl_round > 0:   # WL separates the pair => non-isomorphic, keep
+                    break
+
+        all_edges: list[list[int]] = []
+        for a, b in edges1:
+            all_edges += [[a, b], [b, a]]
+        for a, b in edges2:
+            all_edges += [[a + n, b + n], [b + n, a + n]]
+
+        counts[label] += 1
+        round_hist[(label, wl_round)] = round_hist.get((label, wl_round), 0) + 1
+        data_list.append(Data(
+            edge_index=torch.tensor(all_edges, dtype=torch.long).t().contiguous(),
+            y=torch.tensor([label], dtype=torch.long),
+            n1=torch.tensor([n], dtype=torch.long),
+            wl_round=torch.tensor([wl_round], dtype=torch.long),
+            wl_R=torch.tensor([wl_rounds], dtype=torch.long),
+            num_nodes=2 * n,
+        ))
+
+    dist = "  ".join(f"y={lab} r={r}: {c}" for (lab, r), c in sorted(round_hist.items()))
+    print(f"Generated {num_graphs} WL pairs (n={n} per graph, {wl_rounds} rounds)  |  "
+          f"iso: {counts[1]}  non-iso: {counts[0]}  |  {dist}")
+    return data_list
+
+
 # ── Yehudai et al. 2025 connectivity data ────────────────────────────────────
 
 _YEHUDAI_DIR = "yehudai/connectivity_dataset"
@@ -628,6 +758,7 @@ GENERATORS: dict[str, object] = {
     "diameter_controlled":     make_diameter_controlled_dataset,
     "er":                      make_er_dataset,
     "isomorphism":             make_isomorphism_dataset,
+    "iso_wl":                  make_iso_wl_dataset,
     "yehudai_connectivity":    make_yehudai_connectivity_dataset,
 }
 
