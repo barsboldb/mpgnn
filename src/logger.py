@@ -53,6 +53,9 @@ class RunLogger:
 
     def log(self, epoch: int, **metrics):
         self.history.append({"epoch": epoch, **metrics})
+        # flush on every epoch so a killed run loses nothing: the JSON on disk
+        # is always the full history so far (atomic replace, no torn files)
+        self.save(quiet=True)
 
     def set_extra(self, **kwargs):
         """Attach end-of-run artifacts (each becomes a top-level key in the JSON)."""
@@ -75,7 +78,7 @@ class RunLogger:
             out["mean_epoch_eval_s"] = round(sum(et) / len(et), 5)
         return out
 
-    def save(self, results_dir: str = "results") -> str:
+    def save(self, results_dir: str = "results", quiet: bool = False) -> str:
         os.makedirs(results_dir, exist_ok=True)
         path = os.path.join(results_dir, f"{self.run_id}.json")
         payload = {
@@ -89,9 +92,12 @@ class RunLogger:
             "timing": self._timing(),
             "history": self.history,
         }
-        with open(path, "w") as f:
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
             json.dump(payload, f, indent=2)
-        print(f"Saved to {path}")
+        os.replace(tmp, path)   # atomic: a kill mid-write never corrupts the JSON
+        if not quiet:
+            print(f"Saved to {path}")
         return path
 
     def _summary(self) -> dict:

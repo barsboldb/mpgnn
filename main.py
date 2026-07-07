@@ -12,6 +12,7 @@ Usage:
 import argparse
 import os
 import random
+import signal
 from dataclasses import asdict
 
 import numpy as np
@@ -291,7 +292,8 @@ def cot_experiment(config: GNNConfig, dataset_name: str, overfit: int = 0, limit
                               answer_loss_weight=config.answer_loss_weight,
                               max_new=max_new, eval_every=config.cot_eval_every,
                               logger=logger)
-    cot_ood_probe(model, config, logger, vocab, trained_on=dataset_name, max_new=max_new)
+    if not info.get("interrupted"):
+        cot_ood_probe(model, config, logger, vocab, trained_on=dataset_name, max_new=max_new)
     logger.save()
     save_checkpoint(model, config, logger.run_id, dataset_name,
                     final_state=info["final_state"], best_epoch=info["best_epoch"])
@@ -469,6 +471,11 @@ def inspect_checkpoint(ckpt_path: str, dataset_name: str, limit: int = 0, show: 
 
 
 def main():
+    # `kill <pid>` behaves like Ctrl-C: the CoT training loop catches
+    # KeyboardInterrupt, restores best-so-far weights, and the run still saves
+    # its checkpoint + results JSON instead of dying with nothing.
+    signal.signal(signal.SIGTERM, lambda signum, frame: (_ for _ in ()).throw(KeyboardInterrupt))
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--config",  type=str, default=None)
     parser.add_argument("--layer",   type=str, default="gcn",

@@ -359,56 +359,72 @@ def run_cot_experiment(model, train_loader, test_loader, device,
     epochs (the `test` metric — decoded answer accuracy — exists only on those
     epochs, so best-epoch selection sees decoded numbers only); teacher-forced
     test accuracy rides along every epoch as `test_tf`. Returns
-    {"best_epoch", "final_state"} and leaves the model on the best weights."""
+    {"best_epoch", "final_state", "interrupted"} and leaves the model on the
+    best weights.
+
+    Ctrl-C / SIGTERM (main.py maps it to KeyboardInterrupt) stops the epoch
+    loop but NOT the run: best-so-far weights are restored and returned so the
+    caller still saves the checkpoint and results JSON. The slow best-weights
+    decode breakdown is skipped on interrupt — a second Ctrl-C during the save
+    tail kills for real."""
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     best_acc, best_epoch, best_state = -1.0, 0, None
+    interrupted, epoch = False, 0
 
-    for epoch in range(1, epochs + 1):
-        _sync(device); t0 = time.perf_counter()
-        loss, tf_train, gnorm = train_cot(model, train_loader, optimizer, device,
-                                          answer_loss_weight=answer_loss_weight)
-        _sync(device); t1 = time.perf_counter()
-        decode = epoch % eval_every == 0 or epoch == epochs
-        tf_test = eval_cot_teacher_forced(model, test_loader, device)
-        stats = eval_cot(model, test_loader, device, max_new=max_new) if decode else None
-        _sync(device); t2 = time.perf_counter()
+    try:
+        for epoch in range(1, epochs + 1):
+            _sync(device); t0 = time.perf_counter()
+            loss, tf_train, gnorm = train_cot(model, train_loader, optimizer, device,
+                                              answer_loss_weight=answer_loss_weight)
+            _sync(device); t1 = time.perf_counter()
+            decode = epoch % eval_every == 0 or epoch == epochs
+            tf_test = eval_cot_teacher_forced(model, test_loader, device)
+            stats = eval_cot(model, test_loader, device, max_new=max_new) if decode else None
+            _sync(device); t2 = time.perf_counter()
 
-        if stats is not None and stats["answer_acc"] > best_acc:
-            best_acc, best_epoch, best_state = stats["answer_acc"], epoch, _cpu_state(model)
-        if logger is not None:
-            row = dict(loss=round(loss, 4), train=round(tf_train, 4),
-                       test_tf=round(tf_test, 4), grad_norm=round(gnorm, 4),
-                       train_time_s=round(t1 - t0, 5), eval_time_s=round(t2 - t1, 5))
-            if stats is not None:
-                row.update(test=round(stats["answer_acc"], 4),
-                           trace_em=round(stats["trace_em"], 4),
-                           mean_levels=round(stats["mean_levels"], 2),
-                           parse_fail=round(stats["parse_fail"], 4))
-            logger.log(epoch, **row)
-        if epoch % 10 == 0:
-            dec = f"decoded={stats['answer_acc']:.4f}  trace_em={stats['trace_em']:.4f}" \
-                if stats is not None else "decoded=—"
-            print(f"Epoch {epoch:03d}  loss={loss:.4f}  tf_train={tf_train:.4f}  "
-                  f"tf_test={tf_test:.4f}  {dec}")
+            if stats is not None and stats["answer_acc"] > best_acc:
+                best_acc, best_epoch, best_state = stats["answer_acc"], epoch, _cpu_state(model)
+            if logger is not None:
+                row = dict(loss=round(loss, 4), train=round(tf_train, 4),
+                           test_tf=round(tf_test, 4), grad_norm=round(gnorm, 4),
+                           train_time_s=round(t1 - t0, 5), eval_time_s=round(t2 - t1, 5))
+                if stats is not None:
+                    row.update(test=round(stats["answer_acc"], 4),
+                               trace_em=round(stats["trace_em"], 4),
+                               mean_levels=round(stats["mean_levels"], 2),
+                               parse_fail=round(stats["parse_fail"], 4))
+                logger.log(epoch, **row)
+            if epoch % 10 == 0:
+                dec = f"decoded={stats['answer_acc']:.4f}  trace_em={stats['trace_em']:.4f}" \
+                    if stats is not None else "decoded=—"
+                print(f"Epoch {epoch:03d}  loss={loss:.4f}  tf_train={tf_train:.4f}  "
+                      f"tf_test={tf_test:.4f}  {dec}")
+    except KeyboardInterrupt:
+        interrupted = True
+        print(f"\n[interrupted] stopping at epoch {epoch}/{epochs} — saving best-so-far "
+              f"(decoded {best_acc:.4f} @ epoch {best_epoch}); Ctrl-C again to abandon")
 
     final_state = _cpu_state(model)
     if best_state is not None:
         model.load_state_dict(best_state)
-    breakdown = eval_cot(model, test_loader, device, max_new=max_new, by_diameter=True)
-    by_diam = breakdown.pop("by_diameter", None)
+    if not interrupted:
+        breakdown = eval_cot(model, test_loader, device, max_new=max_new, by_diameter=True)
+        by_diam = breakdown.pop("by_diameter", None)
+        if logger is not None:
+            logger.set_extra(
+                best_eval={k: round(v, 4) for k, v in breakdown.items()},
+                diameter_breakdown=by_diam,
+            )
+        print(f"\nBest decoded answer acc: {best_acc:.4f}  at epoch {best_epoch}"
+              f"  (model restored to best epoch for downstream evals)")
+        if by_diam:
+            print("Decoded accuracy by graph diameter (best weights):")
+            for d, b in by_diam.items():
+                print(f"  diam {d:>2}:  acc={b['acc']:.3f}  (n={b['n']})")
     if logger is not None:
-        logger.set_extra(
-            best_eval={k: round(v, 4) for k, v in breakdown.items()},
-            diameter_breakdown=by_diam,
-        )
-
-    print(f"\nBest decoded answer acc: {best_acc:.4f}  at epoch {best_epoch}"
-          f"  (model restored to best epoch for downstream evals)")
-    if by_diam:
-        print("Decoded accuracy by graph diameter (best weights):")
-        for d, b in by_diam.items():
-            print(f"  diam {d:>2}:  acc={b['acc']:.3f}  (n={b['n']})")
-    return {"best_epoch": best_epoch, "final_state": final_state}
+        logger.set_extra(interrupted_at_epoch=epoch if interrupted else None)
+    return {"best_epoch": best_epoch, "final_state": final_state,
+            "interrupted": interrupted}
 
 
 # ── Connectivity matrix (Ye et al. 2026) ───────────────────────────────────────
