@@ -4,6 +4,64 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-07-08
+
+### bfs_check closes the density gap: fail -> diagnose -> supervise -> 0.9972
+
+The cleanest causal chain in the project. connectedness_hard, identical 32k
+graphs, model, and optimizer as the failed bfs_expand run (20260707_142843,
+decoded 0.5342 flat for 200 epochs); the trace target is the only substantive
+difference (batch 32 vs 64 — an OOM concession at max_seq_len 704 — is the
+one confound, noted). Result: loss collapses by epoch ~15 (not even
+grokking-shaped — three times earlier than hard_diam's transition), decoded
+0.933 at epoch 20, best 0.9975 at epoch 60; run killed at 88 as saturated.
+Full held-out test split on best weights: **decoded 0.9972, trace_em 0.9044,
+parse_fail 0.0002, flat 0.985-1.000 across diameters 2-8**. The dense task
+that resisted the previous rung now matches converged hard_diam (0.9975)
+exactly. Supervision density is the likely accelerant: check traces grade
+~2 tokens per edge-visit where expand left rejections silent.
+
+Diagnostic before/after (the thesis figure): levels 2-3 tf acc 0.272/0.242
+(expand) -> 0.999/0.998 (check); the previously silent visited-set membership
+tests are now the model's most reliable op — check NO(seen) 1.000 over
+n=342,755 positions. Nothing below 0.996 remains. Fourth confirmed instance
+of the silent-op law, first constructive one on a task that had already
+failed.
+
+OOD decomposition (ER, all 2000, class-imbalanced — always-NO baseline is
+0.755): trace_em 0.188 — the best trace transfer yet (0.12 for blob-trained
+expand; nearly 1 in 5 ER graphs gets a token-perfect execution on an unseen
+distribution) — but answer_acc 0.389, well below the marginal predictor.
+Execution transfers; the verdict read-off is calibrated to blob trace shapes
+(mean 6.0 levels on ER vs ~4-5 on blobs) and misfires toward YES. The
+standing OOD problem is thereby LOCALIZED: not "the model", the answer-
+readout circuit. (By-diameter decay on ER is the class-composition artifact
+again — do not read it as a diameter effect.)
+
+### hard_diam replicated and converged: 0.9975 / trace_em 0.973
+
+Rerun of the headline config to 200 epochs (20260708_153126, seed 42): grok
+at epoch 40-60 (same window), decoded 0.9975, trace_em 0.973 at 200 — the
+converged figure the 07-05 entry owed. Seed-robustness runs (seed 43/44 +
+one dataset-seed variant + one extra ansonly) remain queued for error bars.
+
+### iso_wl stalls like hard did — and the diagnostic acquits the suspects
+
+The wl_expand run (20260708_000424, 32k pairs): tf ~1.0 / loss 0.05 but
+decoded flat ~0.52, trace_em creep stalling at ~0.003 by epoch 160; killed.
+WL-aware diag buckets (validated by count identities) ACQUIT both predicted
+craters — c_new mint 0.989-0.998, hist(first=min) 0.999, sorting clearly
+forms — and convict the neighbour-colour gather: nbr r2 0.888 / r3 0.909
+(r1's 1.000 is a decoy — round-1 colours are all 0). The stuck op is a
+TWO-HOP retrieval: neighbour ids from the prompt edge list, then each
+neighbour's colour from its previous-round record ~150 tokens back. Same law,
+finer grain: the trace made WL's multiset HASH local, but left the multiset
+GATHERING silent. Fix queued: wl_gather — emit `v c(v)` pairs in neighbour-id
+order before the sorted list, so every hop is a single supervised lookup
+(each belongs to a circuit measured at ~1.0). First case where the
+diagnostic rejected the designer's hypothesis — the instrument localizes,
+not confirms.
+
 ## 2026-07-07
 
 ### Density breaks bfs_expand: the visited-set subtraction is the silent op

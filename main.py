@@ -387,16 +387,23 @@ def ood_probe(model, config: GNNConfig, logger: RunLogger, trained_on: str,
 # ── Checkpoint evaluation / inspection ─────────────────────────────────────────
 
 def evaluate_checkpoint(ckpt_path: str, dataset_name: str, limit: int = 0):
-    """Load a trained model and evaluate it on `dataset_name` (no training)."""
+    """Load a trained model and evaluate it on `dataset_name` (no training).
+    On the checkpoint's own training dataset, only the held-out TEST split is
+    scored (same head-tail split as training) — evaluating on all sequences
+    would mix in 80% training data and inflate every number."""
     model, config, ckpt = load_checkpoint(ckpt_path)
     if config.cot_mode == "autoregressive":
         vocab = model.vocab
         sequences = _prepare_cot_sequences(config, dataset_name, vocab, limit=limit,
                                            gen_kwargs=None if dataset_name == config.dataset else {},
                                            drop_overlong=True)
+        split = ""
+        if dataset_name == config.dataset and not limit:
+            _, sequences = split_head_tail(sequences, config.train_frac)
+            split = " (held-out test split)"
         loader = make_cot_loader(sequences, vocab, config.batch_size, shuffle=False)
         print(f"\nLoaded {ckpt_path}  (AR-CoT, trained on {ckpt.get('train_dataset', '?')})")
-        print(f"Evaluating on {dataset_name}  |  {len(sequences)} sequences")
+        print(f"Evaluating on {dataset_name}  |  {len(sequences)} sequences{split}")
         from src.train import eval_cot as _eval_cot
         stats = _eval_cot(model, loader, DEVICE, max_new=config.max_trace_len + 8,
                           by_diameter=True)
@@ -513,7 +520,13 @@ def main():
 
     if args.eval or args.inspect:
         if not args.dataset:
-            raise SystemExit("--eval/--inspect need --dataset to pick the evaluation set")
+            # default to the checkpoint's own training dataset (test split)
+            ckpt = torch.load(args.eval or args.inspect, weights_only=False)
+            args.dataset = ckpt.get("train_dataset") or ckpt["config"].get("dataset")
+            if not args.dataset:
+                raise SystemExit("--eval/--inspect: old checkpoint without a recorded "
+                                 "dataset — pass --dataset explicitly")
+            print(f"(--dataset defaulting to the checkpoint's training set: {args.dataset})")
         if args.eval:
             evaluate_checkpoint(args.eval, args.dataset, limit=args.limit)
         else:
