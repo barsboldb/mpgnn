@@ -63,6 +63,63 @@ def level_table(model, loader, vocab) -> dict[str, tuple[int, int]]:
     return {k: (hit[k], tot[k]) for k in tot}
 
 
+def wl_table(model, loader, vocab) -> dict[str, tuple[int, int]]:
+    """{bucket: (hits, total)} for wl_expand traces. Round records are
+    `EXP u c_old [sorted neighbour colours] c_new` between SEPs; a double SEP
+    opens the histogram section (`[sorted G1 colours] SEP [sorted G2 colours]`).
+    Buckets separate the candidate silent ops: c_old (copy), neighbour colours
+    (lookup), c_new (signature match / fresh mint) per round, and the histogram
+    with its first token — a set-minimum, the bfs_levels pitfall — split out."""
+    hit: dict[str, int] = defaultdict(int)
+    tot: dict[str, int] = defaultdict(int)
+    model.eval()
+    with torch.no_grad():
+        for batch in loader:
+            tokens = batch["tokens"].to(DEVICE)
+            pl = batch["prompt_len"]
+            pred = model(tokens[:, :-1]).argmax(dim=-1).cpu()
+            for i in range(tokens.size(0)):
+                row = tokens[i].cpu().tolist()
+                rnd, in_hist, rec_pos = 0, False, -1
+                for t in range(int(pl[i]), len(row)):
+                    tok = row[t]
+                    if tok == vocab.PAD:
+                        break
+                    nxt = row[t + 1] if t + 1 < len(row) else vocab.PAD
+                    if tok == vocab.SEP:
+                        key = "SEP"
+                        if not in_hist and nxt == vocab.SEP:
+                            in_hist = True                      # double SEP opens the section
+                        elif not in_hist:
+                            rnd += 1
+                    elif tok == vocab.ANS:
+                        key = "ANS"
+                    elif tok in (vocab.YES, vocab.NO):
+                        key = "YES/NO"
+                    elif tok == vocab.EOS:
+                        key = "EOS"
+                    elif in_hist:
+                        # each list (G1's, then G2's after the middle SEP) starts
+                        # right after a SEP; that first colour is a set-minimum
+                        key = "hist(first=min)" if row[t - 1] == vocab.SEP else "hist(rest)"
+                    elif tok == vocab.EXP:
+                        key = "EXP"; rec_pos = 0
+                    else:
+                        rec_pos += 1
+                        r = f"r{min(rnd, 3)}"
+                        if rec_pos == 1:
+                            key = "u(enum)"
+                        elif rec_pos == 2:
+                            key = f"c_old {r} (copy)"
+                        elif nxt == vocab.EXP or nxt == vocab.SEP:
+                            key = f"c_new {r} (mint)"
+                        else:
+                            key = f"nbr {r} (lookup)"
+                    hit[key] += int(pred[i, t - 1] == tok)
+                    tot[key] += 1
+    return {k: (hit[k], tot[k]) for k in tot}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("checkpoint")
@@ -79,10 +136,18 @@ def main():
     _, test_seq = split_head_tail(seqs, config.train_frac)
     loader = make_cot_loader(test_seq, model.vocab, config.batch_size, shuffle=False)
 
-    table = level_table(model, loader, model.vocab)
-    order = [f"level {k}" for k in range(7)] + ["level 7+", "parent(copy)", "EXP",
-                                                "check YES(new)", "check NO(seen)",
-                                                "SEP", "ANS", "YES/NO", "EOS"]
+    if config.trace_format == "wl_expand":
+        table = wl_table(model, loader, model.vocab)
+        order = (["u(enum)"]
+                 + [f"c_old r{r} (copy)" for r in (1, 2, 3)]
+                 + [f"nbr r{r} (lookup)" for r in (1, 2, 3)]
+                 + [f"c_new r{r} (mint)" for r in (1, 2, 3)]
+                 + ["hist(first=min)", "hist(rest)", "EXP", "SEP", "ANS", "YES/NO", "EOS"])
+    else:
+        table = level_table(model, loader, model.vocab)
+        order = [f"level {k}" for k in range(7)] + ["level 7+", "parent(copy)", "EXP",
+                                                    "check YES(new)", "check NO(seen)",
+                                                    "SEP", "ANS", "YES/NO", "EOS"]
     print(f"\n{dataset} test split ({len(test_seq)} seqs), teacher-forced accuracy by position class:")
     print(f"{'position class':>14}  {'tf acc':>7}  {'n':>6}")
     for k in order:
