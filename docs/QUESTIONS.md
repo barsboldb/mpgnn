@@ -69,6 +69,48 @@ every message-passing GNN?*
 
 ---
 
+## Settled framing: why teach a transformer an algorithm it will never beat (2026-07-08)
+
+The objection every defense will raise: classical BFS is O(n+m), provably correct, and
+size-general; the CoT model burns ~10^9 FLOPs per graph for 96% in-distribution and
+collapses OOD. As a BFS implementation it is absurd — concede this in plain words; the
+thesis claim lives one level up. Graph algorithms here are a *model organism* (the
+fruit fly of transformer reasoning): chosen precisely BECAUSE the ground truth is known,
+difficulty has clean knobs (diameter, density), and every intermediate step is
+checkable token by token — none of which holds for the reasoning tasks that matter.
+The deliverable is the trainability laws, not the model: answer-only vs trace =
+outcome vs process supervision measured cleanly at miniature scale; the silent-op law
+(three confirmed instances) is a statement about which reasoning styles are trainable;
+the derailed-trace-read-faithfully failure is LLM hallucinated reasoning reproduced in
+a system small enough to diagnose per token. Honest corollary for the discussion:
+where a classical algorithm exists, the right system calls it as a tool — end-to-end
+neural execution is a measurement instrument, not a product. The wall-clock cost of
+sequential decoding is itself a result (the depth-vs-tokens accounting), not an
+embarrassment to hide.
+
+## Q4 — walk traces: is it the algorithm or just the grounded tokens? (proposed 2026-07-08)
+
+*Middle rung between answer-only (0.51) and canonical BFS traces (0.96): a random-walk
+trace — every token maximally local (next token = any neighbor of the current node, the
+edge-lookup circuit that forms at ~1.0) but non-canonical and incomplete: no frontier,
+no visited set, no coverage guarantee.* Sparked by the walk-tokenization line (DeepWalk /
+node2vec, CRaWl, walks-as-graph-sequencers): instead of walks as external preprocessing,
+make the transformer the walker — the walk IS the CoT.
+
+- If walk-CoT lands near BFS-CoT: "supervised algorithm execution" weakens to "any
+  grounded scaffold works" — major, publishable revision of the claim. If it stays near
+  answer-only: canonicality/completeness of the trace is load-bearing and the
+  five-ingredient recipe sharpens. Either outcome cuts.
+- Design: seed the walk per graph (deterministic target — teacher forcing needs one);
+  decode by SAMPLING neighbors, not argmax (the model as native random walker). Answer
+  head after T walk tokens.
+- One-sided rigor: a blob-crossing walk proves connected; absence within budget T is
+  only evidence (cover time O(n·m)). Accuracy-vs-T is a curve, not a number — feeds the
+  depth-vs-tokens cost chapter (walk tokens ~10x cheaper than check-trace tokens).
+- Third control alongside: filler tokens ("think dot by dot"), same budget, zero graph
+  content. Ladder: filler -> walk -> BFS = does compute alone help / does grounding
+  help / does structure help, one axis, three rungs.
+
 ## Earlier candidate questions (2026-07-06 discussion) and their dispositions
 
 1. **"Can we accelerate / minimize cost on graph tasks?"** → sharpened into *"parallel

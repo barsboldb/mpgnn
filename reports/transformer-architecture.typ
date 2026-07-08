@@ -29,7 +29,7 @@
   #v(0.3em)
   #text(size: 11pt)[Attention, multi-head, blocks, positional information, and how to read the output]
   #v(0.2em)
-  #text(size: 9.5pt, fill: luma(100))[architecture primer · `src/transformer.py` · `src/layers.py` · #datetime.today().display()]
+  #text(size: 9.5pt, fill: luma(100))[architecture primer · `src/transformer.py` · `src/layers.py` · `src/cot.py` · #datetime.today().display()]
 ]
 
 #v(0.6em)
@@ -469,6 +469,149 @@ For $n$ tokens of width $d$ with an FFN factor of 4:
 
 The quadratic-in-$n$ attention term is what the efficient variants above attack; the quadratic-in-$d$ FFN term is usually the bigger share at typical sizes.
 
+= Encoder vs decoder: the same blocks, one mask apart
+
+A misconception worth killing early: *encoder and decoder are not two architectures.* They are the same block stack — attention + FFN, pre-norm, residuals — used in two different ways. Our own code is the proof: `src/cot.py` builds the decoder-only CoT model out of the *same* `_EncoderBlock` class as every encoder in the repo; its docstring says it in one line — "a causal attention mask is the only difference from the encoder stack."
+
+What actually differs is three usage choices, not the internals:
+
+#align(center)[
+#table(
+  columns: (auto, 1fr, 1fr),
+  inset: 6pt, align: (left, left, left),
+  stroke: 0.4pt + luma(180),
+  table.header([], [*encoder use* (our graph models)], [*decoder use* (our CoT model)]),
+  [mask], [bidirectional — every token sees all], [causal — token $t$ sees only $1 dots t$],
+  [readout], [pool / task token $arrow.r$ one label], [*every* position $arrow.r$ logits for the *next* token],
+  [at inference], [one forward pass, done], [a loop: generate a token, feed it back, repeat],
+)
+]
+
+The two words describe the two halves of any sequence model's job. *Encoding* is turning input tokens into contextualized vectors — running the stack. Both families do this; a "decoder" encodes its prompt too. *Decoding* is the extra step only generation has: turning the model's output distributions back into concrete tokens, one at a time. The names stuck from the encoder–decoder translation models (T5-style, §11), where the two roles live in two separate stacks connected by cross-attention — that is the only family with a genuinely new structural piece. A decoder-*only* model like GPT (or ours) simply does both jobs in one stack: the causal mask means every prefix is encoded, and the next token is decoded from the last position's logits.
+
+= Our CoT model concretely: what the tokens are
+
+Everything the AR-CoT model ever sees is a symbol from one small fixed vocabulary (`CoTVocab` in `src/cot_tokens.py`). With `max_nodes: 32` there are exactly 42 symbols:
+
+#align(center)[
+#table(
+  columns: (auto, auto, 1fr),
+  inset: 6pt, align: (left, left, left),
+  stroke: 0.4pt + luma(180),
+  table.header([*token id*], [*symbol*], [*meaning*]),
+  [$0 dots 31$], [#text(blue)[node ids]], [one symbol per node; in the WL isomorphism trace these double as *colour* ids (colours are canonical small ints, so they share the range),],
+  [32], [`PAD`], [filler for ragged batches — never supervised, never attended,],
+  [33], [`N`], [opens the node roster `N 0 1 2 ...` (distractor mass at fixed $n$),],
+  [34], [`E`], [opens the edge list; edges follow as bare id pairs `u v u v ...`,],
+  [35], [`TRACE`], [end of prompt — "start computing here",],
+  [36], [`SEP`], [separates BFS levels / WL rounds,],
+  [37--39], [`ANS` `YES` `NO`], [the answer slot and the two possible answers,],
+  [40], [`EOS`], [end of sequence — generation stops here,],
+  [41], [`EXP`], [marks "now expanding node $u$" inside a verbose trace round.],
+)
+]
+
+A whole training sequence is prompt + trace + answer, laid end to end. For a 6-node connected graph (backbone $0#[--]1#[--]2#[--]3$, leaves $4$ on $1$ and $5$ on $2$), the `bfs_expand` sequence is:
+
+#align(center)[
+#box(fill: luma(248), inset: 8pt, radius: 3pt)[
+  #text(9pt, font: "New Computer Modern Mono")[
+    #text(blue)[N 0 1 2 3 4 5 E 1 4 0 1 2 5 1 2 2 3 TRACE]
+    #text(purple)[0 SEP EXP 0 1 SEP EXP 1 2 4 SEP EXP 2 3 5 EXP 4 SEP EXP 3 EXP 5]
+    #text(green)[ANS YES EOS]
+  ]
+]
+]
+
+#v(-0.2em)
+#align(center)[
+  #text(8pt)[#text(blue)[prompt: the graph, edges in shuffled order] · #text(purple)[trace: BFS frontier by frontier, `EXP u` then $u$'s new children] · #text(green)[answer]]
+]
+
+Three things to notice. First, *there is no other input channel*: no adjacency matrix, no node features — the graph exists only as this token string, and any "understanding" of it must be built by attention over these symbols. Second, the trace is the *supervised intermediate computation*: the model is not asked to leap from edge list to YES/NO; it is taught to write out BFS (or WL colour refinement) step by step, and the answer is only the last three tokens. Third, node ids are randomly permuted per graph, so no id pattern leaks the answer — the model must actually read the edge list.
+
+= Two regimes: teacher forcing (training) vs greedy decoding (eval)
+
+The same model is used completely differently at train and eval time, and the distinction explains every metric in our logs.
+
+== Training: teacher forcing — all positions at once, one update per batch
+
+During training the model *never generates anything*. The full gold sequence (prompt + trace + answer) is fed in one forward pass; thanks to the causal mask, the output at position $t$ is a prediction of token $t+1$ made from only $1 dots t$ — so *every position of every sequence is a separate next-token exercise, graded simultaneously*. The loss is cross-entropy on the completion positions (the trace and, weighted by `answer_loss_weight`, the answer slot; prompt and padding are ignored), and there is one optimizer update per *batch* — at batch 64 and 25,600 training sequences, that is 400 updates per epoch, not one.
+
+This is called *teacher forcing* because at every position the model predicts from the *gold* prefix — as if a teacher corrected each token before it writes the next. It is what makes training parallel and fast. The `tf_train` / `tf_test` numbers in the logs are exactly this: next-token accuracy given a gold prefix.
+
+== Eval: greedy decoding — the model on its own
+
+"Decoding" answers the question the forward pass leaves open: the model outputs a *distribution* over 42 symbols at each position — which token do we actually commit to? A *decoding strategy* turns distributions into a sequence. *Greedy* is the simplest: take the argmax, always. (Sampling, beam search, etc. are other strategies; for an algorithm trace with a unique correct continuation, greedy is the natural choice.)
+
+Generation is a loop (`generate()` in `src/cot.py`): feed the prompt, take the argmax at the last position, *append it to the sequence, feed the whole thing back in*, and repeat until `EOS`:
+
+#align(center)[
+#cetz.canvas(length: 1cm, {
+  import cetz.draw: *
+  // prompt tokens
+  let s = 0.62
+  for (i, c) in ((blue, blue, blue, blue, purple, purple, purple)).enumerate() {
+    rect((i * s, 0), (i * s + 0.55, 0.5), radius: 2pt, fill: c.lighten(78%), stroke: 0.5pt + c)
+  }
+  content((1.2, -0.35), text(6.5pt, fill: blue)[prompt])
+  content((3.5, -0.35), text(6.5pt, fill: purple)[generated so far])
+  // model
+  line((4.4, 0.6), (5.2, 1.35), mark: (end: ">"), stroke: 0.6pt)
+  rect((5.2, 1.05), (7.6, 1.8), radius: 3pt, fill: orange.lighten(85%), stroke: 0.5pt + orange)
+  content((6.4, 1.42), text(7pt)[model (one forward)])
+  // argmax
+  line((7.6, 1.42), (8.3, 1.42), mark: (end: ">"), stroke: 0.6pt)
+  rect((8.3, 1.05), (10.3, 1.8), radius: 3pt, fill: green.lighten(82%), stroke: 0.5pt + green)
+  content((9.3, 1.42), text(7pt)[argmax = greedy])
+  // next token loops back
+  line((9.3, 1.05), (9.3, 0.25), (4.75, 0.25), mark: (end: ">"), stroke: (paint: green, thickness: 0.7pt, dash: "dashed"))
+  content((8.35, 0.5), text(6.5pt, fill: green)[next token, appended])
+  content((7.0, -0.05), text(6.5pt, fill: green)[repeat until `EOS`])
+})
+]
+
+The feedback edge is not an implementation detail — *it is the mechanism this whole thesis measures*. Each generated token re-enters the network and passes through all layers again, so a depth-2 model that emits 300 trace tokens performs 300 sequential computation steps a plain depth-2 encoder simply does not have (Merrill & Sabharwal). That is why the trace model solves diameter-18 connectivity at depth 2 while the answer-only control sits at chance.
+
+It also explains the metric gap in a stalled run: `tf_test` $approx 1$ with `decoded` $approx 0.5$ means the model predicts the next token nearly perfectly *when the prefix is gold*, but during free generation one early trace error puts it on a prefix it was never trained on, errors compound, and it then faithfully "reads off" the wrong answer from its own derailed trace. `decoded` (answer accuracy after greedy decoding) and `trace_em` (exact match of the whole generated trace) are the honest numbers; teacher-forced accuracy is the optimistic one.
+
+= K and V are activations; $W_K$ and $W_V$ are the parameters
+
+A confusion worth pinning down precisely, because the words "the K and V matrices" get used for both things. What is *learnable* is the three projection matrices $W_Q, W_K, W_V$ (plus $W_O$) — fixed after training, the same for every input. What attention actually *uses* are the per-token vectors they produce on each forward pass:
+
+$ k_t = W_K x_t, quad v_t = W_V x_t $
+
+— these are *activations*, like any hidden state: recomputed from the data every pass, different for every input, never "learned" or stored in the model.
+
+This distinction is what makes the *KV cache* legitimate during generation. At eval the weights are frozen, and the mask is causal — so token $t$'s key and value depend only on tokens $1 dots t$, which never change as the sequence grows. When we append token 301, tokens 1–300 produce *bit-identical* $k, v$ to the previous step. Recomputing them (which the naive loop above does — a full forward over the whole prefix per generated token) is pure waste:
+
+#align(center)[
+#cetz.canvas(length: 1cm, {
+  import cetz.draw: *
+  let s = 0.55
+  // cached K/V slots
+  content((-0.15, 0.7), anchor: "east", text(7pt)[K/V cache])
+  for i in range(8) {
+    rect((i * s, 0.45), (i * s + 0.48, 0.95), radius: 2pt,
+         fill: if i < 7 { blue.lighten(75%) } else { green.lighten(70%) },
+         stroke: 0.5pt + if i < 7 { blue } else { green })
+  }
+  content((1.9, 1.25), text(6.5pt, fill: blue)[stored once, never recomputed])
+  content((7 * s + 0.24, 1.25), text(6.5pt, fill: green)[new])
+  // new token below
+  rect((7 * s, -0.75), (7 * s + 0.48, -0.25), radius: 2pt, fill: green.lighten(70%), stroke: 0.5pt + green)
+  content((7 * s - 0.7, -0.5), anchor: "east", text(7pt)[new token: embed, project $q, k, v$])
+  // q arrows to all cached slots
+  for i in range(8) {
+    line((7 * s + 0.1, -0.2), (i * s + 0.24, 0.4), stroke: 0.4pt + luma(150))
+  }
+  content((9.2, 0.1), anchor: "west", text(6.5pt)[$q$ attends over all cached $k, v$])
+  content((9.2, -0.3), anchor: "west", text(6.5pt)[its own $k, v$ join the cache])
+})
+]
+
+With the cache (`generate()` since commit `ae6b367`), each step embeds *only the newest token*, projects its $q, k, v$, appends $k, v$ to the per-layer cache, and attends against the stored keys — the prefix is never touched again. The outputs are token-identical to the naive loop (verified against the trained hard_diam checkpoint); only the cost changes: per generated token, a full re-forward costs $O(L)$ FFN/projection work versus $O(1)$ for the cached step, so the saving grows with trace length. Training is unaffected — teacher forcing is already one parallel pass and needs no cache.
+
 = Summary
 
 #align(center)[
@@ -485,7 +628,10 @@ The quadratic-in-$n$ attention term is what the efficient variants above attack;
   [position], [must be added (absolute / relative / RoPE / ALiBi / bias / Laplacian PE) — attention alone is order-blind,],
   [masking], [bidirectional vs causal vs structured; controls who attends to whom,],
   [readout], [per-token, pooled, or a CLS/task token — pick by task,],
-  [families], [encoder (understand) · decoder (generate) · encoder–decoder (translate, via cross-attention),],
+  [families], [encoder (understand) · decoder (generate) · encoder–decoder (translate, via cross-attention) — *same blocks, different mask and readout*,],
+  [teacher forcing], [training = one parallel pass over the gold sequence; every position is a next-token exercise; no generation happens,],
+  [greedy decoding], [eval = argmax, append, feed back, repeat; each fed-back token buys one sequential computation step,],
+  [KV cache], [$W_K, W_V$ are parameters; $k_t, v_t$ are activations — frozen weights + causal mask make past $k, v$ reusable,],
   [cost], [$O(n^2 d)$ attention drives the efficient-attention zoo.],
 )
 ]
