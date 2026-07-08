@@ -88,6 +88,30 @@ neural execution is a measurement instrument, not a product. The wall-clock cost
 sequential decoding is itself a result (the depth-vs-tokens accounting), not an
 embarrassment to hide.
 
+## Future-work note: learned steering of combinatorial heuristics (compilers) (2026-07-08)
+
+Where the trainability laws could eventually earn practical keep: register
+allocation IS graph coloring (Chaitin 1981; interference graph, k registers =
+k colors, NP-complete), compilers run heuristics, heuristic gaps mean spills =
+data movement. ML steering this is real and deployed — Google's MLGO puts a
+learned eviction policy inside LLVM's register allocator — and the deployment
+shape matches this thesis's tool-calling corollary exactly: the classical
+algorithm executes (an invalid coloring is a miscompiled program; correctness
+is not approximable), the model steers only the NP-hard *choice points*
+(spill/evict ordering), which is precisely where no right algorithm exists.
+Compilation also inverts the CoT cost objection: compile once, run trillions
+of times — expensive search on hot functions is a sane economy (cf.
+superoptimization). Dampers, on record: regalloc heuristics are near-ceiling
+(MLGO gains are fractions of a percent; the bigger data-movement wins are
+scheduling/tiling/layout), and neural-combinatorial has a rebuttal problem —
+GNN graph coloring (Schuetz et al. 2022) lost to plain greedy (Angelini &
+Ricci-Tersenghi) for want of matched baselines; this repo's control/leak-audit
+reflexes are the needed immune system. Terminology guard for the writeup: WL
+color REFINEMENT (partition refinement, the iso chapter) is not proper graph
+COLORING (adjacent ≠ equal, the regalloc one) — don't conflate. Framing
+sentence: *the trace-supervision laws studied here are the training-side
+prerequisites for models that steer combinatorial heuristics in compilers.*
+
 ## Q4 — walk traces: is it the algorithm or just the grounded tokens? (proposed 2026-07-08)
 
 *Middle rung between answer-only (0.51) and canonical BFS traces (0.96): a random-walk
