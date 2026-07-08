@@ -23,3 +23,9 @@ trace_format: bfs_check
 # total max 665, completion max 444
 max_seq_len: 704
 max_trace_len: 456
+
+# L=704 attention is [B*heads, 704, 704] per matrix — batch 64 OOMs the ~20GB
+# MPS cap (0.5GB per matrix, several live per layer + backward). Batch 32 is a
+# (mild, noted) optimizer confound vs the batch-64 bfs_expand run; the trace
+# target remains the headline difference.
+batch_size: 32

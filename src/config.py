@@ -132,6 +132,10 @@ class GNNConfig:
     # answer_loss_weight: CE weight on the YES/NO target position.
     # cot_eval_every: greedy-decode eval cadence in epochs (decode is ~L sequential
     #                forwards; teacher-forced answer accuracy is logged every epoch).
+    # decode_eval_n: decode only the first N test sequences during training-time
+    #                evals (0 = all). Mid-run decoded/trace_em get a sampling error
+    #                (~1/sqrt(N)) and best-epoch selection sees the subset; the
+    #                end-of-run breakdown on best weights always uses the full set.
     # prompt_roster: include the `N v_0..v_{n-1}` node roster in the prompt. At
     #                fixed n it carries no information but gives every node id a
     #                guaranteed occurrence outside the edge list — distractor mass
@@ -147,6 +151,7 @@ class GNNConfig:
     cot_pos: str = "learned"
     answer_loss_weight: float = 1.0
     cot_eval_every: int = 1
+    decode_eval_n: int = 0
     prompt_roster: bool = True
     tie_embeddings: bool = True
     # BDH (model: bdh) — graph-native Dragon Hatchling (Kosowski et al. 2025).

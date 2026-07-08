@@ -1,5 +1,6 @@
 from __future__ import annotations
 import time
+from datetime import datetime, timedelta
 import torch
 import torch.nn.functional as F
 from torch_geometric.loader import DataLoader
@@ -354,7 +355,8 @@ def eval_cot(model, loader, device, max_new: int, by_diameter: bool = False) -> 
 def run_cot_experiment(model, train_loader, test_loader, device,
                        epochs=200, lr=1e-3, weight_decay=0.0,
                        answer_loss_weight=1.0, max_new=64, eval_every=1,
-                       logger: RunLogger | None = None) -> dict:
+                       logger: RunLogger | None = None,
+                       decode_loader=None) -> dict:
     """Autoregressive-CoT training loop. Greedy-decode eval every `eval_every`
     epochs (the `test` metric — decoded answer accuracy — exists only on those
     epochs, so best-epoch selection sees decoded numbers only); teacher-forced
@@ -366,10 +368,32 @@ def run_cot_experiment(model, train_loader, test_loader, device,
     loop but NOT the run: best-so-far weights are restored and returned so the
     caller still saves the checkpoint and results JSON. The slow best-weights
     decode breakdown is skipped on interrupt — a second Ctrl-C during the save
-    tail kills for real."""
+    tail kills for real.
+
+    decode_loader (default: test_loader) is the mid-run greedy-decode set —
+    pass a subset loader (config.decode_eval_n) to cheapen the every-5-epoch
+    decode; the final best-weights breakdown always runs on the full
+    test_loader."""
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     best_acc, best_epoch, best_state = -1.0, 0, None
     interrupted, epoch = False, 0
+    if decode_loader is None:
+        decode_loader = test_loader
+    # running means for the ETA print: train+plain-eval every epoch, decode
+    # extra only on decode epochs (they differ by minutes at long max_new)
+    t_plain, n_plain, t_dec, n_dec = 0.0, 0, 0.0, 0
+
+    def _eta(epoch: int) -> str:
+        rem = epochs - epoch
+        rem_dec = sum(1 for e in range(epoch + 1, epochs + 1)
+                      if e % eval_every == 0 or e == epochs)
+        per_plain = t_plain / max(n_plain, 1)
+        per_dec = t_dec / n_dec if n_dec else per_plain  # no decode seen yet: optimistic
+        secs = rem * per_plain + rem_dec * (per_dec - per_plain)
+        done = datetime.now() + timedelta(seconds=secs)
+        day = "" if done.date() == datetime.now().date() else done.strftime(" %b %d")
+        left = f"{secs / 3600:.1f}h" if secs >= 3600 else f"{secs / 60:.0f}m"
+        return f"~{left} left (ETA {done:%H:%M}{day})"
 
     try:
         for epoch in range(1, epochs + 1):
@@ -378,8 +402,12 @@ def run_cot_experiment(model, train_loader, test_loader, device,
                                               answer_loss_weight=answer_loss_weight)
             _sync(device); t1 = time.perf_counter()
             decode = epoch % eval_every == 0 or epoch == epochs
+            if device.type == "mps":
+                torch.mps.empty_cache()   # release the training epoch's cached
+                # allocations before eval builds its own [B*H, L, L] buffers —
+                # at L~700 the two together breach the ~20GB watermark
             tf_test = eval_cot_teacher_forced(model, test_loader, device)
-            stats = eval_cot(model, test_loader, device, max_new=max_new) if decode else None
+            stats = eval_cot(model, decode_loader, device, max_new=max_new) if decode else None
             _sync(device); t2 = time.perf_counter()
 
             if stats is not None and stats["answer_acc"] > best_acc:
@@ -394,11 +422,15 @@ def run_cot_experiment(model, train_loader, test_loader, device,
                                mean_levels=round(stats["mean_levels"], 2),
                                parse_fail=round(stats["parse_fail"], 4))
                 logger.log(epoch, **row)
+            if decode:
+                t_dec += t2 - t0; n_dec += 1
+            else:
+                t_plain += t2 - t0; n_plain += 1
             if epoch % 10 == 0:
                 dec = f"decoded={stats['answer_acc']:.4f}  trace_em={stats['trace_em']:.4f}" \
                     if stats is not None else "decoded=—"
                 print(f"Epoch {epoch:03d}  loss={loss:.4f}  tf_train={tf_train:.4f}  "
-                      f"tf_test={tf_test:.4f}  {dec}")
+                      f"tf_test={tf_test:.4f}  {dec}  |  {_eta(epoch)}")
     except KeyboardInterrupt:
         interrupted = True
         print(f"\n[interrupted] stopping at epoch {epoch}/{epochs} — saving best-so-far "

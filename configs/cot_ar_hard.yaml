@@ -9,7 +9,7 @@
 extends: cot_ar.yaml
 
 dataset: connectedness_hard
-dataset_kwargs: {num_graphs: 32000}
+dataset_kwargs: {num_graphs: 32000}   # the data lever is load-bearing (CHANGELOG 07-05); keep the A/B at 32k
 
 # the winning recipe (CHANGELOG 2026-07-05): local bfs_expand target + zero reg
 # (inherited) + enough data; bfs_levels never trained past loss ~1.87

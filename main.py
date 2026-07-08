@@ -280,6 +280,13 @@ def cot_experiment(config: GNNConfig, dataset_name: str, overfit: int = 0, limit
 
     train_loader = make_cot_loader(train_seq, vocab, config.batch_size, shuffle=True)
     test_loader = make_cot_loader(test_seq, vocab, config.batch_size, shuffle=False)
+    # mid-run decode subset (decode_eval_n): test split is head-tail so a head
+    # slice is label-alternating, i.e. class-balanced
+    decode_loader = test_loader
+    if 0 < config.decode_eval_n < len(test_seq):
+        decode_loader = make_cot_loader(test_seq[:config.decode_eval_n], vocab,
+                                        config.batch_size, shuffle=False)
+        print(f"(mid-run decode evals use {config.decode_eval_n} of {len(test_seq)} test seqs)")
     model = build_and_describe(config)
 
     tag = ("cot_ar_" if config.max_trace_len > 0 else "cot_ar_ansonly_") \
@@ -291,7 +298,7 @@ def cot_experiment(config: GNNConfig, dataset_name: str, overfit: int = 0, limit
                               weight_decay=config.weight_decay,
                               answer_loss_weight=config.answer_loss_weight,
                               max_new=max_new, eval_every=config.cot_eval_every,
-                              logger=logger)
+                              logger=logger, decode_loader=decode_loader)
     if not info.get("interrupted"):
         cot_ood_probe(model, config, logger, vocab, trained_on=dataset_name, max_new=max_new)
     logger.save()

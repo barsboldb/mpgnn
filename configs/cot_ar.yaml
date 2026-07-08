@@ -30,6 +30,9 @@ permute_node_ids: true      # caterpillar backbones are 0..d — ids leak otherw
 cot_pos: learned            # swap to 'none' (NoPE) for length-OOD runs
 answer_loss_weight: 1.0
 cot_eval_every: 5           # greedy decode every 5th epoch (tf proxy in between)
+decode_eval_n: 1600         # mid-run decode on a balanced head slice (~1.2% stderr);
+                            # pure measurement — zero effect on training; final
+                            # best-weights numbers still use the full test set
 
 # unused on the AR path but required fields
 in_channels: 1
