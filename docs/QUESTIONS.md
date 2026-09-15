@@ -2,7 +2,8 @@
 
 Working map of research questions for the diploma. The findings themselves live in
 `docs/CHANGELOG.md` and `reports/executing-graph-algorithms.md`; this file tracks what
-is being *asked*. Updated 2026-07-06.
+is being *asked*. Updated 2026-07-06. Literature coverage per question (how crowded the
+field is, notable papers to cite or defend against): `docs/QUESTIONS-LITERATURE.md`.
 
 ---
 
