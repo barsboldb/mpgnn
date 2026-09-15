@@ -28,3 +28,7 @@ checkpoints/
 
 # Vendored BDH reference repo (Pathway) — separate git clone, not project code
 bdh-research-emergency/
+
+# Reading PDFs: large third-party binaries. papers/README.md indexes them and IS tracked,
+# so the bibliography stays version-controlled and the set is re-fetchable from its links.
+papers/*.pdf
