@@ -1,0 +1,146 @@
+{
+  "run_id": "20260826_182052_raw_connectivity_global_attn-global_attn",
+  "dataset": "connectivity",
+  "params": null,
+  "provenance": {
+    "git_commit": "aa8c8b8",
+    "git_dirty": true,
+    "argv": "ye_connectivity.py --dist hard --regime raw --n 24 --depth 2 --epochs 20 --train 500 --test 200",
+    "torch": "2.12.1",
+    "python": "3.14.2"
+  },
+  "config": {
+    "model": "connectivity_transformer",
+    "task": "connectivity",
+    "tokenization": "adj_matrix",
+    "regime": "raw",
+    "dist": "hard",
+    "attn": "global",
+    "depth": 2,
+    "capacity": 9,
+    "n": 24,
+    "p": 0.12,
+    "hidden_channels": 64,
+    "heads": 4,
+    "lr": 0.001,
+    "epochs": 20,
+    "batch_size": 128,
+    "seed": 0,
+    "device": "mps",
+    "layers": [
+      {
+        "type": "global_attn",
+        "heads": 4
+      },
+      {
+        "type": "global_attn",
+        "heads": 4
+      }
+    ]
+  },
+  "summary": {
+    "best_epoch": 1,
+    "loss": 3.358,
+    "train": 0.5,
+    "test": 0.5,
+    "test_within": 0.5,
+    "clique_disc": 0.0,
+    "clique_bridge": 1.0,
+    "clique_disc_dens": 1.0
+  },
+  "timing": {},
+  "history": [
+    {
+      "epoch": 1,
+      "loss": 3.358,
+      "train": 0.5,
+      "test": 0.5,
+      "test_within": 0.5,
+      "clique_disc": 0.0,
+      "clique_bridge": 1.0,
+      "clique_disc_dens": 1.0
+    },
+    {
+      "epoch": 2,
+      "loss": 1.6291
+    },
+    {
+      "epoch": 3,
+      "loss": 0.6811
+    },
+    {
+      "epoch": 4,
+      "loss": 0.5816
+    },
+    {
+      "epoch": 5,
+      "loss": 0.5206
+    },
+    {
+      "epoch": 6,
+      "loss": 0.4775
+    },
+    {
+      "epoch": 7,
+      "loss": 0.4445
+    },
+    {
+      "epoch": 8,
+      "loss": 0.4191
+    },
+    {
+      "epoch": 9,
+      "loss": 0.3862
+    },
+    {
+      "epoch": 10,
+      "loss": 0.367
+    },
+    {
+      "epoch": 11,
+      "loss": 0.3433
+    },
+    {
+      "epoch": 12,
+      "loss": 0.3318
+    },
+    {
+      "epoch": 13,
+      "loss": 0.3224
+    },
+    {
+      "epoch": 14,
+      "loss": 0.3232
+    },
+    {
+      "epoch": 15,
+      "loss": 0.3149
+    },
+    {
+      "epoch": 16,
+      "loss": 0.3086
+    },
+    {
+      "epoch": 17,
+      "loss": 0.3016
+    },
+    {
+      "epoch": 18,
+      "loss": 0.3034
+    },
+    {
+      "epoch": 19,
+      "loss": 0.2949
+    },
+    {
+      "epoch": 20,
+      "loss": 0.2959,
+      "train": 0.018,
+      "test": 0.005,
+      "test_within": 0.005,
+      "clique_disc": 1.0,
+      "clique_bridge": 0.0,
+      "clique_disc_dens": 0.5
+    }
+  ]
+}

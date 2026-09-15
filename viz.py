@@ -76,11 +76,12 @@ def load_runs(results_dir: str = "results") -> list[dict]:
                         if "mean_epoch_train_s" in timing else None,
             "infer_ms": (timing.get("inference") or {}).get(
                 "per_graph_ms", (timing.get("inference") or {}).get("per_call_ms")),
-            "ood": (run.get("ood") or {}).get("em"),
+            # older connectivity eval logs "em"; the AR-CoT eval logs "answer_acc"
+            "ood": (run.get("ood") or {}).get("em", (run.get("ood") or {}).get("answer_acc")),
             # collapse diagnostics from the best-epoch eval (connectivity runs)
             "p_within": (run.get("best_eval") or {}).get("p_within"),
             "p_cross": (run.get("best_eval") or {}).get("p_cross"),
-            "by_diam": run.get("diameter_breakdown"),     # {diam: {n, em, verdict}} | None
+            "by_diam": run.get("diameter_breakdown"),     # {diam: {n, em|acc, verdict?}} | None
             "ep": [h["epoch"] for h in hist],
             "series": series,                 # {key: [values...]} for ALL logged series
             "meta": {k: v for k, v in {
@@ -419,19 +420,25 @@ function statRow(stats){
   });
   return row;
 }
+// older connectivity eval logs {n, em, verdict}; the AR-CoT eval logs {n, acc}
+// (no verdict) — normalize so both render the same way.
+const bAcc = b => b.em ?? b.acc;
 function diamTable(bd){
+  const hasVerdict = Object.values(bd).some(b=>b.verdict!=null);
   const t=el('table','mini');
   const hr=el('tr');
-  ['diameter','n','exact match','verdict'].forEach((h,i)=>{
+  const heads = hasVerdict ? ['diameter','n','exact match','verdict'] : ['diameter','n','accuracy'];
+  heads.forEach((h,i)=>{
     const th=el('th',i?'num':null,h); hr.appendChild(th);
   });
   const thead=el('thead'); thead.appendChild(hr); t.appendChild(thead);
   const tb=el('tbody');
   Object.entries(bd).forEach(([d,b])=>{
     const tr=el('tr');
-    [d, b.n, fmt(b.em), fmt(b.verdict)].forEach((v,i)=>tr.appendChild(el('td',i?'num':null,v)));
-    // inline magnitude cue for em: a short single-hue bar under the number
-    const bar=el('div','embar'); bar.style.width=Math.round(b.em*56)+'px';
+    const row = hasVerdict ? [d, b.n, fmt(bAcc(b)), fmt(b.verdict)] : [d, b.n, fmt(bAcc(b))];
+    row.forEach((v,i)=>tr.appendChild(el('td',i?'num':null,v)));
+    // inline magnitude cue: a short single-hue bar under the number
+    const bar=el('div','embar'); bar.style.width=Math.round(bAcc(b)*56)+'px';
     tr.children[2].appendChild(bar);
     tb.appendChild(tr);
   });
@@ -616,10 +623,18 @@ function drawScatter(canvas, hoverIdx){
   const {ctx,w,h}=setup(canvas,320);
   ctx.clearRect(0,0,w,h);
   const pad={l:44,r:14,t:10,b:26};
-  // selected runs when any are selected, else all filtered (never empty by default)
-  const sel=active().filter(r=>r.best!=null && r.depth>0);
-  const fs=(sel.length ? sel : filtered().filter(r=>r.best!=null && r.depth>0));
+  // an explicit selection scopes the chart to exactly those runs — never
+  // silently substitute other (unselected) runs once the user has picked some.
+  const sel=active();
   const bySlot=sel.length>0;
+  const fs=(bySlot ? sel : filtered()).filter(r=>r.best!=null && r.depth>0);
+  canvas._pts=[];
+  if(!fs.length){
+    ctx.fillStyle=CHROME.muted; ctx.font="12px system-ui"; ctx.textAlign="center";
+    ctx.fillText(bySlot ? "none of the selected runs have depth/metric data"
+                         : "no runs with depth/metric data yet", w/2, h/2);
+    return;
+  }
   const maxD=Math.max(2,...fs.map(r=>r.depth));
   const X=d=>pad.l+(w-pad.l-pad.r)*(d/(maxD+0.5));
   const Y=v=>pad.t+(h-pad.t-pad.b)*(1-v);
@@ -664,10 +679,11 @@ function scatterHover(ev){
 
 // ── EM vs graph diameter (from each run's diameter_breakdown) ─────────────────
 function diamRuns(){
-  // selected runs with a breakdown; if none selected has one, fall back to the
-  // first 8 filtered runs that do (colored by layer type)
-  const sel=active().filter(r=>r.by_diam);
-  if(sel.length) return {rs:sel, bySlot:true};
+  // an explicit selection scopes the chart to exactly those runs (even if that's
+  // an empty set) — only fall back to browsing unselected runs when nothing is
+  // selected at all, so this never silently swaps in other runs' data.
+  const sel=active();
+  if(sel.length) return {rs:sel.filter(r=>r.by_diam), bySlot:true};
   return {rs:filtered().filter(r=>r.by_diam).slice(0,8), bySlot:false};
 }
 function drawDiam(canvas, hoverD){
@@ -678,8 +694,10 @@ function drawDiam(canvas, hoverD){
   canvas._diam={rs,bySlot,pad,w};
   if(!rs.length){
     ctx.fillStyle=CHROME.muted; ctx.font="12px system-ui"; ctx.textAlign="center";
-    ctx.fillText("no diameter breakdown recorded — only runs made after the logging upgrade have it",
-                 w/2, h/2);
+    ctx.fillText(bySlot
+      ? "none of the selected runs have a diameter breakdown"
+      : "no diameter breakdown recorded — only runs made after the logging upgrade have it",
+      w/2, h/2);
     return;
   }
   const maxD=Math.max(2,...rs.flatMap(r=>Object.keys(r.by_diam).map(Number)));
@@ -692,12 +710,12 @@ function drawDiam(canvas, hoverD){
     const col=bySlot?SLOTS[r.slot]:layerColor(r.layer_type);
     const ds=Object.keys(r.by_diam).map(Number).sort((a,b)=>a-b);
     ctx.strokeStyle=col; ctx.lineWidth=2; ctx.beginPath();
-    ds.forEach((d,i)=>{ const y=Y(r.by_diam[d].em);
+    ds.forEach((d,i)=>{ const y=Y(bAcc(r.by_diam[d]));
       i ? ctx.lineTo(X(d),y) : ctx.moveTo(X(d),y); });
     ctx.stroke();
     ds.forEach(d=>{
       ctx.fillStyle=col;
-      ctx.beginPath(); ctx.arc(X(d),Y(r.by_diam[d].em),3.5,0,7); ctx.fill();
+      ctx.beginPath(); ctx.arc(X(d),Y(bAcc(r.by_diam[d])),3.5,0,7); ctx.fill();
       ctx.strokeStyle="#1a1a19"; ctx.lineWidth=2; ctx.stroke();
     });
   });
@@ -724,7 +742,9 @@ function diamHover(ev){
     const k=document.createElement('span'); k.className='k';
     k.style.borderColor=st.bySlot?SLOTS[r.slot]:layerColor(r.layer_type);
     const val=document.createElement('span'); val.className='v';
-    val.textContent=`em ${fmt(b.em)} · verdict ${fmt(b.verdict)}`;
+    val.textContent = b.verdict!=null
+      ? `em ${fmt(bAcc(b))} · verdict ${fmt(b.verdict)}`
+      : `acc ${fmt(bAcc(b))}`;
     row.append(k,val,document.createTextNode(` (n=${b.n})  ${short(r)}`));
     tip.appendChild(row);
   });
@@ -1015,14 +1035,14 @@ function redrawCurves(){
 
 function viewCompare(main){
   const charts=document.createElement('div'); charts.className='charts';
-  const anySel=active().some(r=>r.best!=null && r.depth>0);
+  const anySel=active().length>0;
   const c1=card('Best metric vs depth', anySel
     ? 'selected runs only · color = slot · dashed = chance · clear the selection to see all runs'
     : 'all filtered runs · color = layer type · select runs in the sidebar to narrow to them · dashed = chance');
   if(!anySel) c1.appendChild(layerLegend(filtered()));  // layer legend only when coloring by layer
   const sC=canvasIn(c1,'sC');
-  const cd=card('Exact-match vs graph diameter',
-    'the depth↔reachability curve · selected runs (or first 8 with data) · hover a diameter for em / verdict / n');
+  const cd=card('Accuracy vs graph diameter',
+    'the depth↔reachability curve · selected runs only (or first 8 filtered runs with data if none selected) · hover a diameter for value / n');
   const dC=canvasIn(cd,'dC');
   const c2=card('Ranking — best metric per run','top 30 of the filtered runs · selected runs keep their slot color');
   const bC=canvasIn(c2,'bC');
