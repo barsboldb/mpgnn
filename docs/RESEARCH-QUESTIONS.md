@@ -10,6 +10,9 @@ Written 2026-08-26, after a ~1-month gap. Two parts:
 Supersedes the framing in `docs/QUESTIONS.md`, which assumed the spine was settled.
 Nothing is settled; that file is kept for its experiment inventory only.
 
+Literature coverage per Part B question — how crowded the field is, the papers to cite or
+defend against, and which ones threaten each claim: `docs/RESEARCH-QUESTIONS-LITERATURE.md`.
+
 ---
 
 # Part A — fact-check of the remembered narrative
