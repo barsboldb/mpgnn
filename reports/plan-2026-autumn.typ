@@ -41,6 +41,7 @@
   "6": "Явц 1", "9": "Явц 2", "13": "Урьдчилсан хамгаалалт", "15": "Шүүмж", "16": "Жинхэнэ хамгаалалт",
 )
 #let n-weeks = 16
+#let plan-fill = rgb("#C6D9F1")   // the pale blue the department template uses
 
 // ---- header ----
 #align(right)[
@@ -83,7 +84,7 @@
     }
     row.push(table.cell(align: left + horizon, text(size: 8.5pt, sub)))
     for w in range(1, n-weeks + 1) {
-      row.push(table.cell(fill: if w in weeks { black } else { none })[])
+      row.push(table.cell(fill: if w in weeks { plan-fill } else { none })[])
     }
     rows += row
   }
