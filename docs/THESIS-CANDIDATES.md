@@ -4,9 +4,10 @@ Drafted 2026-09-17 from `docs/RESEARCH-QUESTIONS.md` Part C, re-framed against t
 literature sweep in `docs/RESEARCH-QUESTIONS-LITERATURE.md`. Each is a whole diploma, not
 a chapter: a thesis statement, the chapter spine, what is still unrun, and the risk.
 
-**Current lean: A.** Not settled — B and C are both viable and are kept here in full
-because the deciding experiments (`wl_gather` for B, the GraphQA min-degree measurement
-for C) are cheap enough that the choice can be revisited.
+**Settled 2026-09-17: A.** Title: *What it costs to make a graph algorithm learnable by
+a transformer* / *Трансформерт графын алгоритм сургахад юу шаардагдах вэ*. B and C are
+kept in full — B rides along as A's chapter 4 if `wl_gather` lands, and C's clique probe
+and GraphQA measurement sit inside A's chapter 1. Execution plan: `docs/PLAN-16-WEEKS.md`.
 
 ---
 
