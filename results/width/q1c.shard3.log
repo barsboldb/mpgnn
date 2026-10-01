@@ -1,0 +1,64 @@
+Device cuda | sweep q1c shard 3/8: 27 runs to go (0 on disk)
+  generating data for seed 0, 500 train graphs...
+Generated 2000 graphs  |  connected: 1000  disconnected: 1000
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+  [1/27] N=500   m=8    H=1   lr=0.03    seed=0  train=1.000 val=0.613 test@bestval=0.557 test@final=0.537  (85.4s)
+  [2/27] N=500   m=32   H=4   lr=0.03    seed=0  train=1.000 val=0.400 test@bestval=0.367 test@final=0.403  (89.9s)
+  [3/27] N=500   m=128  H=16  lr=0.03    seed=0  train=0.998 val=0.282 test@bestval=0.263 test@final=0.287  (178.0s)
+  generating data for seed 0, 2000 train graphs...
+Generated 8000 graphs  |  connected: 4000  disconnected: 4000
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+  [4/27] N=2000  m=8    H=1   lr=0.03    seed=0  train=1.000 val=0.973 test@bestval=0.975 test@final=0.963  (86.5s)
+  [5/27] N=2000  m=32   H=4   lr=0.03    seed=0  train=1.000 val=0.978 test@bestval=0.970 test@final=0.970  (89.8s)
+  [6/27] N=2000  m=128  H=16  lr=0.03    seed=0  train=0.857 val=0.738 test@bestval=0.755 test@final=0.755  (118.8s)
+  generating data for seed 0, 8000 train graphs...
+Generated 32000 graphs  |  connected: 16000  disconnected: 16000
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+  [7/27] N=8000  m=8    H=1   lr=0.03    seed=0  train=0.948 val=0.945 test@bestval=0.943 test@final=0.945  (96.2s)
+  [8/27] N=8000  m=32   H=4   lr=0.03    seed=0  train=0.973 val=0.975 test@bestval=0.975 test@final=0.975  (103.7s)
+  [9/27] N=8000  m=128  H=16  lr=0.03    seed=0  train=0.960 val=0.970 test@bestval=0.968 test@final=0.968  (128.7s)
+  generating data for seed 1, 500 train graphs...
+Generated 2000 graphs  |  connected: 1000  disconnected: 1000
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+  [10/27] N=500   m=8    H=1   lr=0.03    seed=1  train=1.000 val=0.632 test@bestval=0.645 test@final=0.650  (85.9s)
+  [11/27] N=500   m=32   H=4   lr=0.03    seed=1  train=1.000 val=0.435 test@bestval=0.415 test@final=0.417  (89.6s)
+  [12/27] N=500   m=128  H=16  lr=0.03    seed=1  train=1.000 val=0.500 test@bestval=0.500 test@final=0.347  (177.0s)
+  generating data for seed 1, 2000 train graphs...
+Generated 8000 graphs  |  connected: 4000  disconnected: 4000
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+  [13/27] N=2000  m=8    H=1   lr=0.03    seed=1  train=0.991 val=0.963 test@bestval=0.958 test@final=0.963  (87.7s)
+  [14/27] N=2000  m=32   H=4   lr=0.03    seed=1  train=0.994 val=0.968 test@bestval=0.983 test@final=0.973  (87.9s)
+  [15/27] N=2000  m=128  H=16  lr=0.03    seed=1  train=0.984 val=0.632 test@bestval=0.557 test@final=0.557  (115.9s)
+  generating data for seed 1, 8000 train graphs...
+Generated 32000 graphs  |  connected: 16000  disconnected: 16000
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+  [16/27] N=8000  m=8    H=1   lr=0.03    seed=1  train=0.996 val=0.983 test@bestval=0.988 test@final=0.988  (98.4s)
+  [17/27] N=8000  m=32   H=4   lr=0.03    seed=1  train=0.846 val=0.800 test@bestval=0.830 test@final=0.830  (103.6s)
+  [18/27] N=8000  m=128  H=16  lr=0.03    seed=1  train=0.956 val=0.905 test@bestval=0.932 test@final=0.927  (130.9s)
+  generating data for seed 2, 500 train graphs...
+Generated 2000 graphs  |  connected: 1000  disconnected: 1000
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+  [19/27] N=500   m=8    H=1   lr=0.03    seed=2  train=1.000 val=0.675 test@bestval=0.660 test@final=0.705  (89.3s)
+  [20/27] N=500   m=32   H=4   lr=0.03    seed=2  train=1.000 val=0.425 test@bestval=0.340 test@final=0.345  (92.5s)
+  [21/27] N=500   m=128  H=16  lr=0.03    seed=2  train=1.000 val=0.347 test@bestval=0.352 test@final=0.278  (175.8s)
+  generating data for seed 2, 2000 train graphs...
+Generated 8000 graphs  |  connected: 4000  disconnected: 4000
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+  [22/27] N=2000  m=8    H=1   lr=0.03    seed=2  train=0.991 val=0.963 test@bestval=0.960 test@final=0.963  (82.0s)
+  [23/27] N=2000  m=32   H=4   lr=0.03    seed=2  train=1.000 val=0.995 test@bestval=0.985 test@final=0.985  (88.0s)
+  [24/27] N=2000  m=128  H=16  lr=0.03    seed=2  train=0.582 val=0.435 test@bestval=0.393 test@final=0.383  (119.7s)
+  generating data for seed 2, 8000 train graphs...
+Generated 32000 graphs  |  connected: 16000  disconnected: 16000
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+Generated 1600 graphs  |  connected: 800  disconnected: 800
+  [25/27] N=8000  m=8    H=1   lr=0.03    seed=2  train=0.999 val=0.995 test@bestval=0.998 test@final=0.995  (98.4s)
+  [26/27] N=8000  m=32   H=4   lr=0.03    seed=2  train=0.986 val=0.970 test@bestval=0.975 test@final=0.975  (102.7s)
+  [27/27] N=8000  m=128  H=16  lr=0.03    seed=2  train=0.896 val=0.840 test@bestval=0.873 test@final=0.873  (135.8s)

@@ -39,6 +39,39 @@ Under the schedule 1e-3 is too low at every width; the fixed-LR curve collapses 
 {1e-3, 3e-3, 1e-2, 3e-2} covers every Q1b tuned optimum (one m=256 seed chose 1e-3). Next: width × training-set size (does
 the upper drop move right with more data?), then Q3 (m* vs n).
 
+### Q1c: the wide-model drop is memorization — data moves the ceiling
+
+Width {8…256} × train size {500, 2000, 8000} × LR {1e-3…3e-2} × 3 seeds, fixed 4800
+optimizer steps (216 runs, Kaggle, 8 shards). Tuned test:
+
+| m | 500 | 2000 | 8000 |
+|---|---|---|---|
+| 8 | 0.629 | 0.975 | 0.988 |
+| 16 | 0.708 | 0.967 | 0.998 |
+| 32 | 0.398 | 0.982 | 0.993 |
+| 64 | 0.423 | 0.983 | 0.998 |
+| 128 | 0.460 | 0.763 | 0.998 |
+| 256 | 0.444 | 0.644 | 0.991 |
+
+Train acc is ~1.00 everywhere. At 8000 graphs every m≥16 reaches ≥0.99 — the m≥128
+drop is gone at equal steps; at 500 everything memorizes and m≥32 falls below the
+all-connected predictor. Width therefore has a **floor** (m≈4–8: can't fit) and a
+**data-set ceiling** (extra width memorizes). The LR confound is a small-data effect:
+at 8000 the fixed 1e-3 is within 0.01 of tuned for m≥16 and optimal LRs drift down
+to ~1e-3. The 2000 arm reproduces Q1b to the third decimal (deterministic pipeline,
+separate Kaggle run). (`results/width/q1c.shard*of8.jsonl`)
+
+### Caveat: `hard` leaks the component layout through node indices
+
+`make_connectedness_hard_dataset` never relabels nodes: the blobs are always
+`[0, na)` and `[na, n)` (200/200 graphs at n=24 have index-contiguous components),
+and diameters are small (mean 4.2, max 8). With adjacency-row tokens the split point
+is readable and connectivity reduces to "does any row have ones on both sides" — a
+near-local bridge check (cf. GIN-degree 0.975, 06-25). Q1/Q1b/Q1c conclusions hold
+for this task (LR protocol, data ceiling) but not as evidence about reachability.
+**Decision:** Q3 onward uses randomly relabelled nodes and sparse, diameter-spread
+blobs (`hard_diam` generator), so pairs need multi-hop paths.
+
 ### Infrastructure: sharded sweeps on Kaggle
 
 `width_sweep.py` — resumable sweeps, one JSON line per run, `--shard i/k` with one file

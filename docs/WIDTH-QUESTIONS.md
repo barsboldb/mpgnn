@@ -52,9 +52,12 @@ sweep measures LR mis-tuning, not width.
   4. **Inverted U.** m=2 never leaves the all-connected predictor (0.50), m=4 underfits
      (train 0.84), m=8–64 ≈ 0.97–0.98, m≥128 memorizes. m\* (tuned) = 8 at 0.95,
      4 at 0.90 — well below n=24.
-- **Follow-up (Q1c):** width × training-set size {500, 2000, 8000} at a fixed 4800
-  optimizer steps. If the m≥128 drop is memorization, it moves to larger m with more
-  data. The 2000 arm repeats Q1b exactly (reproducibility check). `width_sweep.py q1c`.
+- **Follow-up (Q1c, done):** width × train size {500, 2000, 8000} at fixed 4800 steps.
+  At 8000 graphs every m≥16 reaches ≥0.99 — the m≥128 drop was memorization; width has
+  a floor (m≈4–8) and a data-set ceiling. 2000 arm reproduces Q1b exactly.
+- **Caveat:** the `hard` generator never relabels nodes (blobs = index ranges) and is
+  shallow (diam ≤ 8), so Q1 measures a near-local bridge check. Q3+ use relabelled
+  `hard_diam` graphs. See CHANGELOG 2026-10-01.
 
 ### Q2 — Does the needed width follow the theory's task hierarchy?
 Sanford 2024a: retrieval ≪ parallelizable (connectivity) ≪ search (shortest path).
