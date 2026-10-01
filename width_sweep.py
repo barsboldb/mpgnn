@@ -12,6 +12,9 @@ Usage:
     python width_sweep.py q1 --smoke         # 2 epochs, 1 seed, 2 widths, 2 LRs
     python width_sweep.py q1 --analyze       # tables from the saved runs
     python width_sweep.py q1b --shard 0/4    # worker 0 of 4 (run 4 in parallel)
+
+Sweeps may add axes: `ns` (graph sizes), `depths` (ints or "log" = ceil(log2 n)),
+`train_sizes`; analysis reports one table per (n, depth, train size) cell.
 """
 import argparse
 import glob
@@ -26,7 +29,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from src.connectivity import DEVICE, ConnectivityTransformer, evaluate, make_set
+from src.connectivity import DEVICE, ConnectivityTransformer, evaluate, make_set, reachability
+from src.dataset import make_connectedness_hard_diam_dataset
 
 OUT_DIR = os.path.join("results", "width")
 
@@ -58,7 +62,20 @@ SWEEPS = {
                 seeds=[0, 1, 2], train_sizes=[500, 2000, 8000], steps=4800,
                 train=2000, val=400, test=400, epochs=300, batch=128,
                 fixed_lr=1e-3, warmup_frac=0.05, schedule="cosine"),
+    # Q3: critical width vs graph size n. Graphs are relabelled hard_diam (sparse
+    # blobs, diameter ~n/2, no index leak); 8000 train graphs so the Q1c data
+    # ceiling stays out of the way. depth 2 (fixed) vs ceil(log2 n) (theory's
+    # depth for connectivity): can width stand in for missing depth?
+    "q3": dict(gen="hard_diam", ns=[16, 32, 64], depths=[2, "log"], head_dim=8,
+               widths=[4, 8, 16, 32, 64, 128],
+               lrs=[1e-3, 3e-3, 1e-2],
+               seeds=[0, 1, 2], train_sizes=[8000], steps=4800,
+               train=8000, val=400, test=400, epochs=77, batch=128,
+               fixed_lr=1e-3, warmup_frac=0.05, schedule="cosine"),
 }
+# Q3 pilot: one seed, one LR, three widths — is relabelled hard_diam learnable at all?
+SWEEPS["q3pilot"] = dict(SWEEPS["q3"], widths=[8, 32, 128], lrs=[3e-3], seeds=[0],
+                         fixed_lr=3e-3)
 
 
 def set_seed(seed):
@@ -72,12 +89,21 @@ def train_size(r):
 
 
 def run_key(r):
-    return (r["width"], r["lr"], r["seed"], train_size(r))
+    return (r["width"], r["lr"], r["seed"], train_size(r), r["config"]["n"], r["config"]["depth"])
 
 
-def sized(cfg, size):
-    """cfg for one training-set size; with `steps`, epochs keep the step count fixed."""
-    c = dict(cfg, train=size)
+def cell(r):
+    """The (n, depth, train size) group a run belongs to."""
+    return r["config"]["n"], r["config"]["depth"], train_size(r)
+
+
+def resolve_depth(depth, n):
+    return math.ceil(math.log2(n)) if depth == "log" else depth
+
+
+def point(cfg, n, depth, size):
+    """cfg for one (n, depth, train size); with `steps`, epochs keep the step count fixed."""
+    c = dict(cfg, n=n, depth=resolve_depth(depth, n), train=size)
     if "steps" in cfg:
         c["epochs"] = math.ceil(cfg["steps"] / math.ceil(size / cfg["batch"]))
     return c
@@ -93,8 +119,44 @@ def load_runs(sweep):
     return runs
 
 
+def relabelled_hard_diam(num, n, seed):
+    """hard_diam graphs at fixed n with node labels shuffled per graph, so component
+    membership can't be read off node indices. Returns (A + I, R) tensors."""
+    rng = np.random.default_rng(seed + 1)
+    As, Rs = [], []
+    for g in make_connectedness_hard_diam_dataset(num_graphs=num, min_nodes=n, max_nodes=n,
+                                                  seed=seed):
+        A = np.zeros((n, n), dtype=np.float32)
+        ei = g.edge_index.numpy()
+        A[ei[0], ei[1]] = 1.0
+        perm = rng.permutation(n)
+        A = A[np.ix_(perm, perm)]
+        As.append(A + np.eye(n, dtype=np.float32))
+        Rs.append(reachability(A))
+    return torch.tensor(np.array(As)), torch.tensor(np.array(Rs))
+
+
+def pair_accuracy(model, A, R, bs=128):
+    """Fraction of off-diagonal entries of R predicted correctly (exact-match's soft twin)."""
+    model.eval()
+    n = A.size(1)
+    off = ~torch.eye(n, dtype=torch.bool, device=DEVICE)
+    right = 0.0
+    with torch.no_grad():
+        for i in range(0, A.size(0), bs):
+            lo = model(A[i:i+bs].to(DEVICE))
+            ok = (lo > 0).float() == R[i:i+bs].to(DEVICE)
+            right += ok[:, off].float().mean(dim=1).sum().item()
+    return right / A.size(0)
+
+
 def make_splits(cfg, seed):
     """Same graphs for every width/LR at a given seed; val and test use their own seeds."""
+    if cfg.get("gen") == "hard_diam":
+        n = cfg["n"]
+        return (relabelled_hard_diam(cfg["train"], n, seed),
+                relabelled_hard_diam(cfg["val"], n, seed + 5555),
+                relabelled_hard_diam(cfg["test"], n, seed + 9999))
     rng = np.random.default_rng(seed)
     kw = dict(n=cfg["n"], p=0.12, cap=10**6, dist=cfg["dist"])
     tr = make_set(cfg["train"], rng=rng, seed=seed, **kw)
@@ -134,7 +196,8 @@ def train_one(cfg, width, lr, seed, splits):
             history.append({"epoch": epoch, "loss": tot / N,
                             "train": evaluate(model, Atr, Rtr, bs),
                             "val": evaluate(model, Ava, Rva, bs),
-                            "test": evaluate(model, Ate, Rte, bs)})
+                            "test": evaluate(model, Ate, Rte, bs),
+                            "test_pair": pair_accuracy(model, Ate, Rte, bs)})
 
     best = max(history, key=lambda h: h["val"])
     return {"width": width, "lr": lr, "seed": seed, "heads": heads, "train_size": N,
@@ -157,25 +220,26 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
     path = os.path.join(OUT_DIR, f"{name}{suffix}.jsonl")
     done = {run_key(r) for r in load_runs(name)}
     sizes = cfg.get("train_sizes", [cfg["train"]])
-    todo = [(w, lr, s, n) for s, n, w, lr in
-            itertools.product(cfg["seeds"], sizes, cfg["widths"], cfg["lrs"])
-            if (w, lr, s, n) not in done]
+    ns, depths = cfg.get("ns", [cfg.get("n")]), cfg.get("depths", [cfg.get("depth")])
+    todo = [(w, lr, s, size, n, d) for s, n, d, size, w, lr in
+            itertools.product(cfg["seeds"], ns, depths, sizes, cfg["widths"], cfg["lrs"])
+            if (w, lr, s, size, n, resolve_depth(d, n)) not in done]
     todo = todo[shard[0]::shard[1]]
     print(f"Device {DEVICE} | sweep {name} shard {shard[0]}/{shard[1]}: "
           f"{len(todo)} runs to go ({len(done)} on disk)")
 
     splits = {}
-    for k, (w, lr, s, n) in enumerate(todo, 1):
-        c = sized(cfg, n)
-        if (s, n) not in splits:
-            print(f"  generating data for seed {s}, {n} train graphs...")
-            splits[(s, n)] = make_splits(c, s)
-        r = train_one(c, w, lr, s, splits[(s, n)])
-        r["sweep"], r["config"] = name, {k2: v for k2, v in c.items()
-                                         if k2 not in ("widths", "lrs", "seeds", "train_sizes")}
+    for k, (w, lr, s, size, n, d) in enumerate(todo, 1):
+        c = point(cfg, n, d, size)
+        if (s, n, size) not in splits:
+            print(f"  generating data for seed {s}, n={n}, {size} train graphs...")
+            splits[(s, n, size)] = make_splits(c, s)
+        r = train_one(c, w, lr, s, splits[(s, n, size)])
+        r["sweep"], r["config"] = name, {k2: v for k2, v in c.items() if k2 not in
+                                         ("widths", "lrs", "seeds", "train_sizes", "ns", "depths")}
         with open(path, "a") as f:
             f.write(json.dumps(r) + "\n")
-        print(f"  [{k}/{len(todo)}] N={n:<5d} m={w:<4d} H={r['heads']:<3d} lr={lr:<7g} seed={s}  "
+        print(f"  [{k}/{len(todo)}] n={n:<3d} L={c['depth']:<2d} N={size:<5d} m={w:<4d} H={r['heads']:<3d} lr={lr:<7g} seed={s}  "
               f"train={r['final']['train']:.3f} val={r['best_val']['val']:.3f} "
               f"test@bestval={r['best_val']['test']:.3f} test@final={r['final']['test']:.3f}  "
               f"({r['seconds']}s)")
@@ -186,21 +250,22 @@ def analyze(name, thresholds=(0.90, 0.95, 0.99)):
     if not runs:
         print(f"no runs for {name}")
         return
-    sizes = sorted({train_size(r) for r in runs})
+    cells = sorted({cell(r) for r in runs})
     tuned = {}
-    for n in sizes:
-        tuned[n] = report([r for r in runs if train_size(r) == n],
-                          f"{name} (train={n})" if len(sizes) > 1 else name, thresholds)
-    if len(sizes) > 1:
+    for c in cells:
+        label = f"{name} (n={c[0]}, depth={c[1]}, train={c[2]})" if len(cells) > 1 else name
+        tuned[c] = report([r for r in runs if cell(r) == c], label, thresholds)
+    if len(cells) > 1:
         widths = sorted({r["width"] for r in runs})
-        print("\nTuned test by width x training-set size (train acc in brackets):")
-        print("  m     " + "".join(f"{n:>16d}" for n in sizes))
+        heads = [f"n{c[0]} L{c[1]} N{c[2]}" for c in cells]
+        print("\nTuned test exact-match by width x (n, depth, train size); train acc in brackets:")
+        print("  m     " + "".join(f"{h:>17}" for h in heads))
         for w in widths:
-            cells = []
-            for n in sizes:
-                t = tuned[n].get(w)
-                cells.append(f"{np.mean(t[0]):9.3f} ({np.mean(t[1]):.2f})" if t else f"{'-':>16}")
-            print(f"  {w:<6d}" + "".join(cells))
+            row = []
+            for c in cells:
+                t = tuned[c].get(w)
+                row.append(f"{np.mean(t[0]):10.3f} ({np.mean(t[1]):.2f})" if t else f"{'-':>17}")
+            print(f"  {w:<6d}" + "".join(row))
 
 
 def report(runs, name, thresholds):
@@ -229,9 +294,9 @@ def report(runs, name, thresholds):
     fixed = cfg["fixed_lr"]
     per_width, tuned = {}, {}
     print(f"\nFixed LR ({fixed:g}) vs tuned LR (best val per width and seed):")
-    print("  m      fixed_test   tuned_test   tuned_lrs")
+    print("  m      fixed_test   tuned_test   tuned_pair   tuned_lrs")
     for w in widths:
-        f_acc, t_acc, t_lr = [], [], []
+        f_acc, t_acc, t_lr, t_pair = [], [], [], []
         for s in seeds:
             cands = [by[(w, lr, s)] for lr in lrs if (w, lr, s) in by]
             if not cands:
@@ -240,11 +305,12 @@ def report(runs, name, thresholds):
                 f_acc.append(test(by[(w, fixed, s)]))
             b = max(cands, key=lambda r: r["best_val"]["val"])
             t_acc.append(test(b)); t_lr.append(b["lr"])
+            t_pair.append(b["best_val"].get("test_pair", float("nan")))
             tuned.setdefault(w, ([], []))[0].append(test(b))
             tuned[w][1].append(b["final"]["train"])
         per_width[w] = (f_acc, t_acc)
         print(f"  {w:<6d} {np.mean(f_acc):10.3f}   {np.mean(t_acc):10.3f}   "
-              f"{', '.join(f'{x:g}' for x in t_lr)}")
+              f"{np.mean(t_pair):10.3f}   {', '.join(f'{x:g}' for x in t_lr)}")
 
     print("\nCritical width m* (smallest m where >= 2/3 of seeds reach the threshold):")
     for th in thresholds:

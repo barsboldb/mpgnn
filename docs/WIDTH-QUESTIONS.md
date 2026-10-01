@@ -67,10 +67,16 @@ Sanford 2024a: retrieval ≪ parallelizable (connectivity) ≪ search (shortest 
 - **Needs:** retrieval and shortest-path generators with leak audits.
 
 ### Q3 — How does m\* for connectivity scale with n?
-- **Prediction:** at depth 1, m\*·H grows ≈ linearly in n (Sanford's one-layer bound;
-  Yehudai's critical width); at depth ⌈log₂ n⌉ it grows much more slowly.
-- **Experiment:** n ∈ {16, 32, 64, (128)}, m ∈ {n/4 … 4n}, depth 1 vs ⌈log₂ n⌉.
-- **Output:** log–log m\* vs n; the slope is the answer.
+- **Prediction:** at fixed depth, m\* grows with n (Sanford: one layer needs m·H ≳ n);
+  at depth ⌈log₂ n⌉ it grows much more slowly.
+- **Experiment:** relabelled `hard_diam` graphs (no index leak; diameter ≈ n/2),
+  n ∈ {16, 32, 64}, depth 2 vs ⌈log₂ n⌉ (4/5/6), m ∈ {4 … 128}, LR {1e-3, 3e-3, 1e-2},
+  3 seeds, 8000 train graphs (clear of the Q1c data ceiling), 4800 steps.
+  Depth 1 dropped: it only memorized even on the easy data. Pair accuracy is logged
+  next to exact-match, which gets stricter as n² grows.
+- **Output:** log–log m\* vs n per depth; the slope is the answer.
+- **Status:** set up — `width_sweep.py q3pilot` (18 runs: is it learnable?), then `q3`
+  (324 runs).
 
 ### Q4 — Does Graphormer-style structure make width irrelevant?
 - **Prediction:** with the SPD attention bias, connectivity m\* stays small and flat in
