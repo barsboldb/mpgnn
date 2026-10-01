@@ -4,6 +4,51 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-01
+
+### Thesis re-scoped: the effect of width
+
+Title settled with the supervisor 2026-09-24: **Analyzing the Effect of Network Width
+on Graph Transformers**. Thesis-A planning docs removed; questions in
+`docs/WIDTH-QUESTIONS.md`, literature in `docs/WIDTH-LITERATURE.md`. "Graph
+transformer" is used broadly (Müller et al. 2023 taxonomy): we test tokens-only and
+Graphormer-style SPD bias. Width m = embedding dim; head dim fixed at 8 so H = m/8.
+
+### Q1: a fixed learning rate confounds width
+
+Connectivity matrix on `hard`, n=24, depth 2, 2000 train graphs, LR picked on a
+new validation split (the old runner selected epochs on test). Widths 8–256 × LR
+{3e-4 … 1e-2} × 3 seeds. With LR fixed at 1e-3 the width curve zig-zags (0.917,
+0.917, 0.781, 0.912, 0.820, 0.596); tuned per width it is flat at ~0.97 through m=32.
+Optimal LR falls with width (1e-2 at m≤16 → 1e-3 at m=256), and wide models diverge
+at high LR without warm-up (m=256 @ 1e-2: train 0.41). Even tuned, m=128/256 sit at
+0.844/0.678. (`results/width/q1.jsonl`)
+
+### Q1b: warm-up fixes the instability, not the wide-model drop
+
+Same grid + 5% linear warm-up and cosine decay, widths 2/4 and LR 3e-2 added (120 runs,
+Kaggle T4 x2, 6 shards). Wide models now fit: m=128/256 reach train 1.000 at LR 1e-2,
+yet test stays 0.763/0.644 — a **generalization gap at 2000 graphs, not optimisation**.
+Width is an inverted U: m=2 stays at the all-connected predictor (0.50), m=4
+underfits (train 0.84), m=8–64 at 0.97–0.98 (warm-up lifted m=64 from 0.948 to 0.983),
+m≥128 memorizes. Critical width m* = 8 at 0.95, 4 at 0.90 — far below n=24.
+Under the schedule 1e-3 is too low at every width; the fixed-LR curve collapses to 0.48.
+(`results/width/q1b.shard*of6.jsonl`)
+
+**Decisions:** every later sweep tunes LR per width under warm-up + cosine; LR grid
+{1e-3, 3e-3, 1e-2, 3e-2} covers every Q1b tuned optimum (one m=256 seed chose 1e-3). Next: width × training-set size (does
+the upper drop move right with more data?), then Q3 (m* vs n).
+
+### Infrastructure: sharded sweeps on Kaggle
+
+`width_sweep.py` — resumable sweeps, one JSON line per run, `--shard i/k` with one file
+per shard, `--analyze` for width × LR tables, fixed-vs-tuned and m* at 0.90/0.95/0.99.
+`kaggle/width_sweep.ipynb` clones the repo and runs k shards across the GPUs; needs a
+phone-verified account (GPU and Internet are gated on it). Running locally starved
+the laptop; the tiny models gain from parallel shards, not from GPU speed per run.
+
+---
+
 ## 2026-07-08
 
 ### bfs_check closes the density gap: fail -> diagnose -> supervise -> 0.9972

@@ -32,7 +32,27 @@ sweep measures LR mis-tuning, not width.
 - **Prediction:** optimal LR decreases as m grows; the fixed-LR curve under-reports
   small or large widths, shifting m\*.
 - **Output:** test acc vs m, fixed vs tuned; heatmap of acc over (m, LR).
-- **Status:** in progress — `width_sweep.py q1`.
+- **Status:** done (n=24, depth 2, 2000 train graphs, 3 seeds) — `width_sweep.py q1`,
+  `q1b` (q1b adds 5% warm-up + cosine decay, widths 2/4, LR 3e-2).
+
+  | m | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256 |
+  |---|---|---|---|---|---|---|---|---|
+  | Q1 fixed 1e-3 | – | – | 0.917 | 0.917 | 0.781 | 0.912 | 0.820 | 0.596 |
+  | Q1 tuned | – | – | 0.976 | 0.977 | 0.967 | 0.948 | 0.844 | 0.678 |
+  | Q1b fixed 1e-3 | 0.497 | 0.483 | 0.759 | 0.911 | 0.709 | 0.623 | 0.489 | 0.478 |
+  | Q1b tuned | 0.497 | 0.867 | 0.975 | 0.967 | 0.982 | 0.983 | 0.763 | 0.644 |
+
+  1. **Yes, fixed LR confounds width.** Fixed-LR curves zig-zag and fall early; with
+     the schedule, 1e-3 is too low for every width and the fixed curve collapses.
+  2. **Optimal LR falls with width** (Q1: 1e-2 at m≤16 → 1e-3 at 256; high LRs
+     diverge for wide models without warm-up).
+  3. **Warm-up fixes the instability but not the wide-model drop.** With the
+     schedule, m=128/256 reach train 1.000 at LR 1e-2 (Q1: 0.74/0.41) yet test stays
+     0.76/0.48–0.64 — a genuine generalization gap at 2000 graphs, not optimisation.
+  4. **Inverted U.** m=2 never leaves the all-connected predictor (0.50), m=4 underfits
+     (train 0.84), m=8–64 ≈ 0.97–0.98, m≥128 memorizes. m\* (tuned) = 8 at 0.95,
+     4 at 0.90 — well below n=24.
+- **Follow-up:** does the upper drop move with training-set size (width × data)?
 
 ### Q2 — Does the needed width follow the theory's task hierarchy?
 Sanford 2024a: retrieval ≪ parallelizable (connectivity) ≪ search (shortest path).
