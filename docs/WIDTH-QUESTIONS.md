@@ -52,7 +52,9 @@ sweep measures LR mis-tuning, not width.
   4. **Inverted U.** m=2 never leaves the all-connected predictor (0.50), m=4 underfits
      (train 0.84), m=8–64 ≈ 0.97–0.98, m≥128 memorizes. m\* (tuned) = 8 at 0.95,
      4 at 0.90 — well below n=24.
-- **Follow-up:** does the upper drop move with training-set size (width × data)?
+- **Follow-up (Q1c):** width × training-set size {500, 2000, 8000} at a fixed 4800
+  optimizer steps. If the m≥128 drop is memorization, it moves to larger m with more
+  data. The 2000 arm repeats Q1b exactly (reproducibility check). `width_sweep.py q1c`.
 
 ### Q2 — Does the needed width follow the theory's task hierarchy?
 Sanford 2024a: retrieval ≪ parallelizable (connectivity) ≪ search (shortest path).

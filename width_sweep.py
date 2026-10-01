@@ -49,6 +49,15 @@ SWEEPS = {
                 seeds=[0, 1, 2],
                 train=2000, val=400, test=400, epochs=300, batch=128,
                 fixed_lr=1e-3, warmup_frac=0.05, schedule="cosine"),
+    # Q1c: width x training-set size. If the Q1b wide-model drop is memorization, it
+    # should move to larger m as data grows. Optimizer steps are fixed (= Q1b's 4800)
+    # so more data never means more training.
+    "q1c": dict(dist="hard", n=24, depth=2, head_dim=8,
+                widths=[8, 16, 32, 64, 128, 256],
+                lrs=[1e-3, 3e-3, 1e-2, 3e-2],
+                seeds=[0, 1, 2], train_sizes=[500, 2000, 8000], steps=4800,
+                train=2000, val=400, test=400, epochs=300, batch=128,
+                fixed_lr=1e-3, warmup_frac=0.05, schedule="cosine"),
 }
 
 
@@ -58,8 +67,20 @@ def set_seed(seed):
     torch.manual_seed(seed)
 
 
+def train_size(r):
+    return r.get("train_size", r["config"]["train"])
+
+
 def run_key(r):
-    return (r["width"], r["lr"], r["seed"])
+    return (r["width"], r["lr"], r["seed"], train_size(r))
+
+
+def sized(cfg, size):
+    """cfg for one training-set size; with `steps`, epochs keep the step count fixed."""
+    c = dict(cfg, train=size)
+    if "steps" in cfg:
+        c["epochs"] = math.ceil(cfg["steps"] / math.ceil(size / cfg["batch"]))
+    return c
 
 
 def load_runs(sweep):
@@ -109,14 +130,14 @@ def train_one(cfg, width, lr, seed, splits):
             if sched is not None:
                 sched.step()
             tot += loss.item() * idx.size(0)
-        if epoch % 20 == 0 or epoch in (1, epochs):
+        if epoch % max(1, epochs // 15) == 0 or epoch in (1, epochs):
             history.append({"epoch": epoch, "loss": tot / N,
                             "train": evaluate(model, Atr, Rtr, bs),
                             "val": evaluate(model, Ava, Rva, bs),
                             "test": evaluate(model, Ate, Rte, bs)})
 
     best = max(history, key=lambda h: h["val"])
-    return {"width": width, "lr": lr, "seed": seed, "heads": heads,
+    return {"width": width, "lr": lr, "seed": seed, "heads": heads, "train_size": N,
             "params": model.num_parameters(), "seconds": round(time.time() - t0, 1),
             "final": history[-1], "best_val": best, "history": history}
 
@@ -126,29 +147,35 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
     if smoke:
         cfg.update(widths=cfg["widths"][:2], lrs=cfg["lrs"][:2], seeds=cfg["seeds"][:1],
                    epochs=2, train=256, val=64, test=64)
+        cfg.pop("steps", None)
+        if "train_sizes" in cfg:
+            cfg["train_sizes"] = [128, 256]
         name = f"{name}_smoke"
     os.makedirs(OUT_DIR, exist_ok=True)
     # Parallel shards each append to their own file so lines never interleave.
     suffix = f".shard{shard[0]}of{shard[1]}" if shard[1] > 1 else ""
     path = os.path.join(OUT_DIR, f"{name}{suffix}.jsonl")
     done = {run_key(r) for r in load_runs(name)}
-    todo = [(w, lr, s) for s, w, lr in itertools.product(cfg["seeds"], cfg["widths"], cfg["lrs"])
-            if (w, lr, s) not in done]
+    sizes = cfg.get("train_sizes", [cfg["train"]])
+    todo = [(w, lr, s, n) for s, n, w, lr in
+            itertools.product(cfg["seeds"], sizes, cfg["widths"], cfg["lrs"])
+            if (w, lr, s, n) not in done]
     todo = todo[shard[0]::shard[1]]
     print(f"Device {DEVICE} | sweep {name} shard {shard[0]}/{shard[1]}: "
           f"{len(todo)} runs to go ({len(done)} on disk)")
 
-    splits_by_seed = {}
-    for k, (w, lr, s) in enumerate(todo, 1):
-        if s not in splits_by_seed:
-            print(f"  generating data for seed {s}...")
-            splits_by_seed[s] = make_splits(cfg, s)
-        r = train_one(cfg, w, lr, s, splits_by_seed[s])
-        r["sweep"], r["config"] = name, {k2: v for k2, v in cfg.items()
-                                         if k2 not in ("widths", "lrs", "seeds")}
+    splits = {}
+    for k, (w, lr, s, n) in enumerate(todo, 1):
+        c = sized(cfg, n)
+        if (s, n) not in splits:
+            print(f"  generating data for seed {s}, {n} train graphs...")
+            splits[(s, n)] = make_splits(c, s)
+        r = train_one(c, w, lr, s, splits[(s, n)])
+        r["sweep"], r["config"] = name, {k2: v for k2, v in c.items()
+                                         if k2 not in ("widths", "lrs", "seeds", "train_sizes")}
         with open(path, "a") as f:
             f.write(json.dumps(r) + "\n")
-        print(f"  [{k}/{len(todo)}] m={w:<4d} H={r['heads']:<3d} lr={lr:<7g} seed={s}  "
+        print(f"  [{k}/{len(todo)}] N={n:<5d} m={w:<4d} H={r['heads']:<3d} lr={lr:<7g} seed={s}  "
               f"train={r['final']['train']:.3f} val={r['best_val']['val']:.3f} "
               f"test@bestval={r['best_val']['test']:.3f} test@final={r['final']['test']:.3f}  "
               f"({r['seconds']}s)")
@@ -159,11 +186,30 @@ def analyze(name, thresholds=(0.90, 0.95, 0.99)):
     if not runs:
         print(f"no runs for {name}")
         return
+    sizes = sorted({train_size(r) for r in runs})
+    tuned = {}
+    for n in sizes:
+        tuned[n] = report([r for r in runs if train_size(r) == n],
+                          f"{name} (train={n})" if len(sizes) > 1 else name, thresholds)
+    if len(sizes) > 1:
+        widths = sorted({r["width"] for r in runs})
+        print("\nTuned test by width x training-set size (train acc in brackets):")
+        print("  m     " + "".join(f"{n:>16d}" for n in sizes))
+        for w in widths:
+            cells = []
+            for n in sizes:
+                t = tuned[n].get(w)
+                cells.append(f"{np.mean(t[0]):9.3f} ({np.mean(t[1]):.2f})" if t else f"{'-':>16}")
+            print(f"  {w:<6d}" + "".join(cells))
+
+
+def report(runs, name, thresholds):
+    """Tables for one training-set size; returns {width: (tuned test, tuned train)}."""
     cfg = runs[0]["config"]
     widths = sorted({r["width"] for r in runs})
     lrs = sorted({r["lr"] for r in runs})
     seeds = sorted({r["seed"] for r in runs})
-    by = {run_key(r): r for r in runs}
+    by = {run_key(r)[:3]: r for r in runs}   # one training-set size here
 
     def test(r):
         return r["best_val"]["test"]
@@ -181,7 +227,7 @@ def analyze(name, thresholds=(0.90, 0.95, 0.99)):
 
     # Fixed LR vs per-seed tuned LR (picked on validation, reported on test).
     fixed = cfg["fixed_lr"]
-    per_width = {}
+    per_width, tuned = {}, {}
     print(f"\nFixed LR ({fixed:g}) vs tuned LR (best val per width and seed):")
     print("  m      fixed_test   tuned_test   tuned_lrs")
     for w in widths:
@@ -194,6 +240,8 @@ def analyze(name, thresholds=(0.90, 0.95, 0.99)):
                 f_acc.append(test(by[(w, fixed, s)]))
             b = max(cands, key=lambda r: r["best_val"]["val"])
             t_acc.append(test(b)); t_lr.append(b["lr"])
+            tuned.setdefault(w, ([], []))[0].append(test(b))
+            tuned[w][1].append(b["final"]["train"])
         per_width[w] = (f_acc, t_acc)
         print(f"  {w:<6d} {np.mean(f_acc):10.3f}   {np.mean(t_acc):10.3f}   "
               f"{', '.join(f'{x:g}' for x in t_lr)}")
@@ -206,6 +254,7 @@ def analyze(name, thresholds=(0.90, 0.95, 0.99)):
                   if per_width[w][i] and np.mean(np.array(per_width[w][i]) >= th) >= 2 / 3]
             out.append(f"{label}={ms[0] if ms else 'none'}")
         print(f"  threshold {th:.2f}: " + "  ".join(out))
+    return tuned
 
 
 if __name__ == "__main__":
