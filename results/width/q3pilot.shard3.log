@@ -1,0 +1,11 @@
+Device cuda | sweep q3pilot shard 3/8: 2 runs to go (0 on disk)
+  generating data for seed 0, n=16, 8000 train graphs...
+Generated 8000 hard-diam graphs  |  connected: 4000  disconnected: 4000  (n 16-16, chords 0-3/blob)
+Generated 400 hard-diam graphs  |  connected: 200  disconnected: 200  (n 16-16, chords 0-3/blob)
+Generated 400 hard-diam graphs  |  connected: 200  disconnected: 200  (n 16-16, chords 0-3/blob)
+  [1/2] n=16  L=4  N=8000  m=8    H=1   lr=0.003   seed=0  train=0.310 val=0.490 test@bestval=0.480 test@final=0.275  (158.0s)
+  generating data for seed 0, n=32, 8000 train graphs...
+Generated 8000 hard-diam graphs  |  connected: 4000  disconnected: 4000  (n 32-32, chords 0-3/blob)
+Generated 400 hard-diam graphs  |  connected: 200  disconnected: 200  (n 32-32, chords 0-3/blob)
+Generated 400 hard-diam graphs  |  connected: 200  disconnected: 200  (n 32-32, chords 0-3/blob)
+  [2/2] n=32  L=5  N=8000  m=128  H=16  lr=0.003   seed=0  train=0.978 val=0.500 test@bestval=0.500 test@final=0.205  (273.7s)
