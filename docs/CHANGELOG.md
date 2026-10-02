@@ -15,6 +15,19 @@ memorizes (n=32 L5 m=128: train 0.98). Cause: hard_diam diameter grows ~n/2
 (7 → 14 → 28), so raising n raises both node count (width's axis) and path length
 (depth's axis). (`results/width/q3pilot.shard*of8.jsonl`)
 
+### Q3 pilot 2: on shortcut-free data almost nothing learns
+
+`swap` graphs, n ∈ {32, 64, 128}, depth 2 vs ⌈log₂ n⌉, m ∈ {8, 32, 128}, seed 0,
+LR 3e-3, 8000 graphs, 4800 steps (18 runs). 17/18 sit at 0.50 test exact-match
+(the all-connected predictor; pair acc = its 0.745/0.761/0.770); n=32 L2 m=128
+memorizes (train 1.00). The one signal: **n=32, depth 5, m=128 — test 0.532, pair
+0.869** vs 0.745 trivial, i.e. partial reachability, not memorization. So the Q1 and
+pilot-1 n=16 successes leaned on locality/statistics; with those removed, no width
+≤128 learns within this budget even at the theory's depth (cf. Saparov et al. 2025:
+transformers struggle to learn search, scale doesn't fix it). Critical width is
+undefined until something learns. **Next:** learnability probe — n=32, depth 5,
+m ∈ {64, 128, 256}, 5× the steps, 4× the data. (`results/width/q3pilot2.shard*of8.jsonl`)
+
 ### Shortcut audit of the candidate generators (`audit_width_data.py`)
 
 Heuristics measured per generator and n: all-ones; k-hop reachability

@@ -75,7 +75,10 @@ Sanford 2024a: retrieval ≪ parallelizable (connectivity) ≪ search (shortest 
   3 seeds, 8000 train graphs, 4800 steps. Pair accuracy logged next to exact-match.
   Pilot 1 on hard_diam failed at n ≥ 32 (diameter ~n/2); see CHANGELOG 2026-10-02.
 - **Output:** log–log m\* vs n per depth; the slope is the answer.
-- **Status:** pilot 2 (`q3pilot2`, 18 runs) pending, then `q3` (324 runs).
+- **Status:** pilot 2 done — on `swap` data 17/18 runs stay at the trivial predictor;
+  only n=32, depth 5, m=128 partly learns (pair 0.87 vs 0.75). Learnability probe
+  (`q3probe`: n=32, depth 5, m ∈ {64, 128, 256}, 24 000 steps, 32 000 graphs) decides
+  whether Q3 needs a bigger budget or becomes a negative result.
 
 ### Q4 — Does Graphormer-style structure make width irrelevant?
 - **Prediction:** with the SPD attention bias, connectivity m\* stays small and flat in
