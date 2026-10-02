@@ -83,6 +83,12 @@ SWEEPS["q3pilot"] = dict(SWEEPS["q3"], gen="hard_diam", ns=[16, 32, 64], widths=
 # Pilot 2: the q3 data at one seed, one LR, three widths — is it learnable at all?
 SWEEPS["q3pilot2"] = dict(SWEEPS["q3"], widths=[8, 32, 128], lrs=[3e-3], seeds=[0],
                           fixed_lr=3e-3)
+# Learnability probe: pilot 2 learned only at n=32, depth 5, m=128 (pair 0.87). Is it a
+# budget problem? 5x the steps, 4x the data, wider models; read the learning curves
+# (--curves) for whether and when exact-match leaves 0.5.
+SWEEPS["q3probe"] = dict(SWEEPS["q3"], ns=[32], depths=["log"], widths=[64, 128, 256],
+                         lrs=[1e-3, 3e-3], seeds=[0], train_sizes=[32000], train=32000,
+                         steps=24000, fixed_lr=3e-3)
 
 
 def set_seed(seed):
@@ -245,14 +251,44 @@ def pair_accuracy(model, A, R, bs=128):
     return right / A.size(0)
 
 
+CACHE_DIR = os.path.join("data", "width_cache")
+
+
+def cached(key, build, wait_s=7200):
+    """Build-once tensor cache shared by parallel shards: the first shard to take the
+    lock builds and saves (atomically); the others wait for the file and load it."""
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    path = os.path.join(CACHE_DIR, f"{key}.pt")
+    lock = path + ".lock"
+    t0 = time.time()
+    while not os.path.exists(path):
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL))
+        except FileExistsError:
+            if time.time() - t0 > wait_s:
+                raise TimeoutError(f"waited {wait_s}s for {path}; stale {lock}?")
+            time.sleep(5)
+            continue
+        try:
+            data = build()
+            torch.save(data, path + ".tmp")
+            os.replace(path + ".tmp", path)
+            return data
+        finally:
+            os.remove(lock)
+    return torch.load(path)
+
+
 def make_splits(cfg, seed):
     """Same graphs for every width/LR at a given seed; val and test use their own seeds."""
     if "gen" in cfg:
         g, n = cfg["gen"], cfg["n"]
         kw = dict(chord_frac=cfg.get("chord_frac", 0.5), dmin=cfg.get("dmin", 6))
-        return (relabelled(g, cfg["train"], n, seed, **kw),
-                relabelled(g, cfg["val"], n, seed + 5555, **kw),
-                relabelled(g, cfg["test"], n, seed + 9999, **kw))
+        tag = f"{g}_n{n}_cf{kw['chord_frac']}_d{kw['dmin']}"
+        return tuple(cached(f"{tag}_N{num}_s{sd}", lambda num=num, sd=sd:
+                            relabelled(g, num, n, sd, **kw))
+                     for num, sd in ((cfg["train"], seed), (cfg["val"], seed + 5555),
+                                     (cfg["test"], seed + 9999)))
     rng = np.random.default_rng(seed)
     kw = dict(n=cfg["n"], p=0.12, cap=10**6, dist=cfg["dist"])
     tr = make_set(cfg["train"], rng=rng, seed=seed, **kw)
@@ -364,6 +400,17 @@ def analyze(name, thresholds=(0.90, 0.95, 0.99)):
             print(f"  {w:<6d}" + "".join(row))
 
 
+def curves(name):
+    """Test exact-match / pair accuracy at every evaluation, one line per run."""
+    for r in sorted(load_runs(name), key=lambda r: (*cell(r), r["width"], r["lr"], r["seed"])):
+        c = r["config"]
+        print(f"\nn={c['n']} L={c['depth']} N={train_size(r)} m={r['width']} lr={r['lr']:g} "
+              f"seed={r['seed']}  ({r['seconds']}s)")
+        print("  epoch  " + " ".join(f"{h['epoch']:>6d}" for h in r["history"]))
+        for key in ("train", "test", "test_pair"):
+            print(f"  {key:<7}" + " ".join(f"{h.get(key, float('nan')):6.3f}" for h in r["history"]))
+
+
 def report(runs, name, thresholds):
     """Tables for one training-set size; returns {width: (tuned test, tuned train)}."""
     cfg = runs[0]["config"]
@@ -425,8 +472,11 @@ if __name__ == "__main__":
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--analyze", action="store_true")
     ap.add_argument("--shard", default="0/1", help="i/k: run every k-th pending run from i")
+    ap.add_argument("--curves", action="store_true", help="per-run learning curves")
     a = ap.parse_args()
-    if a.analyze:
+    if a.curves:
+        curves(f"{a.sweep}_smoke" if a.smoke else a.sweep)
+    elif a.analyze:
         analyze(f"{a.sweep}_smoke" if a.smoke else a.sweep)
     else:
         i, k = map(int, a.shard.split("/"))
