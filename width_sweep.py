@@ -28,9 +28,11 @@ import time
 import numpy as np
 import torch
 import torch.nn.functional as F
+from scipy.sparse.csgraph import shortest_path
 
 from src.connectivity import DEVICE, ConnectivityTransformer, evaluate, make_set, reachability
-from src.dataset import make_connectedness_hard_diam_dataset
+from src.dataset import (_cycle_blob_edges, make_connectedness_hard_dataset,
+                         make_connectedness_hard_diam_dataset)
 
 OUT_DIR = os.path.join("results", "width")
 
@@ -62,20 +64,25 @@ SWEEPS = {
                 seeds=[0, 1, 2], train_sizes=[500, 2000, 8000], steps=4800,
                 train=2000, val=400, test=400, epochs=300, batch=128,
                 fixed_lr=1e-3, warmup_frac=0.05, schedule="cosine"),
-    # Q3: critical width vs graph size n. Graphs are relabelled hard_diam (sparse
-    # blobs, diameter ~n/2, no index leak); 8000 train graphs so the Q1c data
-    # ceiling stays out of the way. depth 2 (fixed) vs ceil(log2 n) (theory's
-    # depth for connectivity): can width stand in for missing depth?
-    "q3": dict(gen="hard_diam", ns=[16, 32, 64], depths=[2, "log"], head_dim=8,
-               widths=[4, 8, 16, 32, 64, 128],
+    # Q3: critical width vs graph size n. Graphs are relabelled `swap` blobs:
+    # locally indistinguishable classes (degree and short-cycle statistics at
+    # chance, k-hop heuristics fail up to k=8; audit_width_data.py) with diameter
+    # growing ~log n. 8000 train graphs keep the Q1c data ceiling out of the way.
+    # depth 2 (fixed) vs ceil(log2 n): can width stand in for missing depth?
+    "q3": dict(gen="swap", chord_frac=0.25, dmin=6, ns=[32, 64, 128], depths=[2, "log"],
+               head_dim=8, widths=[4, 8, 16, 32, 64, 128],
                lrs=[1e-3, 3e-3, 1e-2],
                seeds=[0, 1, 2], train_sizes=[8000], steps=4800,
                train=8000, val=400, test=400, epochs=77, batch=128,
                fixed_lr=1e-3, warmup_frac=0.05, schedule="cosine"),
 }
-# Q3 pilot: one seed, one LR, three widths — is relabelled hard_diam learnable at all?
-SWEEPS["q3pilot"] = dict(SWEEPS["q3"], widths=[8, 32, 128], lrs=[3e-3], seeds=[0],
-                         fixed_lr=3e-3)
+# Pilot 1 (2026-10-02): relabelled hard_diam at n = 16/32/64 — diameter grew ~n/2 and
+# nothing generalized at n >= 32. Kept for the record.
+SWEEPS["q3pilot"] = dict(SWEEPS["q3"], gen="hard_diam", ns=[16, 32, 64], widths=[8, 32, 128],
+                         lrs=[3e-3], seeds=[0], fixed_lr=3e-3)
+# Pilot 2: the q3 data at one seed, one LR, three widths — is it learnable at all?
+SWEEPS["q3pilot2"] = dict(SWEEPS["q3"], widths=[8, 32, 128], lrs=[3e-3], seeds=[0],
+                          fixed_lr=3e-3)
 
 
 def set_seed(seed):
@@ -119,16 +126,104 @@ def load_runs(sweep):
     return runs
 
 
-def relabelled_hard_diam(num, n, seed):
-    """hard_diam graphs at fixed n with node labels shuffled per graph, so component
-    membership can't be read off node indices. Returns (A + I, R) tensors."""
-    rng = np.random.default_rng(seed + 1)
-    As, Rs = [], []
-    for g in make_connectedness_hard_diam_dataset(num_graphs=num, min_nodes=n, max_nodes=n,
-                                                  seed=seed):
+def sparse_blob_graphs(num, n, seed, chord_frac):
+    """Two sparse blobs +/- one bridge, like hard_diam, but each blob gets
+    round(chord_frac * size) chords so its diameter grows ~log(size) rather than
+    ~size/2 — n can grow without the paths outrunning every depth. Label 1: one
+    bridge; label 0: one extra intra-blob chord instead (edge counts and degree
+    sequences matched). Blob split na ~ U[n/4, 3n/4]. Yields (adjacency, label)."""
+    rng = np.random.default_rng(seed)
+    for i in range(num):
+        label = i % 2
+        na = int(rng.integers(n // 4, n - n // 4 + 1))
+        blobs = (list(range(na)), list(range(na, n)))
+        edges = set()
+        for b in blobs:
+            edges |= _cycle_blob_edges(b, round(chord_frac * len(b)), rng)
+        if label == 1:
+            u, v = int(rng.choice(blobs[0])), int(rng.choice(blobs[1]))
+            edges.add((min(u, v), max(u, v)))
+        else:
+            while True:
+                b = blobs[int(rng.integers(2))]
+                u, v = (int(x) for x in rng.choice(b, size=2, replace=False))
+                e = (min(u, v), max(u, v))
+                if e not in edges:
+                    edges.add(e)
+                    break
+        A = np.zeros((n, n), dtype=np.float32)
+        for u, v in edges:
+            A[u, v] = A[v, u] = 1.0
+        yield A, label
+
+
+def _far_pair(A, nodes, rng):
+    """A random node of `nodes`, a node at maximum distance from it within the blob,
+    and that distance."""
+    sub = A[np.ix_(nodes, nodes)]
+    i = int(rng.integers(len(nodes)))
+    d = shortest_path(sub, unweighted=True, directed=False, indices=i)
+    dmax = d[np.isfinite(d)].max()
+    far = np.flatnonzero(d == dmax)
+    return nodes[i], nodes[int(rng.choice(far))], int(dmax)
+
+
+def swap_blob_graphs(num, n, seed, chord_frac, dmin=6):
+    """Locally indistinguishable classes (the 1-cycle vs 2-cycle idea). Two sparse
+    blobs (cycle + round(chord_frac * size) chords); pick a far-apart pair a1, a2 in
+    blob A and b1, b2 in blob B. Label 0 adds a1-a2 and b1-b2 (two components);
+    label 1 adds a1-b1 and a2-b2 (connected). Same four endpoints gain one degree in
+    both classes, and every cycle the new edges close is long, so degree and
+    short-cycle statistics carry no label signal. Each pair must be >= dmin hops
+    apart, so every cycle the new edges close has >= dmin + 1 edges (invisible to
+    closed-walk counts up to length dmin); graphs that miss it are redrawn before
+    the label is applied, so the filter is label-independent. Yields (adjacency, label)."""
+    rng = np.random.default_rng(seed)
+    for i in range(num):
+        label = i % 2
+        for _ in range(1000):
+            na = int(rng.integers(n // 4, n - n // 4 + 1))
+            blobs = (list(range(na)), list(range(na, n)))
+            A = np.zeros((n, n), dtype=np.float32)
+            for b in blobs:
+                for u, v in _cycle_blob_edges(b, round(chord_frac * len(b)), rng):
+                    A[u, v] = A[v, u] = 1.0
+            a1, a2, da = _far_pair(A, blobs[0], rng)
+            b1, b2, db = _far_pair(A, blobs[1], rng)
+            if min(da, db) >= dmin:
+                break
+        else:
+            raise ValueError(f"swap: no blob pair >= {dmin} hops apart at n={n}, "
+                             f"chord_frac={chord_frac}; lower dmin or chord_frac")
+        new = [(a1, a2), (b1, b2)] if label == 0 else [(a1, b1), (a2, b2)]
+        for u, v in new:
+            A[u, v] = A[v, u] = 1.0
+        yield A, label
+
+
+def raw_graphs(gen, num, n, seed, chord_frac=0.5, dmin=6):
+    """(adjacency, label) pairs from a named generator, before relabelling."""
+    if gen == "sparse":
+        yield from sparse_blob_graphs(num, n, seed, chord_frac)
+        return
+    if gen == "swap":
+        yield from swap_blob_graphs(num, n, seed, chord_frac, dmin)
+        return
+    make = {"hard": make_connectedness_hard_dataset,
+            "hard_diam": make_connectedness_hard_diam_dataset}[gen]
+    for g in make(num_graphs=num, min_nodes=n, max_nodes=n, seed=seed):
         A = np.zeros((n, n), dtype=np.float32)
         ei = g.edge_index.numpy()
         A[ei[0], ei[1]] = 1.0
+        yield A, int(g.y)
+
+
+def relabelled(gen, num, n, seed, chord_frac=0.5, dmin=6):
+    """Graphs with node labels shuffled per graph, so component membership can't be
+    read off node indices. Returns (A + I, R) tensors."""
+    rng = np.random.default_rng(seed + 1)
+    As, Rs = [], []
+    for A, _ in raw_graphs(gen, num, n, seed, chord_frac, dmin):
         perm = rng.permutation(n)
         A = A[np.ix_(perm, perm)]
         As.append(A + np.eye(n, dtype=np.float32))
@@ -152,11 +247,12 @@ def pair_accuracy(model, A, R, bs=128):
 
 def make_splits(cfg, seed):
     """Same graphs for every width/LR at a given seed; val and test use their own seeds."""
-    if cfg.get("gen") == "hard_diam":
-        n = cfg["n"]
-        return (relabelled_hard_diam(cfg["train"], n, seed),
-                relabelled_hard_diam(cfg["val"], n, seed + 5555),
-                relabelled_hard_diam(cfg["test"], n, seed + 9999))
+    if "gen" in cfg:
+        g, n = cfg["gen"], cfg["n"]
+        kw = dict(chord_frac=cfg.get("chord_frac", 0.5), dmin=cfg.get("dmin", 6))
+        return (relabelled(g, cfg["train"], n, seed, **kw),
+                relabelled(g, cfg["val"], n, seed + 5555, **kw),
+                relabelled(g, cfg["test"], n, seed + 9999, **kw))
     rng = np.random.default_rng(seed)
     kw = dict(n=cfg["n"], p=0.12, cap=10**6, dist=cfg["dist"])
     tr = make_set(cfg["train"], rng=rng, seed=seed, **kw)
