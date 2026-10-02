@@ -30,7 +30,7 @@ import torch
 import torch.nn.functional as F
 from scipy.sparse.csgraph import shortest_path
 
-from src.connectivity import DEVICE, ConnectivityTransformer, evaluate, make_set, reachability
+from src.connectivity import DEVICE, ConnectivityTransformer, make_set, reachability
 from src.dataset import (_cycle_blob_edges, make_connectedness_hard_dataset,
                          make_connectedness_hard_diam_dataset)
 
@@ -89,6 +89,12 @@ SWEEPS["q3pilot2"] = dict(SWEEPS["q3"], widths=[8, 32, 128], lrs=[3e-3], seeds=[
 SWEEPS["q3probe"] = dict(SWEEPS["q3"], ns=[32], depths=["log"], widths=[64, 128, 256],
                          lrs=[1e-3, 3e-3], seeds=[0], train_sizes=[32000], train=32000,
                          steps=24000, fixed_lr=3e-3)
+# Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
+# 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
+# m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
+SWEEPS["q3trim"] = dict(SWEEPS["q3"], depths=["log"], widths=[8, 16, 32, 64, 128],
+                        lrs=[1e-3, 3e-3], seeds=[0, 1], train_sizes=[32000], train=32000,
+                        steps=12000, fixed_lr=1e-3)
 
 
 def set_seed(seed):
@@ -237,21 +243,23 @@ def relabelled(gen, num, n, seed, chord_frac=0.5, dmin=6):
     return torch.tensor(np.array(As)), torch.tensor(np.array(Rs))
 
 
-def pair_accuracy(model, A, R, bs=128):
-    """Fraction of off-diagonal entries of R predicted correctly (exact-match's soft twin)."""
+@torch.no_grad()
+def metrics(model, A, R, bs=128):
+    """Exact-match (whole matrix right) and pair accuracy (fraction of off-diagonal
+    entries right) in one pass. A, R may be float or uint8, on any device."""
     model.eval()
     n = A.size(1)
     off = ~torch.eye(n, dtype=torch.bool, device=DEVICE)
-    right = 0.0
-    with torch.no_grad():
-        for i in range(0, A.size(0), bs):
-            lo = model(A[i:i+bs].to(DEVICE))
-            ok = (lo > 0).float() == R[i:i+bs].to(DEVICE)
-            right += ok[:, off].float().mean(dim=1).sum().item()
-    return right / A.size(0)
+    exact = pair = 0.0
+    for i in range(0, A.size(0), bs):
+        lo = model(A[i:i+bs].to(DEVICE).float())
+        ok = (lo > 0) == (R[i:i+bs].to(DEVICE) > 0.5)
+        exact += ok.all(dim=(1, 2)).float().sum().item()
+        pair += ok[:, off].float().mean(dim=1).sum().item()
+    return exact / A.size(0), pair / A.size(0)
 
 
-CACHE_DIR = os.path.join("data", "width_cache")
+CACHE_DIR = os.environ.get("WIDTH_CACHE", os.path.join("data", "width_cache"))
 
 
 def cached(key, build, wait_s=7200):
@@ -285,8 +293,9 @@ def make_splits(cfg, seed):
         g, n = cfg["gen"], cfg["n"]
         kw = dict(chord_frac=cfg.get("chord_frac", 0.5), dmin=cfg.get("dmin", 6))
         tag = f"{g}_n{n}_cf{kw['chord_frac']}_d{kw['dmin']}"
-        return tuple(cached(f"{tag}_N{num}_s{sd}", lambda num=num, sd=sd:
-                            relabelled(g, num, n, sd, **kw))
+        # 0/1 matrices stored as uint8 (4x smaller); batches are cast to float on use.
+        return tuple(cached(f"{tag}_N{num}_s{sd}_u8", lambda num=num, sd=sd:
+                            tuple(t.to(torch.uint8) for t in relabelled(g, num, n, sd, **kw)))
                      for num, sd in ((cfg["train"], seed), (cfg["val"], seed + 5555),
                                      (cfg["test"], seed + 9999)))
     rng = np.random.default_rng(seed)
@@ -319,17 +328,18 @@ def train_one(cfg, width, lr, seed, splits):
         tot = 0.0
         for i in range(0, N, bs):
             idx = perm[i:i+bs]
-            loss = F.binary_cross_entropy_with_logits(model(Atr_d[idx]), Rtr_d[idx])
+            loss = F.binary_cross_entropy_with_logits(model(Atr_d[idx].float()),
+                                                      Rtr_d[idx].float())
             opt.zero_grad(); loss.backward(); opt.step()
             if sched is not None:
                 sched.step()
             tot += loss.item() * idx.size(0)
         if epoch % max(1, epochs // 15) == 0 or epoch in (1, epochs):
+            test, test_pair = metrics(model, Ate, Rte, bs)
             history.append({"epoch": epoch, "loss": tot / N,
-                            "train": evaluate(model, Atr, Rtr, bs),
-                            "val": evaluate(model, Ava, Rva, bs),
-                            "test": evaluate(model, Ate, Rte, bs),
-                            "test_pair": pair_accuracy(model, Ate, Rte, bs)})
+                            "train": metrics(model, Atr_d, Rtr_d, bs)[0],
+                            "val": metrics(model, Ava, Rva, bs)[0],
+                            "test": test, "test_pair": test_pair})
 
     best = max(history, key=lambda h: h["val"])
     return {"width": width, "lr": lr, "seed": seed, "heads": heads, "train_size": N,
@@ -364,7 +374,8 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
     for k, (w, lr, s, size, n, d) in enumerate(todo, 1):
         c = point(cfg, n, d, size)
         if (s, n, size) not in splits:
-            print(f"  generating data for seed {s}, n={n}, {size} train graphs...")
+            splits.clear()             # one dataset in memory at a time (n=128 is large)
+            print(f"  loading data for seed {s}, n={n}, {size} train graphs...")
             splits[(s, n, size)] = make_splits(c, s)
         r = train_one(c, w, lr, s, splits[(s, n, size)])
         r["sweep"], r["config"] = name, {k2: v for k2, v in c.items() if k2 not in
@@ -375,6 +386,30 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
               f"train={r['final']['train']:.3f} val={r['best_val']['val']:.3f} "
               f"test@bestval={r['best_val']['test']:.3f} test@final={r['final']['test']:.3f}  "
               f"({r['seconds']}s)")
+
+
+def _prepare_one(args):
+    c, s = args
+    make_splits(c, s)
+    return c["n"], c["train"], s
+
+
+def prepare(name, workers=None):
+    """Build every cached dataset a sweep needs, in parallel, before training starts."""
+    from multiprocessing import Pool
+    cfg = SWEEPS[name]
+    if "gen" not in cfg:
+        print(f"{name}: no cached data to prepare")
+        return
+    jobs = {(n, size, s): (point(cfg, n, cfg.get("depths", [2])[0], size), s)
+            for s in cfg["seeds"] for n in cfg.get("ns", [cfg.get("n")])
+            for size in cfg.get("train_sizes", [cfg["train"]])}
+    workers = workers or min(len(jobs), os.cpu_count() or 1)
+    print(f"{name}: preparing {len(jobs)} datasets with {workers} processes -> {CACHE_DIR}")
+    t0 = time.time()
+    with Pool(workers) as pool:
+        for n, size, s in pool.imap_unordered(_prepare_one, list(jobs.values())):
+            print(f"  ready: n={n} train={size} seed={s}  ({time.time() - t0:.0f}s)", flush=True)
 
 
 def analyze(name, thresholds=(0.90, 0.95, 0.99)):
@@ -473,8 +508,11 @@ if __name__ == "__main__":
     ap.add_argument("--analyze", action="store_true")
     ap.add_argument("--shard", default="0/1", help="i/k: run every k-th pending run from i")
     ap.add_argument("--curves", action="store_true", help="per-run learning curves")
+    ap.add_argument("--prepare", action="store_true", help="build the sweep's datasets first")
     a = ap.parse_args()
-    if a.curves:
+    if a.prepare:
+        prepare(a.sweep)
+    elif a.curves:
         curves(f"{a.sweep}_smoke" if a.smoke else a.sweep)
     elif a.analyze:
         analyze(f"{a.sweep}_smoke" if a.smoke else a.sweep)
