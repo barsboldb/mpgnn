@@ -15,6 +15,18 @@ memorizes (n=32 L5 m=128: train 0.98). Cause: hard_diam diameter grows ~n/2
 (7 → 14 → 28), so raising n raises both node count (width's axis) and path length
 (depth's axis). (`results/width/q3pilot.shard*of8.jsonl`)
 
+### Q3 learnability probe: the clean task is learnable — it was budget (mostly data)
+
+n=32, depth 5, `swap` data, 32 000 graphs, 24 000 steps, m ∈ {64, 128, 256} × LR
+{1e-3, 3e-3}, seed 0. Final test exact-match: m=64 0.985/0.983, m=128 **0.998**/0.965,
+m=256 0.988/0.007 (3e-3 never trains). Test tracks train (0.998 vs 1.000), pair acc
+0.998–0.999 — reachability generalizes on data where statistics and ≤4-hop checks are
+at chance. By epoch 12 (~3000 steps, fewer than pilot 2's 4800) test is already
+0.54–0.83, so the pilot-2 failure was mainly 8000 graphs (m=128 memorized there:
+train 0.99 / test 0.53) — the Q1c data ceiling again (schedules differ, so suggestive,
+not controlled). Wider models start later at a fixed LR (epoch 12, LR 3e-3: test 0.83 /
+0.40 / 0.07 for m = 64/128/256). (`results/width/q3probe.shard*of8.jsonl`)
+
 ### Q3 pilot 2: on shortcut-free data almost nothing learns
 
 `swap` graphs, n ∈ {32, 64, 128}, depth 2 vs ⌈log₂ n⌉, m ∈ {8, 32, 128}, seed 0,
