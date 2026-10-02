@@ -69,14 +69,13 @@ Sanford 2024a: retrieval ≪ parallelizable (connectivity) ≪ search (shortest 
 ### Q3 — How does m\* for connectivity scale with n?
 - **Prediction:** at fixed depth, m\* grows with n (Sanford: one layer needs m·H ≳ n);
   at depth ⌈log₂ n⌉ it grows much more slowly.
-- **Experiment:** relabelled `hard_diam` graphs (no index leak; diameter ≈ n/2),
-  n ∈ {16, 32, 64}, depth 2 vs ⌈log₂ n⌉ (4/5/6), m ∈ {4 … 128}, LR {1e-3, 3e-3, 1e-2},
-  3 seeds, 8000 train graphs (clear of the Q1c data ceiling), 4800 steps.
-  Depth 1 dropped: it only memorized even on the easy data. Pair accuracy is logged
-  next to exact-match, which gets stricter as n² grows.
+- **Experiment:** relabelled `swap` graphs (locally indistinguishable classes; graph
+  statistics and ≤4-hop heuristics at chance — `audit_width_data.py`; diameter ~log n),
+  n ∈ {32, 64, 128}, depth 2 vs ⌈log₂ n⌉ (5/6/7), m ∈ {4 … 128}, LR {1e-3, 3e-3, 1e-2},
+  3 seeds, 8000 train graphs, 4800 steps. Pair accuracy logged next to exact-match.
+  Pilot 1 on hard_diam failed at n ≥ 32 (diameter ~n/2); see CHANGELOG 2026-10-02.
 - **Output:** log–log m\* vs n per depth; the slope is the answer.
-- **Status:** set up — `width_sweep.py q3pilot` (18 runs: is it learnable?), then `q3`
-  (324 runs).
+- **Status:** pilot 2 (`q3pilot2`, 18 runs) pending, then `q3` (324 runs).
 
 ### Q4 — Does Graphormer-style structure make width irrelevant?
 - **Prediction:** with the SPD attention bias, connectivity m\* stays small and flat in

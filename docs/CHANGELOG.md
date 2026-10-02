@@ -4,6 +4,38 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-02
+
+### Q3 pilot 1: relabelled hard_diam — nothing generalizes at n >= 32
+
+18 runs (seed 0, LR 3e-3, 8000 graphs). n=16 learns with the theory's shape: m=8
+fails, m≥32 reaches 0.99 at depth 4 vs 0.87–0.90 at depth 2. At n=32/64 every run
+sits at 0.50 test (the all-connected predictor; pair acc = its 0.798/0.817), one
+memorizes (n=32 L5 m=128: train 0.98). Cause: hard_diam diameter grows ~n/2
+(7 → 14 → 28), so raising n raises both node count (width's axis) and path length
+(depth's axis). (`results/width/q3pilot.shard*of8.jsonl`)
+
+### Shortcut audit of the candidate generators (`audit_width_data.py`)
+
+Heuristics measured per generator and n: all-ones; k-hop reachability
+(exact-match of [dist ≤ k]); gradient boosting on graph statistics (edges, degree
+histogram, tr(A³…A⁶)) predicting the connected bit; stats + 4-hop combined.
+- **Graph statistics leak the label at small n:** 0.68–0.90 at n=16 for hard,
+  hard_diam and sparse blobs; a bridge closes no cycle while the matched
+  intra-blob chord closes a short one, visible in tr(A³), tr(A⁴).
+- **A first swap version leaked more (0.98 at n=16):** in tiny blobs the far
+  pair was already adjacent (edge count 25.76 vs 26.00), and far pairs 2–3 hops
+  apart made triangles/4-cycles in the disconnected class only.
+- **Small graphs are local:** at n=16 a 6-hop check is exact on 0.6–1.0 of graphs.
+
+**Fix — `swap` generator:** two sparse blobs (cycle + ¼·size chords), far pair
+a₁a₂ in A and b₁b₂ in B at ≥ 6 hops; label 0 adds a₁–a₂, b₁–b₂, label 1 adds
+a₁–b₁, a₂–b₂ (the 1-cycle-vs-2-cycle idea). Identical degree changes, every new
+cycle ≥ 7 edges, failed draws redrawn before the label is applied. Audit at
+n = 32/48/64/96/128: stats→y 0.526/0.493/0.512/0.495/0.507, stats+4hop ≈ 0.25,
+k-hop exact = 0 for k ≤ 4 (≤ 8 from n=96); diameter (connected) 8.6 → 12.5 → 16.7,
+~log n. Not constructible below n≈32 at dmin 6 — Q3 uses n ∈ {32, 64, 128}.
+
 ## 2026-10-01
 
 ### Thesis re-scoped: the effect of width
