@@ -4,6 +4,36 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-04
+
+### Q3 trimmed grid: a clean width floor at n=32; nothing learns at n ≥ 64
+
+`swap` data, 32 000 graphs, 12 000 steps, depth ⌈log₂ n⌉, m ∈ {8 … 128}, LR {1e-3,
+3e-3}, 2 seeds (60 runs, Kaggle, 8 shards). Tuned test exact-match:
+
+| m | n=32 (L5) | n=64 (L6) | n=128 (L7) |
+|---|---|---|---|
+| 8 | 0.50 (train 0.27) | 0.50 | 0.50 |
+| 16 | 0.49 (train 0.39) | 0.50 | 0.50 |
+| 32 | 0.90 | 0.50 | 0.50 |
+| 64 | 0.97 | 0.50 | 0.50 |
+| 128 | 0.97 | 0.50 | 0.50 |
+
+- **n=32: m\* between 32 and 64 (~1–2·n)** — m=8 can't fit train, m=16 starts
+  (pair 0.83–0.88) but stalls. First clean critical width on shortcut-free data (the
+  shortcut-laden `hard` data at n=24 needed only m=8).
+- **n=64: width decides whether learning starts.** m ≤ 32 never leave the trivial
+  predictor; m=64 @ 3e-3 starts (train loss 0.59 → 0.07–0.10, test pair 0.80–0.85);
+  m=128 @ 3e-3 gets further (loss 0.03–0.04, pair 0.89–0.90). Exact-match stays 0.5:
+  ~4000 pairs must all be right.
+- **n=128:** test pair stays at the trivial 0.770 for every m ≤ 128.
+
+Onset width (first m whose test pair clearly leaves trivial): ~16 at n=32, ~64 at
+n=64, >128 at n=128 — at least linear in n, the direction of the one-layer gathering
+bound, but 2 seeds × 3 sizes is a trend, not a slope. Next: finer n ∈ {32 … 56} where
+m\* is reachable, pair-accuracy m\* alongside exact-match.
+(`results/width/q3trim.shard*of8.jsonl`)
+
 ## 2026-10-02
 
 ### Q3 pilot 1: relabelled hard_diam — nothing generalizes at n >= 32
