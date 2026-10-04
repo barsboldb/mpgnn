@@ -89,6 +89,13 @@ SWEEPS["q3pilot2"] = dict(SWEEPS["q3"], widths=[8, 32, 128], lrs=[3e-3], seeds=[
 SWEEPS["q3probe"] = dict(SWEEPS["q3"], ns=[32], depths=["log"], widths=[64, 128, 256],
                          lrs=[1e-3, 3e-3], seeds=[0], train_sizes=[32000], train=32000,
                          steps=24000, fixed_lr=3e-3)
+# Fine Q3: n where m* is reachable (q3trim: only n=32 learned at 12k steps). Fixed
+# depth 6 (= ceil(log2 n) for n in 33..64), finer widths around the n=32 threshold,
+# 24 000 steps, LR 3e-3 (the only rate that started learning at n=64), 3 seeds.
+# Audit: stats->y 0.51-0.53 and 4-hop exact 0 at every n here.
+SWEEPS["q3fine"] = dict(SWEEPS["q3"], ns=[32, 40, 48, 56], depths=[6],
+                        widths=[16, 24, 32, 48, 64, 96, 128], lrs=[3e-3], seeds=[0, 1, 2],
+                        train_sizes=[32000], train=32000, steps=24000, fixed_lr=3e-3)
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
@@ -336,8 +343,9 @@ def train_one(cfg, width, lr, seed, splits):
             tot += loss.item() * idx.size(0)
         if epoch % max(1, epochs // 15) == 0 or epoch in (1, epochs):
             test, test_pair = metrics(model, Ate, Rte, bs)
+            train, train_pair = metrics(model, Atr_d, Rtr_d, bs)
             history.append({"epoch": epoch, "loss": tot / N,
-                            "train": metrics(model, Atr_d, Rtr_d, bs)[0],
+                            "train": train, "train_pair": train_pair,
                             "val": metrics(model, Ava, Rva, bs)[0],
                             "test": test, "test_pair": test_pair})
 
@@ -486,7 +494,7 @@ def report(runs, name, thresholds):
             t_pair.append(b["best_val"].get("test_pair", float("nan")))
             tuned.setdefault(w, ([], []))[0].append(test(b))
             tuned[w][1].append(b["final"]["train"])
-        per_width[w] = (f_acc, t_acc)
+        per_width[w] = (f_acc, t_acc, t_pair)
         print(f"  {w:<6d} {np.mean(f_acc):10.3f}   {np.mean(t_acc):10.3f}   "
               f"{np.mean(t_pair):10.3f}   {', '.join(f'{x:g}' for x in t_lr)}")
 
@@ -498,6 +506,12 @@ def report(runs, name, thresholds):
                   if per_width[w][i] and np.mean(np.array(per_width[w][i]) >= th) >= 2 / 3]
             out.append(f"{label}={ms[0] if ms else 'none'}")
         print(f"  threshold {th:.2f}: " + "  ".join(out))
+    # Exact-match gets stricter as n^2 grows; the pair-accuracy threshold is the soft twin.
+    print("Critical width by tuned pair accuracy:")
+    for th in (0.95, 0.99):
+        ms = [w for w in widths
+              if per_width[w][2] and np.mean(np.array(per_width[w][2]) >= th) >= 2 / 3]
+        print(f"  pair >= {th:.2f}: m*={ms[0] if ms else 'none'}")
     return tuned
 
 
