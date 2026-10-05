@@ -96,6 +96,11 @@ SWEEPS["q3probe"] = dict(SWEEPS["q3"], ns=[32], depths=["log"], widths=[64, 128,
 SWEEPS["q3fine"] = dict(SWEEPS["q3"], ns=[32, 40, 48, 56], depths=[6],
                         widths=[16, 24, 32, 48, 64, 96, 128], lrs=[3e-3], seeds=[0, 1, 2],
                         train_sizes=[32000], train=32000, steps=24000, fixed_lr=3e-3)
+# Q3 data check: is the generalization gap at larger n a data effect? q3fine's widths
+# around the threshold at n = 48/56, with 2x and 4x the training graphs at the same
+# 24 000 steps. Training sets are nested (same seed -> the 32k set is a prefix).
+SWEEPS["q3data"] = dict(SWEEPS["q3fine"], ns=[48, 56], widths=[32, 48, 64, 96], seeds=[0, 1],
+                        train_sizes=[64000, 128000], train=64000)
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
@@ -343,7 +348,8 @@ def train_one(cfg, width, lr, seed, splits):
             tot += loss.item() * idx.size(0)
         if epoch % max(1, epochs // 15) == 0 or epoch in (1, epochs):
             test, test_pair = metrics(model, Ate, Rte, bs)
-            train, train_pair = metrics(model, Atr_d, Rtr_d, bs)
+            k = min(N, 8000)   # first 8000 train graphs: enough, and cheap at N = 128k
+            train, train_pair = metrics(model, Atr_d[:k], Rtr_d[:k], bs)
             history.append({"epoch": epoch, "loss": tot / N,
                             "train": train, "train_pair": train_pair,
                             "val": metrics(model, Ava, Rva, bs)[0],
@@ -454,6 +460,45 @@ def curves(name):
             print(f"  {key:<7}" + " ".join(f"{h.get(key, float('nan')):6.3f}" for h in r["history"]))
 
 
+def crossing(widths, ys, th):
+    """Width where a curve first reaches th, interpolated linearly in log2(width)."""
+    if ys[0] >= th:
+        return widths[0]
+    for i in range(1, len(widths)):
+        if ys[i - 1] < th <= ys[i]:
+            f = (th - ys[i - 1]) / (ys[i] - ys[i - 1])
+            return 2 ** (math.log2(widths[i - 1]) + f * math.log2(widths[i] / widths[i - 1]))
+    return float("nan")
+
+
+def scaling(name, th=0.95, max_width=None):
+    """Critical width vs n: where the seed-mean curve crosses `th` for fitting (final
+    train pair accuracy) and generalizing (test pair accuracy at the best-val epoch),
+    per seed and pooled, with a log-log slope across n for each (depth, train size)."""
+    runs = [r for r in load_runs(name) if max_width is None or r["width"] <= max_width]
+    groups = sorted({(c[1], c[2]) for c in map(cell, runs)})
+    for depth, size in groups:
+        sub = [r for r in runs if cell(r)[1:] == (depth, size)]
+        ns, widths = sorted({cell(r)[0] for r in sub}), sorted({r["width"] for r in sub})
+        seeds = sorted({r["seed"] for r in sub})
+        print(f"\n{name}: depth={depth} train={size} threshold={th}"
+              + (f" widths<={max_width}" if max_width else ""))
+        for label, key, at in (("fit", "train_pair", "final"), ("generalize", "test_pair", "best_val")):
+            pooled = {}
+            for n in ns:
+                def curve(ss):
+                    return [np.mean([r[at][key] for r in sub if cell(r)[0] == n
+                                     and r["width"] == w and r["seed"] in ss]) for w in widths]
+                pooled[n] = crossing(widths, curve(seeds), th)
+                per = [crossing(widths, curve([s]), th) for s in seeds]
+                print(f"  {label:<10} n={n:<4} m*={pooled[n]:6.1f}   per seed: "
+                      + ", ".join("  >max" if math.isnan(v) else f"{v:6.1f}" for v in per))
+            ok = [(n, m) for n, m in pooled.items() if not math.isnan(m)]
+            if len(ok) >= 2:
+                b, a = np.polyfit(np.log([n for n, _ in ok]), np.log([m for _, m in ok]), 1)
+                print(f"  {label:<10} slope d log m* / d log n = {b:.2f} over n={[n for n, _ in ok]}")
+
+
 def report(runs, name, thresholds):
     """Tables for one training-set size; returns {width: (tuned test, tuned train)}."""
     cfg = runs[0]["config"]
@@ -523,8 +568,12 @@ if __name__ == "__main__":
     ap.add_argument("--shard", default="0/1", help="i/k: run every k-th pending run from i")
     ap.add_argument("--curves", action="store_true", help="per-run learning curves")
     ap.add_argument("--prepare", action="store_true", help="build the sweep's datasets first")
+    ap.add_argument("--scaling", action="store_true", help="critical width vs n, log-log slope")
+    ap.add_argument("--max-width", type=int, default=None, help="--scaling: drop wider runs")
     a = ap.parse_args()
-    if a.prepare:
+    if a.scaling:
+        scaling(a.sweep, max_width=a.max_width)
+    elif a.prepare:
         prepare(a.sweep)
     elif a.curves:
         curves(f"{a.sweep}_smoke" if a.smoke else a.sweep)
