@@ -101,6 +101,11 @@ SWEEPS["q3fine"] = dict(SWEEPS["q3"], ns=[32, 40, 48, 56], depths=[6],
 # 24 000 steps. Training sets are nested (same seed -> the 32k set is a prefix).
 SWEEPS["q3data"] = dict(SWEEPS["q3fine"], ns=[48, 56], widths=[32, 48, 64, 96], seeds=[0, 1],
                         train_sizes=[64000, 128000], train=64000)
+# Q3 at 128k graphs: q3data showed the fit/generalize gap closes at 128 000 graphs
+# (n=48/56: critical width ~51/61). This adds n=32/40 at the same data and steps, so
+# the slope can be fitted over four sizes with enough data.
+SWEEPS["q3big"] = dict(SWEEPS["q3fine"], ns=[32, 40], widths=[16, 24, 32, 48, 64, 96],
+                       seeds=[0, 1], train_sizes=[128000], train=128000)
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
@@ -352,7 +357,7 @@ def train_one(cfg, width, lr, seed, splits):
             train, train_pair = metrics(model, Atr_d[:k], Rtr_d[:k], bs)
             history.append({"epoch": epoch, "loss": tot / N,
                             "train": train, "train_pair": train_pair,
-                            "val": metrics(model, Ava, Rva, bs)[0],
+                            **dict(zip(("val", "val_pair"), metrics(model, Ava, Rva, bs))),
                             "test": test, "test_pair": test_pair})
 
     best = max(history, key=lambda h: h["val"])
@@ -473,8 +478,15 @@ def crossing(widths, ys, th):
 
 def scaling(name, th=0.95, max_width=None):
     """Critical width vs n: where the seed-mean curve crosses `th` for fitting (final
-    train pair accuracy) and generalizing (test pair accuracy at the best-val epoch),
-    per seed and pooled, with a log-log slope across n for each (depth, train size)."""
+    train pair accuracy) and generalizing (final test pair accuracy), per seed and
+    pooled, with a log-log slope across n for each (depth, train size). "seed-mean" is
+    the mean of the per-seed crossings — sturdier than the pooled crossing when one
+    seed dips below the threshold at a single width (the pooled mean curve then
+    crosses late).
+
+    Both use the final epoch: the best-val checkpoint is chosen on validation
+    *exact-match*, which ties at 0.5 when no graph is fully right, and then picks
+    epoch 1 — whose pair accuracy is the trivial predictor's, not the model's."""
     runs = [r for r in load_runs(name) if max_width is None or r["width"] <= max_width]
     groups = sorted({(c[1], c[2]) for c in map(cell, runs)})
     for depth, size in groups:
@@ -483,20 +495,24 @@ def scaling(name, th=0.95, max_width=None):
         seeds = sorted({r["seed"] for r in sub})
         print(f"\n{name}: depth={depth} train={size} threshold={th}"
               + (f" widths<={max_width}" if max_width else ""))
-        for label, key, at in (("fit", "train_pair", "final"), ("generalize", "test_pair", "best_val")):
-            pooled = {}
+        for label, key, at in (("fit", "train_pair", "final"), ("generalize", "test_pair", "final")):
+            pooled, seedmean = {}, {}
             for n in ns:
                 def curve(ss):
                     return [np.mean([r[at][key] for r in sub if cell(r)[0] == n
                                      and r["width"] == w and r["seed"] in ss]) for w in widths]
                 pooled[n] = crossing(widths, curve(seeds), th)
                 per = [crossing(widths, curve([s]), th) for s in seeds]
-                print(f"  {label:<10} n={n:<4} m*={pooled[n]:6.1f}   per seed: "
-                      + ", ".join("  >max" if math.isnan(v) else f"{v:6.1f}" for v in per))
-            ok = [(n, m) for n, m in pooled.items() if not math.isnan(m)]
-            if len(ok) >= 2:
-                b, a = np.polyfit(np.log([n for n, _ in ok]), np.log([m for _, m in ok]), 1)
-                print(f"  {label:<10} slope d log m* / d log n = {b:.2f} over n={[n for n, _ in ok]}")
+                seedmean[n] = float("nan") if any(map(math.isnan, per)) else float(np.mean(per))
+                print(f"  {label:<10} n={n:<4} m*={pooled[n]:6.1f}   seed-mean {seedmean[n]:6.1f}"
+                      "   per seed: " + ", ".join("  >max" if math.isnan(v) else f"{v:6.1f}"
+                                                  for v in per))
+            for tag, est in (("pooled", pooled), ("seed-mean", seedmean)):
+                ok = [(n, m) for n, m in est.items() if not math.isnan(m)]
+                if len(ok) >= 2:
+                    b = np.polyfit(np.log([n for n, _ in ok]), np.log([m for _, m in ok]), 1)[0]
+                    print(f"  {label:<10} slope ({tag}) d log m*/d log n = {b:.2f} "
+                          f"over n={[n for n, _ in ok]}")
 
 
 def report(runs, name, thresholds):
