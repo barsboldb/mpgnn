@@ -75,10 +75,10 @@ Sanford 2024a: retrieval ≪ parallelizable (connectivity) ≪ search (shortest 
   3 seeds, 8000 train graphs, 4800 steps. Pair accuracy logged next to exact-match.
   Pilot 1 on hard_diam failed at n ≥ 32 (diameter ~n/2); see CHANGELOG 2026-10-02.
 - **Output:** log–log m\* vs n per depth; the slope is the answer.
-- **Status:** trimmed grid done (32 000 graphs, 12 000 steps). n=32: m\* between 32 and
-  64. n=64: m ≥ 64 starts learning (pair ≤ 0.90) but exact-match stays 0.5; n=128:
-  nothing moves. Onset width grows ≥ linearly in n. Next: n ∈ {32, 40, 48, 56}, finer
-  widths, 24 000 steps, m\* by pair accuracy as well.
+- **Status:** fine grid done (n = 32–56, depth 6, 32 000 graphs, 24 000 steps). Critical
+  width to fit ∝ n^1.53 (18.9 → 44.9); to generalize ∝ n^2.19 (23.2 → 56.4, >96 at
+  n=56). Both superlinear. Data check (`q3data`: 2×/4× graphs at n = 48/56) pending —
+  decides whether the generalize slope is a data effect.
 
 ### Q4 — Does Graphormer-style structure make width irrelevant?
 - **Prediction:** with the SPD attention bias, connectivity m\* stays small and flat in

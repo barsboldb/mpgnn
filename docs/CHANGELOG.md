@@ -4,6 +4,30 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-05
+
+### Q3 fine grid: critical width grows superlinearly in n
+
+`swap` data, n ∈ {32, 40, 48, 56}, depth 6 (= ⌈log₂ n⌉ for 33–64), m ∈ {16 … 128},
+32 000 graphs, 24 000 steps, LR 3e-3, 3 seeds (84 runs). Test pair accuracy (trivial
+0.745–0.759): m=24 reaches 0.96 at n=32; n=40 needs m=48 (0.98), n=48 m=64 (0.965),
+n=56 gets 0.93 at m=96. Critical width where the seed-mean curve crosses 0.95
+(log-interpolated, `width_sweep.py q3fine --scaling --max-width 96`):
+
+| | n=32 | n=40 | n=48 | n=56 | slope |
+|---|---|---|---|---|---|
+| fit (final train pair) | 18.9 | 23.3 | 31.4 | 44.9 | **n^1.53** |
+| generalize (test pair) | 23.2 | 38.1 | 56.4 | >96 | **n^2.19** (32–48) |
+
+Per-seed crossings agree within ~±3. Both exceed linear, far above the ~n^ε width that
+suffices to *represent* connectivity at log depth (Sanford 2024a) — this is the width
+to *learn* at this budget. The fit/generalize gap widens with n (n=56, m=64: train pair
+0.984, test 0.820): the Q1c data ceiling again, since 32 000 graphs is fewer examples
+per pair as n grows — the 2.19 is probably inflated by fixing data; 1.53 is the cleaner
+number. m=128 is excluded: LR 3e-3 is too hot there (train pair drops to 0.96 at
+n=48/56), the Q1 effect. **Next:** q3data — n=48/56, m ∈ {32 … 96}, 64k and 128k graphs
+at the same steps. (`results/width/q3fine.shard*of8.jsonl`)
+
 ## 2026-10-04
 
 ### Q3 trimmed grid: a clean width floor at n=32; nothing learns at n ≥ 64
