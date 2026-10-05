@@ -75,10 +75,11 @@ Sanford 2024a: retrieval ≪ parallelizable (connectivity) ≪ search (shortest 
   3 seeds, 8000 train graphs, 4800 steps. Pair accuracy logged next to exact-match.
   Pilot 1 on hard_diam failed at n ≥ 32 (diameter ~n/2); see CHANGELOG 2026-10-02.
 - **Output:** log–log m\* vs n per depth; the slope is the answer.
-- **Status:** fine grid done (n = 32–56, depth 6, 32 000 graphs, 24 000 steps). Critical
-  width to fit ∝ n^1.53 (18.9 → 44.9); to generalize ∝ n^2.19 (23.2 → 56.4, >96 at
-  n=56). Both superlinear. Data check (`q3data`: 2×/4× graphs at n = 48/56) pending —
-  decides whether the generalize slope is a data effect.
+- **Status:** fine grid done (n = 32–56, 32 000 graphs): critical width to fit ∝ n^1.55,
+  to generalize ∝ n^2.27 (corrected from 2.19, final-epoch pair accuracy). Data check:
+  at 128 000 graphs fit and generalize meet (≈ 51 / 61 at n = 48 / 56, ≈ 1.1 n) — the
+  steep generalize slope was mostly the data ceiling. Running: `q3big` (n = 32 / 40 at
+  128k) for a four-point slope with enough data.
 
 ### Q4 — Does Graphormer-style structure make width irrelevant?
 - **Prediction:** with the SPD attention bias, connectivity m\* stays small and flat in

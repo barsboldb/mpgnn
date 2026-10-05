@@ -6,6 +6,37 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-10-05
 
+### Correction: pair accuracy was read at the wrong checkpoint
+
+The `best_val` checkpoint is chosen on validation *exact-match*. When no validation
+graph is ever fully right, every epoch ties at 0.5 and epoch 1 wins — so "test pair at
+best-val" reported the trivial predictor's pair accuracy, not the trained model's
+(q3fine n=48 m=32: 0.755 reported, 0.885 / 0.853 at the final epoch). `--scaling` and
+the report now use the final epoch for pair metrics; runs from now on also log
+`val_pair`. Impact on q3fine critical widths is small — generalize 23.2 / 38.1 / 56.4 →
+22.9 / 37.6 / 57.5 (mean of per-seed crossings), slope 2.19 → **2.27**; fit unchanged
+(1.53 pooled, 1.55 seed-mean). The q3fine curves figure changed most: n=48/56 at
+m ≤ 32 are 0.75–0.88, not flat at trivial.
+
+### Q3 data check: 128 000 graphs close the fit/generalize gap
+
+n ∈ {48, 56}, m ∈ {32, 48, 64, 96}, 64 000 and 128 000 graphs (nested: the smaller set
+is a prefix), same 24 000 steps and LR 3e-3, 2 seeds (32 runs). Critical width, mean of
+per-seed crossings (`width_sweep.py q3data --scaling`):
+
+| | 32k | 64k | 128k |
+|---|---|---|---|
+| n=48 fit / generalize | 31.7 / 57.5 | 40.5 / 54.1 | 48.4 / **51.1** |
+| n=56 fit / generalize | 44.7 / >96 | 57.8 / >96 (one seed 81.8) | 59.4 / **61.5** |
+
+At 128k the two nearly meet; n=56 m=64 train/test pair goes 0.984/0.879 → 0.975/0.927
+→ 0.972/0.960. The fit width *rises* with data at fixed steps (each graph seen less).
+So the 2.27 generalize slope was mostly the data ceiling; with enough data the width to
+learn is ≈ 51 / 61 at n = 48 / 56 (≈ 1.1 n). Two sizes 17 % apart can't fix a slope (the
+pooled crossing at n=48, 128k, is 69 because one seed dips at m=64 — `--scaling` now also
+prints the seed-mean). **Next:** q3big — n=32/40 at 128k for a four-point fit.
+(`results/width/q3data.shard*of8.jsonl`)
+
 ### Q3 fine grid: critical width grows superlinearly in n
 
 `swap` data, n ∈ {32, 40, 48, 56}, depth 6 (= ⌈log₂ n⌉ for 33–64), m ∈ {16 … 128},
