@@ -123,11 +123,13 @@ def fig_q3trim():
 def fig_q3fine_curves():
     runs = load_runs("q3fine")
     fig, ax = plt.subplots(figsize=(4.6, 2.9))
-    for i, (n, at, dy) in enumerate(((32, 128, 2), (40, 128, -13), (48, 128, -4), (56, 128, -4))):
+    for i, (n, at, dy) in enumerate(((32, 128, 2), (40, 128, -13), (48, 128, 3), (56, 128, -12))):
         sub = [r for r in runs if cell(r)[0] == n]
         d = {}
         for r in sub:
-            d.setdefault(r["width"], []).append(r["best_val"]["test_pair"])
+            # final epoch: the best-val checkpoint is picked on exact-match, which ties at
+            # 0.5 when no graph is fully right and then returns epoch 1 (trivial pair acc).
+            d.setdefault(r["width"], []).append(r["final"]["test_pair"])
         line(ax, dict(sorted(d.items())), i, f"n = {n}", label_at=at, dy=dy)
     ax.axhline(0.95, color=INK2, lw=1, ls=(0, (3, 3)), zorder=1)
     ax.text(16.5, 0.938, "threshold 0.95", color=INK2, fontsize=7.5)
@@ -139,41 +141,58 @@ def fig_q3fine_curves():
     fig.savefig(os.path.join(OUT, "width-q3fine-curves.png"))
 
 
+def seed_crossings(runs, n, widths, key, at, th=0.95):
+    """Per-seed critical widths (nan where a seed never reaches th)."""
+    out = []
+    for sd in sorted({r["seed"] for r in runs}):
+        ys = [np.mean([r[at][key] for r in runs if cell(r)[0] == n and r["width"] == w
+                       and r["seed"] == sd]) for w in widths]
+        out.append(crossing(widths, ys, th))
+    return out
+
+
 def fig_q3fine_scaling():
-    runs = [r for r in load_runs("q3fine") if r["width"] <= 96]   # 128: LR too hot
-    ns, widths = [32, 40, 48, 56], [16, 24, 32, 48, 64, 96]
-    fig, ax = plt.subplots(figsize=(4.6, 2.9))
-    for i, (label, key, at) in enumerate((("to generalize (test)", "test_pair", "best_val"),
-                                          ("to fit (train)", "train_pair", "final"))):
+    fine = [r for r in load_runs("q3fine") if r["width"] <= 96]   # 128: LR too hot
+    big = [r for r in load_runs("q3data") if cell(r)[2] == 128000]
+    fig, ax = plt.subplots(figsize=(4.6, 3.0))
+    series = (
+        ("generalize, 32k graphs", fine, [32, 40, 48, 56], [16, 24, 32, 48, 64, 96], "test_pair"),
+        ("fit, 32k graphs", fine, [32, 40, 48, 56], [16, 24, 32, 48, 64, 96], "train_pair"),
+        ("learn, 128k graphs", big, [48, 56], [32, 48, 64, 96], "test_pair"),
+    )
+    for i, (label, runs, ns, widths, key) in enumerate(series):
         pts = []
         for n in ns:
-            ys = [np.mean([r[at][key] for r in runs if cell(r)[0] == n and r["width"] == w])
-                  for w in widths]
-            m = crossing(widths, ys, 0.95)
-            if not np.isnan(m):
-                pts.append((n, m))
-        x, y = zip(*pts)
-        b = np.polyfit(np.log(x), np.log(y), 1)[0]
-        ax.plot(x, y, color=SERIES[i], marker=MARKERS[i], label=f"{label}",
-                markeredgecolor="#fcfcfb", markeredgewidth=1.2, zorder=3)
-        ax.annotate(rf"$\propto n^{{{b:.2f}}}$", (x[-1], y[-1]), xytext=(8, -4),
-                    textcoords="offset points", color=INK, fontsize=8)
-    # n=56 did not reach 0.95 on test at m <= 96: arrow up from 96
+            per = seed_crossings(runs, n, widths, key, "final")
+            if not any(np.isnan(per)):
+                pts.append((n, np.mean(per), min(per), max(per)))
+        x, y, lo, hi = map(np.array, zip(*pts))
+        ax.errorbar(x, y, yerr=[y - lo, hi - y], color=SERIES[i], marker=MARKERS[i],
+                    label=label, markeredgecolor="#fcfcfb", markeredgewidth=1.2,
+                    capsize=2.5, elinewidth=1, zorder=3)
+        if len(x) >= 3:
+            b = np.polyfit(np.log(x), np.log(y), 1)[0]
+            ax.annotate(rf"$\propto n^{{{b:.2f}}}$", (x[-1], y[-1]),
+                        xytext=(-46, 7) if i == 0 else (7, -3),
+                        textcoords="offset points", color=INK, fontsize=8)
+    # 32k, n=56: no seed generalized at m <= 96
     ax.annotate("", xy=(56, 125), xytext=(56, 96),
                 arrowprops=dict(arrowstyle="->", color=SERIES[0], lw=1.5))
     ax.plot([56], [96], marker="o", mfc="none", mec=SERIES[0], ms=6, zorder=3)
-    ax.text(57, 100, "n = 56: > 96", color=INK2, fontsize=7.5)
-    ref = np.array([30, 60])
-    ax.plot(ref, 18.9 * ref / 32, color=INK2, lw=1, ls=(0, (3, 3)), zorder=1)
-    ax.text(61, 33.5, r"$\propto n$", color=INK2, fontsize=8)
+    ax.text(57.5, 104, "> 96", color=INK2, fontsize=7.5)
+    ref = np.array([30, 62])
+    ax.plot(ref, 18.6 * ref / 32, color=INK2, lw=1, ls=(0, (3, 3)), zorder=1)
+    ax.text(62.5, 34.5, r"$\propto n$", color=INK2, fontsize=8)
+    ns = [32, 40, 48, 56]
     ax.set_xscale("log", base=2); ax.set_yscale("log", base=2)
     ax.set_xticks(ns); ax.set_xticklabels([str(n) for n in ns])
-    ax.set_yticks([16, 24, 32, 48, 64, 96, 128]); ax.set_yticklabels(["16", "24", "32", "48", "64", "96", "128"])
+    ax.set_yticks([16, 24, 32, 48, 64, 96, 128])
+    ax.set_yticklabels(["16", "24", "32", "48", "64", "96", "128"])
     ax.minorticks_off()
     ax.set_xlim(29, 70)
     ax.set_xlabel("graph size n")
     ax.set_ylabel("critical width m* (pair acc. 0.95)")
-    legend_top(ax)
+    legend_top(ax, ncol=2)
     fig.savefig(os.path.join(OUT, "width-q3fine-scaling.png"))
 
 

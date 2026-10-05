@@ -76,10 +76,12 @@
     statistics and short-range checks are at chance.
   + *On the clean task, width decides whether learning starts at all.* At $n = 64$ only
     $m >= 64$ leave the trivial predictor; at $n = 128$ nothing up to $m = 128$ does.
-  + *The critical width grows superlinearly in $n$.* Measured at depth 6 for
-    $n = 32$–$56$: the width needed to *fit* the training data grows as $n^(1.53)$, the
-    width needed to *generalize* as $n^(2.19)$ — far above the width that theory says
-    suffices to *represent* connectivity at this depth.
+  + *At fixed data the critical width grows superlinearly in $n$; more data closes
+    the gap.* At depth 6, $n = 32$–$56$ and 32 000 graphs, the width needed to *fit*
+    grows as $n^(1.55)$ and the width needed to *generalize* as $n^(2.27)$. With 128 000
+    graphs the two meet at ≈ 51 and ≈ 61 for $n$ = 48 and 56 (≈ $1.1 n$), so the steep
+    generalization slope was largely a data effect. Either way the width to *learn* is far
+    above the width theory says suffices to *represent* connectivity at this depth.
 ]
 
 = Question and set-up
@@ -121,8 +123,9 @@ scale with graph size $n$?
     [10-02], [Q3 pilot 2: `swap`, 8000 graphs], [17 of 18 runs stay trivial],
     [10-02], [Learnability probe (6 runs)], [learns to 0.98–0.998 with 32 000 graphs],
     [10-04], [Q3 trimmed grid (60 runs)], [clean floor at $n = 32$; onset width grows with $n$],
-    [10-05], [Q3 fine grid ($n$ = 32–56, 84 runs)], [critical width $prop n^(1.53)$ (fit), $n^(2.19)$ (generalize)],
-    [10-05], [Q3 data check (32 runs)], [running: does more data close the gap?],
+    [10-05], [Q3 fine grid ($n$ = 32–56, 84 runs)], [critical width $prop n^(1.55)$ (fit), $n^(2.27)$ (generalize)],
+    [10-05], [Q3 data check (32 runs)], [128 000 graphs close the fit/generalize gap],
+    [10-05], [Q3 at 128k, $n$ = 32 / 40 (24 runs)], [running: slope with enough data],
   ),
   caption: [What was done, in order.],
 )
@@ -305,33 +308,45 @@ the label is applied; node labels shuffled per graph.
 
 #figure(
   image("figures/width-q3fine-curves.png", width: 82%),
-  caption: [Test pair accuracy vs width (mean of 3 seeds; trivial ≈ 0.75). Each curve
-  shifts right as $n$ grows. The drop at $m = 128$ is the learning-rate effect from Q1:
-  $3 dot 10^(-3)$ is too high there, and training accuracy falls too.],
+  caption: [Final-epoch test pair accuracy vs width (mean of 3 seeds; trivial ≈ 0.75).
+  Each curve shifts right as $n$ grows. The drop at $m = 128$ is the learning-rate effect
+  from Q1: $3 dot 10^(-3)$ is too high there, and training accuracy falls too.],
 )
 
 #figure(
   tbl(columns: 6,
     [], [$n = 32$], [$n = 40$], [$n = 48$], [$n = 56$], [growth],
-    [width to *fit* (train pair ≥ 0.95)], [18.9], [23.3], [31.4], [44.9], [$prop n^(1.53)$],
-    [width to *generalize* (test pair ≥ 0.95)], [23.2], [38.1], [56.4], [$> 96$], [$prop n^(2.19)$],
+    [width to *fit* (final train pair ≥ 0.95)], [18.6], [23.5], [31.7], [44.7], [$prop n^(1.55)$],
+    [width to *generalize* (final test pair ≥ 0.95)], [22.9], [37.6], [57.5], [$> 96$], [$prop n^(2.27)$],
   ),
-  caption: [Critical width: where the seed-mean curve crosses 0.95, interpolated in
-  $log_2 m$; slope of the log–log fit across $n$ ($m <= 96$; #kbd("width_sweep.py q3fine --scaling"))
-  . Per-seed crossings agree within ≈ ±3.],
+  caption: [Critical width: mean over seeds of the width where each seed's curve
+  crosses 0.95 (interpolated in $log_2 m$); slope of the log–log fit across $n$
+  ($m <= 96$; #kbd("width_sweep.py q3fine --scaling")). Per-seed crossings agree within
+  ≈ ±3.],
 )
+
+#warn[
+  *Correction (2026-10-05).* An earlier version of this report read test pair accuracy
+  at the checkpoint with the best validation *exact-match*. When exact-match never
+  rises above 0.5, every epoch ties and epoch 1 is chosen, so the trained model's pair
+  accuracy was replaced by the trivial predictor's (e.g. $n = 48$, $m = 32$: reported
+  0.755, actually 0.885 / 0.853). All pair-accuracy numbers now use the final epoch. The
+  critical widths barely move (generalize slope 2.19 → 2.27); the curves figure changed
+  most. New runs also log validation pair accuracy.
+]
 
 #figure(
   image("figures/width-q3fine-scaling.png", width: 82%),
-  caption: [Critical width vs graph size, log–log. Both lines are steeper than
-  $m prop n$ (dashed).],
+  caption: [Critical width vs graph size, log–log (error bars: range over seeds). At
+  32 000 graphs both lines are steeper than $m prop n$ (dashed); with 128 000 graphs
+  (data check, next) the width to learn at $n$ = 48 / 56 drops onto the fit line.],
 )
 
 #finding[
-  - Both critical widths grow *faster than linearly* in $n$: ≈ $n^(1.5)$ to fit, ≈ $n^(2.2)$
+  - Both critical widths grow *faster than linearly* in $n$: ≈ $n^(1.5)$ to fit, ≈ $n^(2.3)$
     to generalize.
   - The gap between them widens with $n$: at $n = 56$, $m = 64$ fits the training set
-    (pair 0.984) but reaches only 0.820 on test.
+    (pair 0.984) but reaches only 0.879 on test.
   - Seeds agree closely; the scaling is not noise.
 ]
 
@@ -339,9 +354,42 @@ the label is applied; node labels shuffled per graph.
   Theory says depth $log n$ needs only width $n^epsilon$ to *represent* connectivity
   (Sanford et al. 2024a). What we measure is the width to *learn* it, and that grows
   faster than $n$. The widening fit/generalize gap is the Q1c data ceiling again:
-  32 000 graphs give fewer examples per pair as $n$ grows, so the 2.19 is probably
-  inflated by holding data fixed. The data check (2× and 4× the graphs at $n$ = 48 / 56)
-  tests this; 1.53 is the cleaner number until then.
+  32 000 graphs give fewer examples per pair as $n$ grows, so the 2.27 is probably
+  inflated by holding data fixed. The data check tests this.
+]
+
+== The data check: more data closes the gap
+
+Same set-up at $n$ = 48 / 56, $m$ = 32 … 96, with 64 000 and 128 000 graphs at the same
+24 000 steps (2 seeds). The larger training sets start with the same graphs as the
+smaller ones; validation and test sets are identical.
+
+#figure(
+  tbl(columns: 5,
+    [], [critical width], [32k graphs], [64k graphs], [128k graphs],
+    table.cell(rowspan: 2)[$n = 48$], [to fit], [31.7], [40.5], [48.4],
+    [to generalize], [57.5], [54.1], [*51.1*],
+    table.cell(rowspan: 2)[$n = 56$], [to fit], [44.7], [57.8], [59.4],
+    [to generalize], [$> 96$], [$> 96$ #super[†]], [*61.5*],
+  ),
+  caption: [Critical width (mean of per-seed crossings at 0.95, final epoch). 32k: 3
+  seeds; 64k / 128k: 2 seeds. † one seed 81.8, the other above 96.],
+)
+
+#finding[
+  - *The gap closes.* At 128 000 graphs the widths to fit and to generalize nearly meet:
+    48 vs 51 at $n = 48$, 59 vs 61 at $n = 56$. At $n = 56$, $m = 64$: train / test pair
+    0.984 / 0.879 with 32k graphs → 0.975 / 0.927 with 64k → 0.972 / 0.960 with 128k.
+  - *Fitting gets harder with more data at fixed steps* (each graph is seen fewer times),
+    so the fit width rises: 31.7 → 48.4 at $n = 48$.
+  - At 128k the width to *learn* is ≈ 51 and ≈ 61 for $n$ = 48 and 56, about $1.1 n$.
+]
+
+#meaning[
+  The steep generalization slope was largely the data ceiling. With enough data, fitting
+  and generalizing measure the same thing — the width to *learn* connectivity — and
+  near $n ≈ 50$ that is roughly $n$. Two sizes 17 % apart, with seed spread ≈ ±5, cannot
+  fix a slope; the 128k runs at $n$ = 32 / 40 (running) complete a four-point fit.
 ]
 
 = What it all means so far
@@ -353,14 +401,15 @@ the label is applied; node labels shuffled per graph.
   and ≥ 32–64 on the audited one at similar $n$. A width study is only as good as its
   shortcut audit — a methodological contribution in its own right.
 + *Representation is not learning.* Theory says width ≈ $n$ (or depth $log n$) is
-  *enough to represent* connectivity. In practice the width needed to *learn* it grows
-  faster than $n$ ($n^(1.5)$ to fit, $n^(2.2)$ to generalize at our budget), and data and
-  steps have to grow too; at $n = 128$ nothing up to $m = 128$ learns. This matches Saparov et al. (ICLR 2025): transformers
+  *enough to represent* connectivity. In practice the width needed to *learn* it is far
+  larger — ≈ $n$ at $n ≈ 50$ even with 128 000 graphs, growing as $n^(1.5)$ or faster when
+  data is held at 32 000 — and data and steps have to grow too; at $n = 128$ nothing up to
+  $m = 128$ learns. This matches Saparov et al. (ICLR 2025): transformers
   struggle to learn search even when it is representable.
 
 #warn[
-  - The slopes come from four graph sizes over less than a factor of two in $n$, at
-    one training budget; they are measured, but not yet shown to be budget-free.
+  - The 32k slopes come from four graph sizes over less than a factor of two in $n$;
+    the 128k picture has two sizes so far. Both depend on the training budget.
   - Exact-match gets stricter as $n^2$ grows; pair-accuracy thresholds are reported
     alongside from now on.
   - The `swap` diameter grows with $log n$, so $n$ and path length still rise together;
@@ -374,7 +423,7 @@ the label is applied; node labels shuffled per graph.
 #figure(
   tbl(columns: (auto, 1fr, auto), align: (left, left, center),
     [*Item*], [*Purpose*], [*Status*],
-    [Q3 data check], [$n$ = 48 / 56, $m$ = 32 … 96, 64 000 and 128 000 graphs: is the generalize slope a data effect?], [running],
+    [Q3 at 128k graphs], [$n$ = 32 / 40 at 128 000 graphs, joining the data check's $n$ = 48 / 56: the slope of the width to learn with enough data], [running],
     [Q6 input bottleneck], [edge tokens instead of $n$-wide adjacency rows: is $m^* ≈ n$ just the read-in?], [next],
     [Q7 depth × width], [fix $n$, vary diameter and depth: can width replace depth?], [planned],
     [Q4 Graphormer bias], [shortest-path bias gives connectivity away; needs a task it doesn't leak], [planned],
@@ -388,6 +437,6 @@ the label is applied; node labels shuffled per graph.
   *Reproduce.* Every number above comes from #kbd("python width_sweep.py <sweep> --analyze")
   or #kbd("--curves") over #kbd("results/width/<sweep>*.jsonl") (sweeps #kbd("q1"),
   #kbd("q1b"), #kbd("q1c"), #kbd("q3pilot"), #kbd("q3pilot2"), #kbd("q3probe"),
-  #kbd("q3trim"), #kbd("q3fine")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
+  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
   #kbd("reports/figures/width_progress_plots.py").
 ]
