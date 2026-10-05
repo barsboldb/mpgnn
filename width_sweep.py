@@ -552,7 +552,7 @@ def report(runs, name, thresholds):
                 f_acc.append(test(by[(w, fixed, s)]))
             b = max(cands, key=lambda r: r["best_val"]["val"])
             t_acc.append(test(b)); t_lr.append(b["lr"])
-            t_pair.append(b["best_val"].get("test_pair", float("nan")))
+            t_pair.append(b["final"].get("test_pair", float("nan")))   # final: see scaling()
             tuned.setdefault(w, ([], []))[0].append(test(b))
             tuned[w][1].append(b["final"]["train"])
         per_width[w] = (f_acc, t_acc, t_pair)
