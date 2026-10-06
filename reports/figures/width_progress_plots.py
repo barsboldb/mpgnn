@@ -143,6 +143,7 @@ def fig_q3fine_curves():
 
 def seed_crossings(runs, n, widths, key, at, th=0.95):
     """Per-seed critical widths (nan where a seed never reaches th)."""
+    widths = widths or sorted({r["width"] for r in runs if cell(r)[0] == n})
     out = []
     for sd in sorted({r["seed"] for r in runs}):
         ys = [np.mean([r[at][key] for r in runs if cell(r)[0] == n and r["width"] == w
@@ -153,12 +154,12 @@ def seed_crossings(runs, n, widths, key, at, th=0.95):
 
 def fig_q3fine_scaling():
     fine = [r for r in load_runs("q3fine") if r["width"] <= 96]   # 128: LR too hot
-    big = [r for r in load_runs("q3data") if cell(r)[2] == 128000]
+    big = [r for r in load_runs("q3data") + load_runs("q3big") if cell(r)[2] == 128000]
     fig, ax = plt.subplots(figsize=(4.6, 3.0))
     series = (
         ("generalize, 32k graphs", fine, [32, 40, 48, 56], [16, 24, 32, 48, 64, 96], "test_pair"),
         ("fit, 32k graphs", fine, [32, 40, 48, 56], [16, 24, 32, 48, 64, 96], "train_pair"),
-        ("learn, 128k graphs", big, [48, 56], [32, 48, 64, 96], "test_pair"),
+        ("learn, 128k graphs", big, [32, 40, 48, 56], None, "test_pair"),
     )
     for i, (label, runs, ns, widths, key) in enumerate(series):
         pts = []
@@ -173,7 +174,7 @@ def fig_q3fine_scaling():
         if len(x) >= 3:
             b = np.polyfit(np.log(x), np.log(y), 1)[0]
             ax.annotate(rf"$\propto n^{{{b:.2f}}}$", (x[-1], y[-1]),
-                        xytext=(-46, 7) if i == 0 else (7, -3),
+                        xytext={0: (-46, 7), 1: (7, -3), 2: (7, -1)}[i],
                         textcoords="offset points", color=INK, fontsize=8)
     # 32k, n=56: no seed generalized at m <= 96
     ax.annotate("", xy=(56, 125), xytext=(56, 96),
