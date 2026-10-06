@@ -279,21 +279,53 @@ def metrics(model, A, R, bs=128):
 CACHE_DIR = os.environ.get("WIDTH_CACHE", os.path.join("data", "width_cache"))
 
 
-def cached(key, build, wait_s=7200):
+def _lock_owner_alive(lock):
+    """True while the process that wrote `lock` is still running (same machine)."""
+    try:
+        with open(lock) as f:
+            pid = int(f.read().strip() or 0)
+    except (OSError, ValueError):
+        return True            # lock mid-write or unreadable: assume alive, look again
+    if pid <= 0:
+        return True
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def cached(key, build):
     """Build-once tensor cache shared by parallel shards: the first shard to take the
-    lock builds and saves (atomically); the others wait for the file and load it."""
+    lock builds and saves (atomically); the others wait for the file and load it.
+
+    No timeout: a build can take hours (n=32 swap graphs at 128k took > 2 h on Kaggle's
+    shared CPUs, and a 2 h timeout killed six shards on 2026-10-05). Waiters instead
+    check that the lock's owner process is alive and take over a stale lock."""
     os.makedirs(CACHE_DIR, exist_ok=True)
     path = os.path.join(CACHE_DIR, f"{key}.pt")
     lock = path + ".lock"
-    t0 = time.time()
+    t0, last_note = time.time(), 0.0
     while not os.path.exists(path):
         try:
-            os.close(os.open(lock, os.O_CREAT | os.O_EXCL))
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
-            if time.time() - t0 > wait_s:
-                raise TimeoutError(f"waited {wait_s}s for {path}; stale {lock}?")
+            if not _lock_owner_alive(lock):
+                print(f"  stale lock {lock} (owner gone); taking over", flush=True)
+                try:
+                    os.remove(lock)
+                except FileNotFoundError:
+                    pass
+                continue
+            if time.time() - last_note > 600:
+                print(f"  waiting for {key} ({(time.time() - t0) / 60:.0f} min)", flush=True)
+                last_note = time.time()
             time.sleep(5)
             continue
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
         try:
             data = build()
             torch.save(data, path + ".tmp")
