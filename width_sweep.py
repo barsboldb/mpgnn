@@ -106,6 +106,13 @@ SWEEPS["q3data"] = dict(SWEEPS["q3fine"], ns=[48, 56], widths=[32, 48, 64, 96], 
 # the slope can be fitted over four sizes with enough data.
 SWEEPS["q3big"] = dict(SWEEPS["q3fine"], ns=[32, 40], widths=[16, 24, 32, 48, 64, 96],
                        seeds=[0, 1], train_sizes=[128000], train=128000)
+# Q3 step budget: is the ~n^2 at 128k graphs partly a training-time effect? Same
+# setting as q3big/q3data (128k graphs, depth 6, LR 3e-3) with 2x the steps, at n=40/56
+# on the widths around each threshold (m* = 30.4 / 61.5 at 24 000 steps). If m* falls,
+# narrower models were just slower; if not, the width requirement is real.
+SWEEPS["q3steps"] = dict(SWEEPS["q3big"], ns=[40, 56], steps=48000,
+                         widths=[16, 24, 32, 48, 64, 96],
+                         widths_by_n={40: [16, 24, 32, 48], 56: [32, 48, 64, 96]})
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
@@ -404,6 +411,8 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
         cfg.update(widths=cfg["widths"][:2], lrs=cfg["lrs"][:2], seeds=cfg["seeds"][:1],
                    epochs=2, train=256, val=64, test=64)
         cfg.pop("steps", None)
+        if "widths_by_n" in cfg:
+            cfg["widths_by_n"] = {n: ws[:2] for n, ws in cfg["widths_by_n"].items()}
         if "train_sizes" in cfg:
             cfg["train_sizes"] = [128, 256]
         name = f"{name}_smoke"
@@ -414,8 +423,10 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
     done = {run_key(r) for r in load_runs(name)}
     sizes = cfg.get("train_sizes", [cfg["train"]])
     ns, depths = cfg.get("ns", [cfg.get("n")]), cfg.get("depths", [cfg.get("depth")])
-    todo = [(w, lr, s, size, n, d) for s, n, d, size, w, lr in
-            itertools.product(cfg["seeds"], ns, depths, sizes, cfg["widths"], cfg["lrs"])
+    by_n = cfg.get("widths_by_n", {})      # optional per-n widths (around each threshold)
+    todo = [(w, lr, s, size, n, d) for s, n, d, size in
+            itertools.product(cfg["seeds"], ns, depths, sizes)
+            for w, lr in itertools.product(by_n.get(n, cfg["widths"]), cfg["lrs"])
             if (w, lr, s, size, n, resolve_depth(d, n)) not in done]
     todo = todo[shard[0]::shard[1]]
     print(f"Device {DEVICE} | sweep {name} shard {shard[0]}/{shard[1]}: "
