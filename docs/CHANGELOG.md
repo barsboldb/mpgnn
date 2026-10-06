@@ -4,6 +4,33 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-06
+
+### Q3 at 128k graphs: the width to learn grows ~n² even with ample data
+
+n ∈ {32, 40}, m ∈ {16 … 96}, 128 000 graphs, 24 000 steps, LR 3e-3, 2 seeds (24 runs),
+joined with q3data's n = 48/56 at 128k. Critical width, mean of per-seed crossings at
+0.95, final epoch:
+
+| | n=32 | n=40 | n=48 | n=56 | slope |
+|---|---|---|---|---|---|
+| fit | 20.9 | 29.5 | 48.4 | 59.4 | 1.95 |
+| generalize | 21.9 | 30.4 | 51.1 | 61.5 | **1.94** (seed bootstrap 90%: 1.74–2.14) |
+
+Fit and generalize coincide at every n (within ~2), so the data ceiling is gone — but the
+slope stays near 2 (m*/n: 0.68 → 0.76 → 1.07 → 1.10). This revises the q3data reading
+("≈ 1.1 n"): that held at n ≈ 50 only. The superlinear growth is not a data artefact.
+Uneven (steepest 40 → 48; n=48 seeds 46.5 / 55.8). Remaining confounds: fixed 24 000
+steps, one LR. (`results/width/q3big*.jsonl`)
+
+### Kaggle: a 2 h lock timeout killed six shards
+
+One shard built the n=32, 128k cache itself (> 2 h on Kaggle's shared CPUs; `--prepare`
+evidently hadn't produced it), the six waiting shards hit `cached()`'s 7200 s timeout and
+died; the notebook's catch-up pass then ran their 17 runs serially into `q3big.jsonl`.
+Results complete, ~2 h of GPU quota lost. `cached()` now has no timeout: the lock file
+holds the owner's PID, waiters keep waiting while it lives and take over a stale lock.
+
 ## 2026-10-05
 
 ### Correction: pair accuracy was read at the wrong checkpoint

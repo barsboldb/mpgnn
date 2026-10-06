@@ -1,0 +1,25 @@
+Device cuda | sweep q3big shard 4/8: 3 runs to go (0 on disk)
+  loading data for seed 0, n=32, 128000 train graphs...
+Traceback (most recent call last):
+  File "/kaggle/working/mpgnn/width_sweep.py", line 291, in cached
+    os.close(os.open(lock, os.O_CREAT | os.O_EXCL))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileExistsError: [Errno 17] File exists: 'data/width_cache/swap_n32_cf0.25_d6_N128000_s0_u8.pt.lock'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/kaggle/working/mpgnn/width_sweep.py", line 600, in <module>
+    run_sweep(a.sweep, smoke=a.smoke, shard=(i, k))
+  File "/kaggle/working/mpgnn/width_sweep.py", line 398, in run_sweep
+    splits[(s, n, size)] = make_splits(c, s)
+                           ^^^^^^^^^^^^^^^^^
+  File "/kaggle/working/mpgnn/width_sweep.py", line 314, in make_splits
+    return tuple(cached(f"{tag}_N{num}_s{sd}_u8", lambda num=num, sd=sd:
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/kaggle/working/mpgnn/width_sweep.py", line 314, in <genexpr>
+    return tuple(cached(f"{tag}_N{num}_s{sd}_u8", lambda num=num, sd=sd:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/kaggle/working/mpgnn/width_sweep.py", line 294, in cached
+    raise TimeoutError(f"waited {wait_s}s for {path}; stale {lock}?")
+TimeoutError: waited 7200s for data/width_cache/swap_n32_cf0.25_d6_N128000_s0_u8.pt; stale data/width_cache/swap_n32_cf0.25_d6_N128000_s0_u8.pt.lock?
