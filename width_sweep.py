@@ -27,6 +27,7 @@ import time
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from scipy.sparse.csgraph import shortest_path
 
@@ -117,6 +118,13 @@ SWEEPS["q3steps"] = dict(SWEEPS["q3big"], ns=[40, 56], steps=48000,
 # and Q1 showed the best LR falls with width, so the wide models at n=56 may have been
 # held back. Same setting (128k graphs, 24 000 steps) at LR 1e-3, same per-n widths.
 SWEEPS["q3lr"] = dict(SWEEPS["q3steps"], steps=24000, lrs=[1e-3], fixed_lr=1e-3)
+# Q6: is the ~n^1.9 growth the n-wide read-in? Feed (A + I) P with P a fixed random
+# n x 96 ID matrix: a 96-wide input for every n that still determines each neighbour set
+# (top-degree decoding recovers 99 % of rows at n = 32 and 56; k = 32 only 60-70 %,
+# which would confound width with information loss). Same graphs, model, steps and
+# LR 1e-3 as the tuned 128k baseline at n = 40 / 56 (critical width 30.2 / 57.9).
+SWEEPS["q6proj"] = dict(SWEEPS["q3lr"], input="idproj", id_dim=96, ns=[40, 56],
+                        widths=[16, 24, 32, 48, 64, 96], widths_by_n={})
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
@@ -366,11 +374,37 @@ def make_splits(cfg, seed):
     return tr, va, te
 
 
+class ProjectedInput(nn.Module):
+    """Q6 control: feed (A + I) P instead of the n-wide adjacency row, with P a fixed
+    random n x k matrix (one ±1/sqrt(k) "ID" vector per node). Same tokens, model and
+    read-out as the baseline, but the read-in is k-wide for every n, so it no longer
+    grows with the graph. P is drawn per run seed and never trained."""
+
+    def __init__(self, n, k, width, depth, heads, seed):
+        super().__init__()
+        g = torch.Generator().manual_seed(10_000 + seed)
+        P = (torch.randint(0, 2, (n, k), generator=g).float() * 2 - 1) / math.sqrt(k)
+        self.register_buffer("P", P)
+        self.inner = ConnectivityTransformer(k, width, depth, heads)
+
+    def forward(self, Aaug):
+        return self.inner(Aaug @ self.P)
+
+    def num_parameters(self):
+        return self.inner.num_parameters()
+
+
+def build_model(cfg, width, heads, seed):
+    if cfg.get("input", "adj") == "idproj":
+        return ProjectedInput(cfg["n"], cfg["id_dim"], width, cfg["depth"], heads, seed)
+    return ConnectivityTransformer(cfg["n"], width, cfg["depth"], heads)
+
+
 def train_one(cfg, width, lr, seed, splits):
     (Atr, Rtr), (Ava, Rva), (Ate, Rte) = splits
     set_seed(seed)
     heads = max(1, width // cfg["head_dim"])
-    model = ConnectivityTransformer(cfg["n"], width, cfg["depth"], heads).to(DEVICE)
+    model = build_model(cfg, width, heads, seed).to(DEVICE)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
 
     Atr_d, Rtr_d = Atr.to(DEVICE), Rtr.to(DEVICE)
