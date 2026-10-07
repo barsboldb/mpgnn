@@ -95,9 +95,11 @@ Fix m, vary H ∈ {1, 2, 4, 8, 16}; then fix H, vary m. Theory treats m·H as on
 per-head dimension m/H says otherwise. Untested on graph tasks.
 
 ### Q6 — Is "m\* ≈ n" just an input bottleneck?
-Adjacency-row tokens are n-dimensional, so m < n compresses the input. Compare against
-edge tokens (`node_edge`), whose token size doesn't grow with n. If Q3's slope
-vanishes, Q3 was measuring the read-in. Protects Q3 at the defense.
+Adjacency-row tokens are n-dimensional, so m < n compresses the input.
+- **Status:** done. Fixed 96-wide input (A + I)P (random node IDs, ~lossless): critical
+  width 37.3 → 73.8 from n = 40 to 56 (∝ n^2.03), vs 30.2 → 57.9 (∝ n^1.93) for adjacency
+  rows. The growth is not the read-in; the random code costs ~20–25 % more width.
+  Edge tokens remain an optional further variant.
 
 ### Q7 — Can depth substitute for width?
 Depth {1, 2, 4, 8} × width grid at fixed n; iso-accuracy contours; test the Loukas-style

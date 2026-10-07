@@ -6,6 +6,27 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-10-07
 
+### Q6: a fixed-width input keeps the ~n² growth — not the read-in
+
+q6proj: node input (A + I) P with P a fixed random n × 96 ±1/√96 matrix (per seed,
+untrained) instead of the n-wide adjacency row — 96 wide for every n, still ~lossless
+(top-degree decoding recovers 99 % of neighbour sets at n = 32/56; k = 32 only 60–70 %,
+rejected). Otherwise the tuned 128k baseline: 24 000 steps, LR 1e-3, depth 6, n = 40/56,
+m ∈ {16 … 96}, 2 seeds (24 runs). Critical width (mean of per-seed crossings):
+
+| | n=40 | n=56 | slope |
+|---|---|---|---|
+| baseline adj rows, tuned | 30.2 | 57.9 | 1.93 |
+| idproj, generalize | 37.3 (32.3/42.2) | 73.8 (69.8/77.8) | **2.03** |
+| idproj, fit | 37.0 | 57.8 | 1.33 |
+
+The growth persists with an input whose size doesn't depend on n, so it isn't the n-wide
+read-in. The random code costs ~20–25 % more width at both sizes (it must be decoded)
+without changing the slope. Larger seed spread than the baseline. A local pre-check
+(n=40, m=48, 16k graphs, 8000 steps) had idproj generalizing better (test pair 0.927 vs
+0.835 at equal train fit) — at 128k graphs that advantage is gone.
+(`results/width/q6proj.shard*of8.jsonl`)
+
 ### Q3 learning rate: 1e-3 helps wide models at n=56; slope ~n^1.85
 
 q3lr: same as the 128k baseline (24 000 steps, depth 6) at LR **1e-3**, n=40/56 on the
