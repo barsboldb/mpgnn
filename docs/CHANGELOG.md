@@ -4,6 +4,26 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-07
+
+### Q3 step budget: 2× steps leaves the critical width unchanged
+
+q3steps: 128 000 graphs, depth 6, LR 3e-3, **48 000** steps (vs 24 000), n=40 with
+m ∈ {16, 24, 32, 48} and n=56 with m ∈ {32, 48, 64, 96} (per-n widths around each
+threshold), 2 seeds (16 runs). Critical width, mean of per-seed crossings:
+
+| | 24k steps | 48k steps |
+|---|---|---|
+| n=40 fit / generalize | 29.5 / 30.4 | 26.9 / **29.8** |
+| n=56 fit / generalize | 59.4 / 61.5 | 56.3 / **67.4** (seeds 62.7 / 72.0) |
+
+More training lowers the fit width by ~3 and leaves the generalize width unchanged
+within seed spread; at n=56 the longer run memorizes a little (m=64 train/test pair
+0.972/0.960 → 0.975/0.948, 48 passes over the data). Slope n=40 → 56 at 48k: ~2.2 fit,
+~2.4 generalize — consistent with n^1.94. The ~n² width to learn is not a training-time
+effect. Shards again waited ~30 min for the n=40 cache (`--prepare` didn't pre-build it;
+the lock fix kept them alive). (`results/width/q3steps.shard*of8.jsonl`)
+
 ## 2026-10-06
 
 ### Q3 at 128k graphs: the width to learn grows ~n² even with ample data

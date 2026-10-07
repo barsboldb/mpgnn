@@ -1,0 +1,6 @@
+Device cuda | sweep q3steps shard 7/8: 2 runs to go (0 on disk)
+  loading data for seed 0, n=56, 128000 train graphs...
+  waiting for swap_n56_cf0.25_d6_N128000_s0_u8 (0 min)
+  [1/2] n=56  L=6  N=128000 m=96   H=12  lr=0.003   seed=0  train=0.590 val=0.565 test@bestval=0.542 test@final=0.555  (3293.7s)
+  loading data for seed 1, n=56, 128000 train graphs...
+  [2/2] n=56  L=6  N=128000 m=96   H=12  lr=0.003   seed=1  train=0.753 val=0.715 test@bestval=0.723 test@final=0.733  (2848.5s)
