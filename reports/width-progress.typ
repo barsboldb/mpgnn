@@ -81,8 +81,8 @@
     generalizing come apart ($n^(1.55)$ vs $n^(2.27)$); with 128 000 graphs they coincide,
     and the shared critical width grows as $n^(1.94)$ at one learning rate, $n^(1.85)$
     with the rate tuned where tested (seed-bootstrap 90 % range 1.68–2.03). Doubling the
-    training steps does not lower it. Theory says this depth needs far less width just
-    to *represent* connectivity.
+    training steps does not lower it, and neither does a fixed-width input encoding (Q6).
+    Theory says this depth needs far less width just to *represent* connectivity.
 ]
 
 = Question and set-up
@@ -129,6 +129,7 @@ scale with graph size $n$?
     [10-06], [Q3 at 128k, $n$ = 32 / 40 (24 runs)], [width to learn $prop n^(1.94)$ with enough data],
     [10-07], [Q3 step budget: 2× steps (16 runs)], [critical width unchanged — not a training-time effect],
     [10-07], [Q3 learning rate: $10^(-3)$ (16 runs)], [helps wide models at $n = 56$; slope $n^(1.94)$ → $n^(1.85)$],
+    [10-07], [Q6: fixed 96-wide input (24 runs)], [growth persists ($n^(2.0)$) — not the read-in],
   ),
   caption: [What was done, in order.],
 )
@@ -493,6 +494,48 @@ per width and seed on final validation exact-match, as in Q1.
   likely come down a little too.
 ]
 
+= Q6 — is the growth just the input encoding?
+
+Each node token is its adjacency row, $n$ numbers wide, and the model's first layer
+projects it to width $m$. The critical width we measured is ≈ $0.7$–$1.1 n$ — close to
+where that projection stops compressing — so the growth might come from the encoding,
+not the task.
+
+*Test.* Feed each node $(A + I) P$ instead, with $P$ a fixed random $n times 96$ matrix
+($plus.minus 1 \/ sqrt(96)$ entries, one "ID" vector per node, drawn per seed, never
+trained). The input is 96 wide for every $n$ and still determines each neighbour set
+(simple decoding recovers ≈ 99 % of rows at $n$ = 32 and 56; a 32-wide code recovers
+only 60–70 %, which would have confounded width with lost information). Everything else
+is the tuned 128 000-graph baseline: same graphs, model, 24 000 steps, rate $10^(-3)$,
+$n$ = 40 / 56, $m$ = 16 … 96, 2 seeds (24 runs).
+
+#figure(
+  tbl(columns: 4,
+    [critical width], [$n = 40$], [$n = 56$], [growth 40 → 56],
+    [baseline: adjacency rows ($n$ wide), tuned], [30.2], [57.9], [$prop n^(1.93)$],
+    [Q6: projected IDs (96 wide), to generalize], [37.3 (32.3 / 42.2)], [73.8 (69.8 / 77.8)], [$prop n^(2.03)$],
+    [Q6: projected IDs, to fit], [37.0], [57.8], [$prop n^(1.33)$],
+  ),
+  caption: [Critical width (mean of per-seed crossings at 0.95, final epoch; per-seed
+  values in brackets).],
+)
+
+#finding[
+  - With an input whose size does not depend on $n$, the width to generalize still
+    roughly doubles from $n = 40$ to 56 ($n^(2.03)$, vs $n^(1.93)$ for the baseline).
+  - The projected input needs ≈ 20–25 % more width at both sizes: a random code of the
+    neighbour set has to be decoded before it is usable. It shifts the curve up without
+    changing its slope.
+  - Seed spread is larger than for the baseline (32 vs 42 at $n = 40$), so the two-point
+    slope is rough; the doubling itself is clear.
+]
+
+#meaning[
+  The growth is not an artefact of the $n$-wide read-in: it belongs to the task (or to the
+  architecture beyond the first layer). Across two input encodings, learning connectivity
+  needs width growing roughly as $n^2$ over this range.
+]
+
 = What it all means so far
 
 + *Measuring width is a protocol problem first.* Learning rate and training-set size
@@ -504,7 +547,8 @@ per width and seed on final validation exact-match, as in Q1.
 + *Representation is not learning.* Theory says width ≈ $n$ (or depth $log n$) is
   *enough to represent* connectivity. In practice the width needed to *learn* it grows
   roughly as $n^(1.9)$ over $n = 32$–$56$ — with 128 000 graphs, with twice the training
-  steps, and with the learning rate tuned — and the data has to grow too; at $n = 128$ nothing up to $m = 128$ learns. This matches Saparov et al. (ICLR 2025): transformers
+  steps, with the learning rate tuned, and with a fixed-width input encoding — and the
+  data has to grow too; at $n = 128$ nothing up to $m = 128$ learns. This matches Saparov et al. (ICLR 2025): transformers
   struggle to learn search even when it is representable.
 
 #warn[
@@ -524,8 +568,7 @@ per width and seed on final validation exact-match, as in Q1.
 #figure(
   tbl(columns: (auto, 1fr, auto), align: (left, left, center),
     [*Item*], [*Purpose*], [*Status*],
-    [Q6 input bottleneck], [edge tokens instead of $n$-wide adjacency rows: is the growth just the read-in?], [next],
-    [Q7 depth × width], [fix $n$, vary diameter and depth: can width replace depth?], [planned],
+    [Q7 depth × width], [fix $n$, vary diameter and depth: can depth replace width, and is path length or node count driving the growth?], [next],
     [Q4 Graphormer bias], [shortest-path bias gives connectivity away; needs a task it doesn't leak], [planned],
     [Q2 task hierarchy], [retrieval < connectivity < shortest path, each with its own audit], [planned],
   ),
@@ -537,6 +580,6 @@ per width and seed on final validation exact-match, as in Q1.
   *Reproduce.* Every number above comes from #kbd("python width_sweep.py <sweep> --analyze")
   or #kbd("--curves") over #kbd("results/width/<sweep>*.jsonl") (sweeps #kbd("q1"),
   #kbd("q1b"), #kbd("q1c"), #kbd("q3pilot"), #kbd("q3pilot2"), #kbd("q3probe"),
-  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
+  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
   #kbd("reports/figures/width_progress_plots.py").
 ]
