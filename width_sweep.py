@@ -113,6 +113,10 @@ SWEEPS["q3big"] = dict(SWEEPS["q3fine"], ns=[32, 40], widths=[16, 24, 32, 48, 64
 SWEEPS["q3steps"] = dict(SWEEPS["q3big"], ns=[40, 56], steps=48000,
                          widths=[16, 24, 32, 48, 64, 96],
                          widths_by_n={40: [16, 24, 32, 48], 56: [32, 48, 64, 96]})
+# Q3 learning rate: the last untested confound. q3big/q3data used LR 3e-3 throughout,
+# and Q1 showed the best LR falls with width, so the wide models at n=56 may have been
+# held back. Same setting (128k graphs, 24 000 steps) at LR 1e-3, same per-n widths.
+SWEEPS["q3lr"] = dict(SWEEPS["q3steps"], steps=24000, lrs=[1e-3], fixed_lr=1e-3)
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
