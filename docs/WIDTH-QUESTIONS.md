@@ -79,7 +79,8 @@ Sanford 2024a: retrieval ≪ parallelizable (connectivity) ≪ search (shortest 
   coincide and the critical width to learn grows ∝ n^1.94 (90% seed bootstrap 1.74–2.14;
   m*/n 0.68 → 1.10). At 32 000 graphs fit ∝ n^1.55, generalize ∝ n^2.27 (data ceiling).
   Step budget checked: 2× steps leaves the critical width unchanged (n = 40/56).
-  Open: a second learning rate.
+  LR checked: 1e-3 helps wide models at n=56; with tuned values the slope is ≈ n^1.85
+  (90% 1.68–2.03). Next: Q6 (is the growth the n-wide read-in?).
 
 ### Q4 — Does Graphormer-style structure make width irrelevant?
 - **Prediction:** with the SPD attention bias, connectivity m\* stays small and flat in

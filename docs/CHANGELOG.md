@@ -6,6 +6,25 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-10-07
 
+### Q3 learning rate: 1e-3 helps wide models at n=56; slope ~n^1.85
+
+q3lr: same as the 128k baseline (24 000 steps, depth 6) at LR **1e-3**, n=40/56 on the
+q3steps widths, 2 seeds (16 runs). Tuned = rate picked per (width, seed) on final
+validation exact-match (the 128k baseline at n=56 comes from q3data, which predates
+`val_pair`, so pair accuracy can't be the selector).
+
+| | 3e-3 | 1e-3 | tuned |
+|---|---|---|---|
+| n=40 fit / generalize | 29.5 / 30.4 | 28.2 / 30.1 | 28.0 / **30.2** |
+| n=56 fit / generalize | 59.4 / 61.5 | 52.7 / 57.9 | 52.7 / **57.9** |
+
+n=40: rate doesn't matter. n=56: 3e-3 was too hot for wide models (Q1 again) — m=96 test
+pair 0.932 → 0.984; validation picks 1e-3 for every m ≥ 48. Slope 40 → 56: 2.09 → 1.93.
+Four-point slope with tuned values at 40/56 (3e-3 at 32/48, the only rate run there):
+**n^1.85**, seed bootstrap 90% 1.68–2.03. The superlinear growth survives LR, data and
+step-budget checks. `--prepare` worked this time (no shard waited).
+(`results/width/q3lr.shard*of8.jsonl`)
+
 ### Q3 step budget: 2× steps leaves the critical width unchanged
 
 q3steps: 128 000 graphs, depth 6, LR 3e-3, **48 000** steps (vs 24 000), n=40 with
