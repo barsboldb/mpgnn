@@ -58,7 +58,7 @@
   #v(-0.3em)
   #text(11pt, fill: luma(80))[Progress report — what was done, what came out, and what it means]
   #v(-0.2em)
-  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-06 ·
+  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-07 ·
   raw log: #kbd("docs/CHANGELOG.md") · questions: #kbd("docs/WIDTH-QUESTIONS.md")]
 ]
 
@@ -80,8 +80,9 @@
     $n^2$ over $n = 32$–$56$ — even with ample data.* With 32 000 graphs, fitting and
     generalizing come apart ($n^(1.55)$ vs $n^(2.27)$); with 128 000 graphs they coincide,
     and the shared critical width grows as $n^(1.94)$ (seed-bootstrap 90 % range
-    1.74–2.14), from $0.68 n$ at $n = 32$ to $1.10 n$ at $n = 56$. Theory says this depth
-    needs far less width just to *represent* connectivity.
+    1.74–2.14), from $0.68 n$ at $n = 32$ to $1.10 n$ at $n = 56$. Doubling the training
+    steps does not lower it. Theory says this depth needs far less width just to
+    *represent* connectivity.
 ]
 
 = Question and set-up
@@ -126,6 +127,7 @@ scale with graph size $n$?
     [10-05], [Q3 fine grid ($n$ = 32–56, 84 runs)], [critical width $prop n^(1.55)$ (fit), $n^(2.27)$ (generalize)],
     [10-05], [Q3 data check (32 runs)], [128 000 graphs close the fit/generalize gap],
     [10-06], [Q3 at 128k, $n$ = 32 / 40 (24 runs)], [width to learn $prop n^(1.94)$ with enough data],
+    [10-07], [Q3 step budget: 2× steps (16 runs)], [critical width unchanged — not a training-time effect],
   ),
   caption: [What was done, in order.],
 )
@@ -421,8 +423,40 @@ $n$ = 32 / 40 at 128 000 graphs, $m$ = 16 … 96, same 24 000 steps and rate, 2 
   gap but left the slope near 2. Over this range, the width a transformer needs to *learn*
   connectivity grows roughly quadratically in $n$, while the width needed to *represent*
   it at depth $log n$ is sublinear (Sanford et al. 2024a). The remaining confounds are the
-  fixed step budget (24 000 steps; more training might let narrower models get there)
-  and the single learning rate.
+  fixed step budget (24 000 steps; more training might let narrower models get there —
+  tested next) and the single learning rate.
+]
+
+== The step budget: more training does not lower the critical width
+
+Same setting at 128 000 graphs with *48 000* steps instead of 24 000, $n$ = 40 / 56, on
+the widths around each threshold (2 seeds, 16 runs).
+
+#figure(
+  tbl(columns: 5,
+    [], [critical width], [24 000 steps], [48 000 steps], [change],
+    table.cell(rowspan: 2)[$n = 40$], [to fit], [29.5], [26.9], [−2.6],
+    [to generalize], [30.4], [*29.8*], [−0.6],
+    table.cell(rowspan: 2)[$n = 56$], [to fit], [59.4], [56.3], [−3.1],
+    [to generalize], [61.5], [*67.4* #super[†]], [+5.9],
+  ),
+  caption: [Critical width (mean of per-seed crossings at 0.95, final epoch).
+  † seeds 62.7 / 72.0 — within the seed spread.],
+)
+
+#finding[
+  - Twice the training lowers the width to *fit* by only ≈ 3 and leaves the width to
+    *generalize* unchanged within the seed spread.
+  - At $n = 56$ the longer run starts to memorize again (48 passes over the data):
+    $m = 64$ goes from train / test pair 0.972 / 0.960 to 0.975 / 0.948.
+  - The slope between $n = 40$ and 56 at 48 000 steps (≈ 2.2 fit, ≈ 2.4 generalize) is
+    consistent with the four-point $n^(1.94)$.
+]
+
+#meaning[
+  The width requirement is not narrower models simply learning more slowly. The ≈ $n^2$
+  growth now survives every confound we have tested: the learning rate (Q1), the amount
+  of data (data check) and the training budget (this check).
 ]
 
 = What it all means so far
@@ -435,15 +469,15 @@ $n$ = 32 / 40 at 128 000 graphs, $m$ = 16 … 96, same 24 000 steps and rate, 2 
   shortcut audit — a methodological contribution in its own right.
 + *Representation is not learning.* Theory says width ≈ $n$ (or depth $log n$) is
   *enough to represent* connectivity. In practice the width needed to *learn* it grows
-  roughly as $n^2$ over $n = 32$–$56$, even with 128 000 graphs, and data and steps have
-  to grow too; at $n = 128$ nothing up to $m = 128$ learns. This matches Saparov et al. (ICLR 2025): transformers
+  roughly as $n^2$ over $n = 32$–$56$ — with 128 000 graphs, and with twice the training
+  steps — and the data has to grow too; at $n = 128$ nothing up to $m = 128$ learns. This matches Saparov et al. (ICLR 2025): transformers
   struggle to learn search even when it is representable.
 
 #warn[
   - All slopes come from four graph sizes spanning less than a factor of two in $n$,
     with 2–3 seeds; local slopes between neighbouring sizes range from ≈ 1.2 to ≈ 2.9.
-  - Every run uses 24 000 steps; a step-budget check (more steps at fixed data) is
-    needed before reading the slope as budget-free.
+  - Doubling the steps did not move the critical width at $n$ = 40 / 56, but only one
+    learning rate ($3 dot 10^(-3)$) has been used throughout Q3.
   - Exact-match gets stricter as $n^2$ grows; pair-accuracy thresholds are reported
     alongside from now on.
   - The `swap` diameter grows with $log n$, so $n$ and path length still rise together;
@@ -457,7 +491,7 @@ $n$ = 32 / 40 at 128 000 graphs, $m$ = 16 … 96, same 24 000 steps and rate, 2 
 #figure(
   tbl(columns: (auto, 1fr, auto), align: (left, left, center),
     [*Item*], [*Purpose*], [*Status*],
-    [Q3 step budget], [2× steps at 128 000 graphs for $n$ = 40 / 56: does more training lower the critical width?], [next],
+    [Q3 learning rate], [a second rate at 128 000 graphs, around the thresholds: the last untested confound], [next],
     [Q6 input bottleneck], [edge tokens instead of $n$-wide adjacency rows: is $m^* ≈ n$ just the read-in?], [next],
     [Q7 depth × width], [fix $n$, vary diameter and depth: can width replace depth?], [planned],
     [Q4 Graphormer bias], [shortest-path bias gives connectivity away; needs a task it doesn't leak], [planned],
@@ -471,6 +505,6 @@ $n$ = 32 / 40 at 128 000 graphs, $m$ = 16 … 96, same 24 000 steps and rate, 2 
   *Reproduce.* Every number above comes from #kbd("python width_sweep.py <sweep> --analyze")
   or #kbd("--curves") over #kbd("results/width/<sweep>*.jsonl") (sweeps #kbd("q1"),
   #kbd("q1b"), #kbd("q1c"), #kbd("q3pilot"), #kbd("q3pilot2"), #kbd("q3probe"),
-  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
+  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
   #kbd("reports/figures/width_progress_plots.py").
 ]
