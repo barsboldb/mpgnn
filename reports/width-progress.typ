@@ -77,12 +77,12 @@
   + *On the clean task, width decides whether learning starts at all.* At $n = 64$ only
     $m >= 64$ leave the trivial predictor; at $n = 128$ nothing up to $m = 128$ does.
   + *The width needed to learn connectivity grows superlinearly in $n$ — about
-    $n^2$ over $n = 32$–$56$ — even with ample data.* With 32 000 graphs, fitting and
+    $n^(1.9)$ over $n = 32$–$56$ — even with ample data.* With 32 000 graphs, fitting and
     generalizing come apart ($n^(1.55)$ vs $n^(2.27)$); with 128 000 graphs they coincide,
-    and the shared critical width grows as $n^(1.94)$ (seed-bootstrap 90 % range
-    1.74–2.14), from $0.68 n$ at $n = 32$ to $1.10 n$ at $n = 56$. Doubling the training
-    steps does not lower it. Theory says this depth needs far less width just to
-    *represent* connectivity.
+    and the shared critical width grows as $n^(1.94)$ at one learning rate, $n^(1.85)$
+    with the rate tuned where tested (seed-bootstrap 90 % range 1.68–2.03). Doubling the
+    training steps does not lower it. Theory says this depth needs far less width just
+    to *represent* connectivity.
 ]
 
 = Question and set-up
@@ -128,6 +128,7 @@ scale with graph size $n$?
     [10-05], [Q3 data check (32 runs)], [128 000 graphs close the fit/generalize gap],
     [10-06], [Q3 at 128k, $n$ = 32 / 40 (24 runs)], [width to learn $prop n^(1.94)$ with enough data],
     [10-07], [Q3 step budget: 2× steps (16 runs)], [critical width unchanged — not a training-time effect],
+    [10-07], [Q3 learning rate: $10^(-3)$ (16 runs)], [helps wide models at $n = 56$; slope $n^(1.94)$ → $n^(1.85)$],
   ),
   caption: [What was done, in order.],
 )
@@ -454,9 +455,42 @@ the widths around each threshold (2 seeds, 16 runs).
 ]
 
 #meaning[
-  The width requirement is not narrower models simply learning more slowly. The ≈ $n^2$
-  growth now survives every confound we have tested: the learning rate (Q1), the amount
-  of data (data check) and the training budget (this check).
+  The width requirement is not narrower models simply learning more slowly.
+]
+
+== The learning rate: tuning trims the slope, not the trend
+
+Same setting at 128 000 graphs and 24 000 steps with rate $10^(-3)$ instead of
+$3 dot 10^(-3)$, $n$ = 40 / 56, same widths (2 seeds, 16 runs). "Tuned" picks the rate
+per width and seed on final validation exact-match, as in Q1.
+
+#figure(
+  tbl(columns: 5,
+    [], [critical width], [$3 dot 10^(-3)$], [$10^(-3)$], [tuned],
+    table.cell(rowspan: 2)[$n = 40$], [to fit], [29.5], [28.2], [28.0],
+    [to generalize], [30.4], [30.1], [*30.2*],
+    table.cell(rowspan: 2)[$n = 56$], [to fit], [59.4], [52.7], [52.7],
+    [to generalize], [61.5], [57.9], [*57.9*],
+  ),
+  caption: [Critical width (mean of per-seed crossings at 0.95, final epoch).],
+)
+
+#finding[
+  - At $n = 40$ the rate does not matter: the curves coincide.
+  - At $n = 56$ the higher rate was holding the wide models back, as Q1 predicted:
+    $m = 96$ goes from test pair 0.932 to *0.984*. Validation picks $10^(-3)$ for every
+    $m >= 48$ at $n = 56$.
+  - Slope between $n = 40$ and 56: 2.09 → 1.93. Four-point slope with the tuned values at
+    $n$ = 40 / 56 (and $3 dot 10^(-3)$ at 32 / 48, the only rate run there): *$n^(1.85)$*,
+    seed-bootstrap 90 % range 1.68–2.03.
+]
+
+#meaning[
+  The superlinear growth survives every confound we have tested: the learning rate
+  (Q1 and this check), the amount of data (data check) and the training budget (step
+  check). Over $n = 32$–$56$ the width a transformer needs to *learn* connectivity grows
+  roughly as $n^(1.9)$. $n$ = 32 / 48 have not been re-run at $10^(-3)$; $n = 48$ would
+  likely come down a little too.
 ]
 
 = What it all means so far
@@ -469,15 +503,14 @@ the widths around each threshold (2 seeds, 16 runs).
   shortcut audit — a methodological contribution in its own right.
 + *Representation is not learning.* Theory says width ≈ $n$ (or depth $log n$) is
   *enough to represent* connectivity. In practice the width needed to *learn* it grows
-  roughly as $n^2$ over $n = 32$–$56$ — with 128 000 graphs, and with twice the training
-  steps — and the data has to grow too; at $n = 128$ nothing up to $m = 128$ learns. This matches Saparov et al. (ICLR 2025): transformers
+  roughly as $n^(1.9)$ over $n = 32$–$56$ — with 128 000 graphs, with twice the training
+  steps, and with the learning rate tuned — and the data has to grow too; at $n = 128$ nothing up to $m = 128$ learns. This matches Saparov et al. (ICLR 2025): transformers
   struggle to learn search even when it is representable.
 
 #warn[
   - All slopes come from four graph sizes spanning less than a factor of two in $n$,
     with 2–3 seeds; local slopes between neighbouring sizes range from ≈ 1.2 to ≈ 2.9.
-  - Doubling the steps did not move the critical width at $n$ = 40 / 56, but only one
-    learning rate ($3 dot 10^(-3)$) has been used throughout Q3.
+  - Learning-rate tuning covers $n$ = 40 / 56 only; $n$ = 32 / 48 use $3 dot 10^(-3)$.
   - Exact-match gets stricter as $n^2$ grows; pair-accuracy thresholds are reported
     alongside from now on.
   - The `swap` diameter grows with $log n$, so $n$ and path length still rise together;
@@ -491,8 +524,7 @@ the widths around each threshold (2 seeds, 16 runs).
 #figure(
   tbl(columns: (auto, 1fr, auto), align: (left, left, center),
     [*Item*], [*Purpose*], [*Status*],
-    [Q3 learning rate], [a second rate at 128 000 graphs, around the thresholds: the last untested confound], [next],
-    [Q6 input bottleneck], [edge tokens instead of $n$-wide adjacency rows: is $m^* ≈ n$ just the read-in?], [next],
+    [Q6 input bottleneck], [edge tokens instead of $n$-wide adjacency rows: is the growth just the read-in?], [next],
     [Q7 depth × width], [fix $n$, vary diameter and depth: can width replace depth?], [planned],
     [Q4 Graphormer bias], [shortest-path bias gives connectivity away; needs a task it doesn't leak], [planned],
     [Q2 task hierarchy], [retrieval < connectivity < shortest path, each with its own audit], [planned],
@@ -505,6 +537,6 @@ the widths around each threshold (2 seeds, 16 runs).
   *Reproduce.* Every number above comes from #kbd("python width_sweep.py <sweep> --analyze")
   or #kbd("--curves") over #kbd("results/width/<sweep>*.jsonl") (sweeps #kbd("q1"),
   #kbd("q1b"), #kbd("q1c"), #kbd("q3pilot"), #kbd("q3pilot2"), #kbd("q3probe"),
-  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
+  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
   #kbd("reports/figures/width_progress_plots.py").
 ]
