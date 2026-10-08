@@ -379,6 +379,83 @@ accuracy (probe quality, robustness, OOD/size generalization).
 
 ---
 
+## 6. Added from the 2026-10-08 novelty check
+
+Source: `docs/novelty-check-2026-10-08.md` (Claude Research run on findings 1–7). Its verdict:
+the main result — critical width to *learn* connectivity ∝ n^≈1.9 — was **not found** in
+prior work. Status per entry: **verified** = checked against the PDF in `papers/`;
+**report-opened** = the research run opened the paper, we did not; **snippet** = seen only
+as a search excerpt. Verify the last two before citing specifics.
+
+### 6.1 Ye, Fu, Jia, Sharan (2026)
+*Transformers Provably Learn Algorithmic Solutions for Graph Connectivity, But Only with the
+Right Data* (v1: *When Do Transformers Learn Heuristics for Graph Connectivity?*).
+[arXiv:2510.19753](https://arxiv.org/abs/2510.19753) — **verified** (`papers/`, notes in
+`reports/ye-2026-notes.typ`).
+**Source of our task**: the connectivity-matrix target, (A + I) adjacency-row tokens and the
+bilinear read-out were adopted from this paper in June 2026. An L-layer Disentangled
+Transformer (non-negative weights) reaches diameter ≤ 3^L, tightly; within-capacity graphs
+drive the algorithmic (matrix-powering) solution, beyond-capacity graphs a degree-product
+heuristic. Trained on 10^9 ER(n=20) graphs, AdamW lr 1e-4 (single rate), d = 512.
+*Bearing:* **must cite** as the task's origin; 3^L capacity explains Q7a (n=40, diameter
+≈ 10: two layers give 9) — though their bound is for the restricted architecture and our
+standard 2-layer model still reaches 0.99 pair accuracy.
+
+### 6.2 Abbe, Bengio, Lotfi, Sandon, Saremi (2024)
+*How Far Can Transformers Reason? The Globality Barrier and Inductive Scratchpad.* NeurIPS
+2024. [arXiv:2406.06467](https://arxiv.org/abs/2406.06467) — **report-opened**.
+"Cycle task": two disjoint n-cycles vs one 2n-cycle, built so no degree / edge-count / motif
+statistic helps (globality ≥ n), proposed as a *training* benchmark; learning cost grows
+exponentially with n at fixed model sizes (they vary total parameters, not width).
+*Bearing:* **must cite** as the origin of the locally-indistinguishable benchmark idea
+behind `swap` (ours adds chords, a dense pair target, and explicit audits).
+
+### 6.3 Yehudai et al. 2025 — details we had not recorded (see 1.2)
+**Verified** (`papers/`): §6.1 compares fixed-100k-parameter (depth, width) pairs (1,125),
+(2,89), (4,63), (8,45), (10,40) — similar connectivity accuracy across depth, on a
+mixed-generator graph-level dataset; LR tuned only in {1e-4, 5e-5}; datasets of 5000 graphs.
+§6.2 critical width = training loss plateau > 0.05 (a *fitting* criterion), 1 layer, 2
+heads, counting tasks, "increases roughly linearly with the graph size". Notes that
+"quadratic width should suffice for solving any task, since it can be used to record the
+entire graph". *Bearing:* their width study is exposed to our Q1 (fixed LR) and Q1c
+(small-data) confounds; our ≈ n² sits ~n above their linear bounds; n² = adjacency bits
+suggests a "copy the whole graph" solution — testable by probing (next steps).
+Venue: the novelty check says NeurIPS 2025 (spotlight); 1.2 says ICML 2025 — check.
+
+### 6.4 Mahdavi et al. (2023)
+*Towards Better Out-of-Distribution Generalization of Neural Algorithmic Reasoning Tasks.*
+TMLR 2023. [arXiv:2211.00692](https://arxiv.org/abs/2211.00692) — **report-opened**.
+In CLRS, node indices act as unique flags and models exploit spurious index correlations.
+*Bearing:* closest prior to our node-index leak (ours: generator indices reveal component
+membership — not found elsewhere).
+
+### 6.5 Wang et al. (2023) NLGraph
+*Can Language Models Solve Graph Problems in Natural Language?* NeurIPS 2023.
+[arXiv:2305.10037](https://arxiv.org/abs/2305.10037) — **snippet**. Prompted LLMs use node
+mention frequency for connectivity. *Bearing:* degree-style shortcuts, LLM setting.
+
+### 6.6 DeZoort, Hanin (2026)
+*Hyperparameter Transfer in Graph Neural Networks.* [arXiv:2607.05017](https://arxiv.org/abs/2607.05017)
+— **report-opened**. µP/CompleteP-style parameterisation for GNNs; Adam rate ∝ 1/√width.
+*Bearing:* GNN-level support for Q1 (optimal LR shrinks with width); not transformers or
+reasoning tasks.
+
+### 6.7 Learning-onset analogues
+Barak et al. 2022, *Hidden Progress in Deep Learning* (NeurIPS 2022,
+[arXiv:2207.08799](https://arxiv.org/abs/2207.08799)) — plateau-then-onset learning;
+Edelman et al. 2023, *Pareto Frontiers in Deep Feature Learning: Data, Compute, Width, and
+Luck* (NeurIPS 2023) — width trades against data and time for sparse parity. Both
+**snippet**. *Bearing:* mechanism analogues for Q3 trim ("width decides whether learning
+starts").
+
+### 6.8 Tensions to address in the thesis
+- Saparov et al. 2025 (3.7): no clear link between model size and time-to-learn at fixed
+  graph size (**snippet** quote) — vs our width-gated onset; different task (search,
+  edge lists, widths ≤ 16).
+- Merrill & Sabharwal 2025 (1.8): depth Θ(log n) suffices where width must grow
+  superpolynomially (regular languages) — vs our mild depth benefit for connectivity.
+- Sanford–Hsu–Telgarsky 2024 App. G (**snippet**): on k-hop, doubling width ≈ +1 layer.
+
 ## (a) Defensible gap
 
 1. **No systematic empirical width study of graph transformers exists on algorithmic
