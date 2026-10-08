@@ -4,6 +4,25 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-09
+
+### Q7c: depth-2 critical width grows ~n³, not linearly
+
+q7c: depth 2 at n = 32 / 48 / 56, same setting as q7depth (`swap`, 128k graphs, 24 000
+steps, LR 1e-3), widths 16–192 per n, 2 seeds (34 runs, Kaggle); n = 40 from q7depth.
+Critical width (mean of per-seed crossings at 0.95, final epoch):
+fit **28.1 / 44.4 / 70.7 / 168.0** (∝ n^3.07; one seed per n: 2.90–3.24);
+generalize 28.2 / 45.3 / 92.7 / >192 (∝ n^2.91 over n ≤ 48).
+
+- Not Yehudai's linear width: SGD doesn't find the constant-depth construction as n grows.
+  Steeper than depth 6 (∝ n^1.85); depth-2 ÷ depth-6 width 1.3 → 1.5 → 1.8 → >3.3.
+- Threshold-robust in direction: fit slope 2.44 at 0.90, 2.79 at 0.93.
+- Local slopes 2.1 / 2.6 / 5.6 — the n = 56 point is the least certain (curve flat near
+  0.95; m=192 train pair 0.96, seeds 158 / 178).
+- Fit/generalize gap reopens at depth 2 even at 128k graphs (n=56, m=192: 0.96 vs 0.92).
+- Q7a's "depth trades mildly" holds only at n = 40. (`results/width/q7c.shard*of8.jsonl`;
+  `width_sweep.py q7c --scaling --also q7depth`)
+
 ## 2026-10-08
 
 ### Q7a: depth trades for width only mildly; 2 layers learn at m ≈ 1.1 n

@@ -227,6 +227,49 @@ def fig_q7depth():
     fig.savefig(os.path.join(OUT, "width-q7depth.png"))
 
 
+def fig_q7c():
+    d2 = [r for r in load_runs("q7c") + load_runs("q7depth") if cell(r)[1] == 2]
+    # depth 6 at 128k graphs: LR 1e-3 at n = 40/56 (q3lr), 3e-3 at 32/48 (the only rate run)
+    d6 = ([r for r in load_runs("q3data") + load_runs("q3big") if cell(r)[2] == 128000
+           and cell(r)[0] in (32, 48)] + load_runs("q3lr"))
+    ns = [32, 40, 48, 56]
+    fig, ax = plt.subplots(figsize=(4.6, 3.0))
+    series = (("depth 2, generalize", d2, "test_pair"), ("depth 2, fit", d2, "train_pair"),
+              ("depth 6, generalize (Q3)", d6, "test_pair"))
+    for i, (label, runs, key) in enumerate(series):
+        pts = []
+        for n in ns:
+            per = seed_crossings(runs, n, None, key, "final")
+            if not any(np.isnan(per)):
+                pts.append((n, np.mean(per), min(per), max(per)))
+        x, y, lo, hi = map(np.array, zip(*pts))
+        ax.errorbar(x, y, yerr=[y - lo, hi - y], color=SERIES[i], marker=MARKERS[i],
+                    label=label, markeredgecolor="#fcfcfb", markeredgewidth=1.2,
+                    capsize=2.5, elinewidth=1, zorder=3)
+        b = np.polyfit(np.log(x), np.log(y), 1)[0]
+        ax.annotate(rf"$\propto n^{{{b:.1f}}}$", (x[-1], y[-1]),
+                    xytext={0: (-38, 6), 1: (7, -3), 2: (7, -3)}[i],
+                    textcoords="offset points", color=INK, fontsize=8)
+    # depth 2, n=56: no seed generalized at m <= 192
+    ax.annotate("", xy=(56, 270), xytext=(56, 192),
+                arrowprops=dict(arrowstyle="->", color=SERIES[0], lw=1.5))
+    ax.plot([56], [192], marker="o", mfc="none", mec=SERIES[0], ms=6, zorder=3)
+    ax.text(51.5, 225, "> 192", color=INK2, fontsize=7.5)
+    ref = np.array([30, 62])
+    ax.plot(ref, 28 * ref / 32, color=INK2, lw=1, ls=(0, (3, 3)), zorder=1)
+    ax.text(62.5, 52, r"$\propto n$", color=INK2, fontsize=8)
+    ax.set_xscale("log", base=2); ax.set_yscale("log", base=2)
+    ax.set_xticks(ns); ax.set_xticklabels([str(n) for n in ns])
+    ticks = [16, 24, 32, 48, 64, 96, 128, 192, 256]
+    ax.set_yticks(ticks); ax.set_yticklabels([str(t) for t in ticks])
+    ax.minorticks_off()
+    ax.set_xlim(29, 70); ax.set_ylim(18, 300)
+    ax.set_xlabel("graph size n")
+    ax.set_ylabel("critical width m* (pair acc. 0.95)")
+    legend_top(ax, ncol=2)
+    fig.savefig(os.path.join(OUT, "width-q7c-scaling.png"))
+
+
 if __name__ == "__main__":
     fig_q1b()
     fig_q1c()
@@ -234,4 +277,5 @@ if __name__ == "__main__":
     fig_q3fine_curves()
     fig_q3fine_scaling()
     fig_q7depth()
+    fig_q7c()
     print("wrote", ", ".join(f for f in sorted(os.listdir(OUT)) if f.startswith("width-")))

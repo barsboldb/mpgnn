@@ -58,7 +58,7 @@
   #v(-0.3em)
   #text(11pt, fill: luma(80))[Progress report — what was done, what came out, and what it means]
   #v(-0.2em)
-  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-08 ·
+  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-09 ·
   raw log: #kbd("docs/CHANGELOG.md") · questions: #kbd("docs/WIDTH-QUESTIONS.md")]
 ]
 
@@ -83,10 +83,13 @@
     with the rate tuned where tested (seed-bootstrap 90 % range 1.68–2.03). Doubling the
     training steps does not lower it, and neither does a fixed-width input encoding (Q6).
     Theory says this depth needs far less width just to *represent* connectivity.
-  + *Depth trades for width only mildly.* At $n = 40$, two layers learn connectivity at
-    width ≈ $1.1 n$ (45) and six layers at ≈ $0.75 n$ (30); beyond 4–6 layers depth buys
-    nothing. A 2-layer model solves graphs of diameter ≈ 10 — it does not follow paths
-    hop by hop.
+  + *Depth saves little width at small $n$, but much more as $n$ grows.* At $n = 40$, two layers learn
+    connectivity at width ≈ $1.1 n$ (45) and six layers at ≈ $0.75 n$ (30); beyond 4–6
+    layers depth buys nothing. A 2-layer model solves graphs of diameter ≈ 10 — it does
+    not follow paths hop by hop. But across sizes the 2-layer critical width grows as
+    ≈ $n^3$, not linearly as the constant-depth construction allows: at $n = 56$ two
+    layers need about 3× the width of six (fit 168 vs 53) and do not generalize to
+    0.95 by width 192 (Q7c).
 ]
 
 = Question and set-up
@@ -275,6 +278,7 @@ continuity), or *budget* (set by Kaggle's 30 GPU-hours a week). The tags below s
     [10-07], [Q3 learning rate: $10^(-3)$ (16 runs)], [helps wide models at $n = 56$; slope $n^(1.94)$ → $n^(1.85)$],
     [10-07], [Q6: fixed 96-wide input (24 runs)], [growth persists ($n^(2.0)$) — not the read-in],
     [10-08], [Q7a: depth 2–8 × width at $n = 40$ (60 runs)], [depth 2 learns at $m ≈ 1.1 n$; depth saves ≈ ⅓ of the width],
+    [10-09], [Q7c: depth 2 at $n$ = 32 / 48 / 56 (34 runs)], [depth-2 critical width $prop n^(3.1)$ (fit), not linear],
   ),
   caption: [What was done, in order.],
 )
@@ -715,8 +719,9 @@ steps, rate $10^(-3)$, depth $L$ ∈ {2, 3, 4, 6, 8}, widths around each thresho
     cover ≈ 9 — right at our graphs' diameter, which fits depth helping little beyond
     3. (Their bound is for a restricted architecture; our standard 2-layer models still
     reach 0.99.)
-  - *The trade-off is mild and saturates.* Going from 2 to 6 layers saves about a third
-    of the width (45 → 30); depth 8 is no better than 6.
+  - *At this size the trade-off is mild and saturates.* Going from 2 to 6 layers saves
+    about a third of the width (45 → 30); depth 8 is no better than 6. (Q7c: the saving
+    grows with $n$.)
   - *Exact reproduction.* The $L = 6$ runs repeat the Q3 learning-rate baseline at
     $n = 40$ and give the same critical width (30.1).
 ]
@@ -725,9 +730,58 @@ steps, rate $10^(-3)$, depth $L$ ∈ {2, 3, 4, 6, 8}, widths around each thresho
   With adjacency-row tokens, width ≈ $n$ makes constant depth sufficient — the regime
   Yehudai et al. (2025) prove for their tokenization ("linear width, constant depth");
   we measure the constant: ≈ $1.1 n$ at depth 2. At fixed $n$ depth matters little, yet at
-  depth 6 the critical width grows ≈ $n^2$ across sizes. Whether the depth-2 critical
-  width also grows ≈ $n^2$, or only linearly as the construction suggests, is the next
-  question (Q7c).
+  depth 6 the critical width grows ≈ $n^2$ across sizes. Q7c asks how the depth-2
+  critical width grows with $n$.
+]
+
+= Q7c — does the depth-2 width grow linearly?
+
+Same setting as Q7a (the audited `swap` data, 128 000 graphs, 24 000 steps, rate
+$10^(-3)$) at depth 2 for $n$ = 32 / 48 / 56, widths 16–192 placed to cover both
+predictions ($m^* prop n$ and $m^* prop n^2$), 2 seeds (34 runs); Q7a's depth-2 runs
+supply $n = 40$.
+
+#figure(
+  image("figures/width-q7c-scaling.png", width: 78%),
+  caption: [Critical width vs $n$ at depth 2 and depth 6 (log–log; error bars: range over
+  two seeds; open circle: no seed reaches 0.95 by $m = 192$). Depth 6 is Q3 at 128 000
+  graphs, rate $10^(-3)$ at $n$ = 40 / 56 and $3 dot 10^(-3)$ at 32 / 48.],
+)
+
+#figure(
+  tbl(columns: 6,
+    [], [$n = 32$], [$n = 40$], [$n = 48$], [$n = 56$], [growth],
+    [depth 2, to fit], [28.1], [44.4], [70.7], [168.0], [$prop n^(3.07)$],
+    [depth 2, to generalize], [28.2], [45.3], [92.7], [> 192], [$prop n^(2.91)$ (to 48)],
+    [depth 6, to generalize], [21.9], [30.2], [51.1], [57.9], [$prop n^(1.85)$],
+    [depth 2 ÷ depth 6], [1.3], [1.5], [1.8], [> 3.3], [],
+  ),
+  caption: [Critical widths (mean of per-seed crossings at 0.95, final epoch). Taking one
+  seed per $n$ gives fit slopes of 2.90–3.24.],
+)
+
+#finding[
+  - *Not linear.* The depth-2 critical width grows as ≈ $n^3$ — faster than depth 6's
+    ≈ $n^(1.9)$. From $1.1 n$ at $n = 40$ it reaches $3 n$ at $n = 56$.
+  - *The robustness is in the direction, not the exponent.* With a looser threshold the
+    fit slope is 2.4 (pair accuracy 0.90) or 2.8 (0.93): always above depth 6's and far
+    above linear.
+  - *The step to $n = 56$ is the steepest.* Local fit slopes are 2.1 (32 → 40), 2.6
+    (40 → 48) and 5.6 (48 → 56). At $n = 56$ the curve is flat near the threshold — width
+    192 only reaches train pair 0.96 — so this point is the least certain (seeds: 158
+    and 178).
+  - *Fitting and generalizing separate again at depth 2, even with 128 000 graphs.* At
+    $n = 56$, $m = 192$ has train pair 0.96 but test pair 0.92; at depth 6 the same data
+    closed this gap.
+]
+
+#meaning[
+  The constant-depth, linear-width solution exists for this tokenization (Yehudai et al.
+  2025), but training does not find it as $n$ grows: two layers need ever more width than
+  six. So Q7a's "depth trades only mildly" holds only at $n = 40$; the width that depth
+  saves grows with $n$, from ≈ 1.3× at $n = 32$ to more than 3× at $n = 56$. This fits the
+  log-depth constructions (Sanford et al. 2024a): with too few layers, width has to
+  stand in for depth at a rising cost.
 ]
 
 = What it all means so far
@@ -748,7 +802,8 @@ steps, rate $10^(-3)$, depth $L$ ∈ {2, 3, 4, 6, 8}, widths around each thresho
   *enough to represent* connectivity. In practice the width needed to *learn* it grows
   roughly as $n^(1.9)$ over $n = 32$–$56$ — with 128 000 graphs, with twice the training
   steps, with the learning rate tuned, and with a fixed-width input encoding — and the
-  data has to grow too; at $n = 128$ nothing up to $m = 128$ learns. This matches Saparov et al. (ICLR 2025): transformers
+  data has to grow too; at $n = 128$ nothing up to $m = 128$ learns. At depth 2, where the
+  linear-width construction lives, it grows faster still (≈ $n^3$). This matches Saparov et al. (ICLR 2025): transformers
   struggle to learn search even when it is representable.
 + *A hypothesis for the $n^2$.* $n^2$ is the number of bits in the adjacency matrix, and
   Yehudai et al. note that quadratic width suffices for *any* graph task by copying the
@@ -763,7 +818,7 @@ steps, rate $10^(-3)$, depth $L$ ∈ {2, 3, 4, 6, 8}, widths around each thresho
   - Exact-match gets stricter as $n^2$ grows; pair-accuracy thresholds are reported
     alongside from now on.
   - The `swap` diameter grows with $log n$, so $n$ and path length still rise together;
-    Q7 will separate them.
+    Q7b will separate them.
   - One learning rate in the fine grid ($3 dot 10^(-3)$), for budget reasons; it is
     too high at $m = 128$, which is left out of the fit.
 ]
@@ -773,8 +828,7 @@ steps, rate $10^(-3)$, depth $L$ ∈ {2, 3, 4, 6, 8}, widths around each thresho
 #figure(
   tbl(columns: (auto, 1fr, auto), align: (left, left, center),
     [*Item*], [*Purpose*], [*Status*],
-    [Q7c depth-2 scaling], [depth 2 at $n$ = 32 / 48 / 56: does the shallow critical width grow linearly (Yehudai's prediction) or ≈ $n^2$?], [next],
-    [Probing], [read what each layer computes: path doubling ($A^(2^ell)$) or a copy of the whole graph? — explains the $n^2$], [planned],
+    [Probing], [read what each layer computes: path doubling ($A^(2^ell)$) or a copy of the whole graph? — explains the $n^2$], [next],
     [Q7b diameter], [fix $n$, vary the diameter: is path length or node count driving the growth?], [planned],
     [Q4 Graphormer bias], [shortest-path bias gives connectivity away; needs a task it doesn't leak], [planned],
     [Q2 task hierarchy], [retrieval < connectivity < shortest path, each with its own audit], [planned],
@@ -787,6 +841,6 @@ steps, rate $10^(-3)$, depth $L$ ∈ {2, 3, 4, 6, 8}, widths around each thresho
   *Reproduce.* Every number above comes from #kbd("python width_sweep.py <sweep> --analyze")
   or #kbd("--curves") over #kbd("results/width/<sweep>*.jsonl") (sweeps #kbd("q1"),
   #kbd("q1b"), #kbd("q1c"), #kbd("q3pilot"), #kbd("q3pilot2"), #kbd("q3probe"),
-  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj"), #kbd("q7depth")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
+  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj"), #kbd("q7depth"), #kbd("q7c")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
   #kbd("reports/figures/width_progress_plots.py").
 ]
