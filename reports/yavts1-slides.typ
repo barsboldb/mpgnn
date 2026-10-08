@@ -205,20 +205,17 @@ roughly as $n^2$ — while theory says this depth needs far less width to *repre
 - `swap` diameter grows with $log n$: path length and node count still rise together
 - Compute: Kaggle's 30 GPU-hours per week caps each sweep
 
-== Plan to the research freeze (week 11)
+== Plan for weeks 6–7
 
 #align(center, tbl(
   columns: 3, align: (left, left, center),
   table.header([*item*], [*question*], [*when*]),
   [Q7c], [does the *depth-2* critical width grow linearly or ≈ $n^2$?], [week 6],
-  [Q7b], [fix $n$, vary diameter: is path length or node count driving the growth?], [weeks 6–7],
-  [Q4], [Graphormer-style distance bias — on a task it does not give away], [weeks 7–8],
-  [Q2], [task hierarchy: retrieval < connectivity < shortest path], [weeks 8–9, if time],
-  [writing], [method and results chapters from the progress report], [weeks 9–11],
+  [Q7b], [fix $n$, vary diameter: is path length or node count driving the growth?], [week 6],
+  [Q4], [Graphormer-style distance bias — on a task it does not give away], [weeks 6–7],
+  [Q2], [task hierarchy: retrieval < connectivity < shortest path], [week 7],
 ))
 
-#v(0.4em)
-#rc[Явц 2 in week 9 · research freeze week 11 · pre-defense week 13 · defense week 16]
 
 == Questions for the committee
 
