@@ -98,7 +98,8 @@ scale with graph size $n$?
 / Task: *connectivity matrix*. Input: a graph on $n$ nodes. Output: the $n times n$
   matrix $R$ with $R_(i j) = 1$ iff $i$ and $j$ are in the same component. Dense
   per-pair supervision; a single connected/disconnected bit per graph does not train
-  (stalls at $ln 2$, June results).
+  (stalls at $ln 2$, June results). Task, tokens and read-out are taken from Ye et al.
+  (2026), who study which solution this model learns.
 / Model: transformer encoder whose tokens are the rows of $A + I$ (one token per node),
   pre-norm blocks, multi-head attention with head dimension fixed at 8 (so heads
   $= m\/8$), pairwise bilinear read-out $H W H^top$.
@@ -361,7 +362,10 @@ problems surfaced:
 ≥ 6 hops apart in each blob ($a_1, a_2$ and $b_1, b_2$). Disconnected: add $a_1 a_2$ and
 $b_1 b_2$. Connected: add $a_1 b_1$ and $a_2 b_2$. Same degree changes in both classes;
 every new cycle has ≥ 7 edges; graphs failing the distance test are redrawn *before*
-the label is applied; node labels shuffled per graph.
+the label is applied; node labels shuffled per graph. The idea — classes that no local
+statistic can tell apart, two cycles vs one — is the "cycle task" Abbe et al. (NeurIPS
+2024) proposed as a training benchmark; `swap` adds chords (so diameter grows only
+≈ $log n$), a dense pair target, and an explicit audit.
 
 #figure(
   tbl(columns: 7,
@@ -703,8 +707,11 @@ steps, rate $10^(-3)$, depth $L$ ∈ {2, 3, 4, 6, 8}, widths around each thresho
 #finding[
   - *Two layers are enough.* At $L = 2$, $m = 48$ reaches test pair 0.968 and $m >= 64$
     reach ≈ 0.99 — on graphs of diameter ≈ 10. The prediction "depth must cover the
-    diameter by doubling, $2^L >= 10$" was wrong: the model does not trace paths hop by
-    hop.
+    diameter by doubling, $2^L >= 10$" was wrong. Ye et al. (2026) prove a tighter
+    reach: an $L$-layer model can handle diameter up to $3^L$, so two layers already
+    cover ≈ 9 — right at our graphs' diameter, which fits depth helping little beyond
+    3. (Their bound is for a restricted architecture; our standard 2-layer models still
+    reach 0.99.)
   - *The trade-off is mild and saturates.* Going from 2 to 6 layers saves about a third
     of the width (45 → 30); depth 8 is no better than 6.
   - *Exact reproduction.* The $L = 6$ runs repeat the Q3 learning-rate baseline at
@@ -728,12 +735,22 @@ steps, rate $10^(-3)$, depth $L$ ∈ {2, 3, 4, 6, 8}, widths around each thresho
 + *Benchmarks decide the answer.* The same architecture needs width 8 on the leaky task
   and ≥ 32–64 on the audited one at similar $n$. A width study is only as good as its
   shortcut audit — a methodological contribution in its own right.
++ *Likely new.* A novelty check (`docs/novelty-check-2026-10-08.md`) found no prior work
+  measuring how the width needed to *learn* connectivity scales with $n$. The closest —
+  Yehudai et al.'s critical width, linear in $n$ — measures *fitting* on counting tasks at
+  depth 1 with 5 000 graphs and a fixed learning-rate grid, exactly the confounds Q1 and
+  Q1c expose.
 + *Representation is not learning.* Theory says width ≈ $n$ (or depth $log n$) is
   *enough to represent* connectivity. In practice the width needed to *learn* it grows
   roughly as $n^(1.9)$ over $n = 32$–$56$ — with 128 000 graphs, with twice the training
   steps, with the learning rate tuned, and with a fixed-width input encoding — and the
   data has to grow too; at $n = 128$ nothing up to $m = 128$ learns. This matches Saparov et al. (ICLR 2025): transformers
   struggle to learn search even when it is representable.
++ *A hypothesis for the $n^2$.* $n^2$ is the number of bits in the adjacency matrix, and
+  Yehudai et al. note that quadratic width suffices for *any* graph task by copying the
+  whole graph into every token. SGD may be finding that brute-force solution rather than
+  the efficient log-depth one. Q6 rules out the *input* width, not this; probing the
+  layers for path-doubling structure ($A^(2^ell)$, as in Ye et al.) would tell.
 
 #warn[
   - All slopes come from four graph sizes spanning less than a factor of two in $n$,
@@ -752,7 +769,8 @@ steps, rate $10^(-3)$, depth $L$ ∈ {2, 3, 4, 6, 8}, widths around each thresho
 #figure(
   tbl(columns: (auto, 1fr, auto), align: (left, left, center),
     [*Item*], [*Purpose*], [*Status*],
-    [Q7c depth-2 scaling], [depth 2 at $n$ = 32 / 48 / 56: does the shallow critical width grow linearly or ≈ $n^2$?], [next],
+    [Q7c depth-2 scaling], [depth 2 at $n$ = 32 / 48 / 56: does the shallow critical width grow linearly (Yehudai's prediction) or ≈ $n^2$?], [next],
+    [Probing], [read what each layer computes: path doubling ($A^(2^ell)$) or a copy of the whole graph? — explains the $n^2$], [planned],
     [Q7b diameter], [fix $n$, vary the diameter: is path length or node count driving the growth?], [planned],
     [Q4 Graphormer bias], [shortest-path bias gives connectivity away; needs a task it doesn't leak], [planned],
     [Q2 task hierarchy], [retrieval < connectivity < shortest path, each with its own audit], [planned],
