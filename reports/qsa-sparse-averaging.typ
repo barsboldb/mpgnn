@@ -276,8 +276,9 @@ remember everything it might later be asked to fetch.
   Connectivity is different: after a few hops a node's *reach set* has size up to $n$,
   and gathering it in one step is qSA with $q$ growing towards $n$. That is the same
   communication logic behind Sanford et al. 2024a's one-layer bound for connectivity
-  ($m H = tilde(Omega)(n)$), and why depth (pointer doubling, $log n$ layers) can
-  replace width. Our Q3 measures exactly this: the critical width $m^*$ at depth
+  ($m H = tilde(Omega)(N)$, with $N$ = vertices + edges, their input length), and why
+  depth (pointer doubling, $log N$ layers) can replace width: at that depth, width just
+  above $sqrt(N)$ suffices with no extra tokens. Our Q3 measures exactly this: the critical width $m^*$ at depth
   $ceil(log_2 n)$ versus $n$.
 ]
 

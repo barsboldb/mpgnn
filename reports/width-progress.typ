@@ -504,8 +504,10 @@ statistic can tell apart, two cycles vs one — is the "cycle task" Abbe et al. 
 ]
 
 #meaning[
-  Theory says depth $log n$ needs only width $n^epsilon$ to *represent* connectivity
-  (Sanford et al. 2024a). What we measure is the width to *learn* it, and that grows
+  Theory says depth $log N$ needs width only just above $sqrt(N)$ to *represent*
+  connectivity, with no extra tokens ($N$ = vertices + edges in their encoding; Sanford
+  et al. 2024a, Thm 18 — width $N^epsilon$ for small $epsilon$ needs $≈ N^(4 - epsilon)$
+  extra "pause" tokens, which our models do not have). What we measure is the width to *learn* it, and that grows
   faster than $n$. The widening fit/generalize gap is the Q1c data ceiling again:
   32 000 graphs give fewer examples per pair as $n$ grows, so the 2.27 is probably
   inflated by holding data fixed. The data check tests this.
@@ -572,7 +574,8 @@ $n$ = 32 / 40 at 128 000 graphs, $m$ = 16 … 96, same 24 000 steps and rate, 2 
   The superlinear growth is *not* a data artefact: removing the data ceiling closed the
   gap but left the slope near 2. Over this range, the width a transformer needs to *learn*
   connectivity grows roughly quadratically in $n$, while the width needed to *represent*
-  it at depth $log n$ is sublinear (Sanford et al. 2024a). The remaining confounds are the
+  it at depth $log N$ is sublinear — just above $sqrt(N)$ without extra tokens (Sanford
+  et al. 2024a). The remaining confounds are the
   fixed step budget (24 000 steps; more training might let narrower models get there —
   tested next) and the single learning rate.
 ]
@@ -740,7 +743,8 @@ steps, rate $10^(-3)$, depth $L$ ∈ {2, 3, 4, 6, 8}, widths around each thresho
   Yehudai et al.'s critical width, linear in $n$ — measures *fitting* on counting tasks at
   depth 1 with 5 000 graphs and a fixed learning-rate grid, exactly the confounds Q1 and
   Q1c expose.
-+ *Representation is not learning.* Theory says width ≈ $n$ (or depth $log n$) is
++ *Representation is not learning.* Theory says width ≈ $n$ at constant depth
+  (Yehudai et al.), or width just above $sqrt(N)$ at depth $log N$ (Sanford et al.), is
   *enough to represent* connectivity. In practice the width needed to *learn* it grows
   roughly as $n^(1.9)$ over $n = 32$–$56$ — with 128 000 graphs, with twice the training
   steps, with the learning rate tuned, and with a fixed-width input encoding — and the

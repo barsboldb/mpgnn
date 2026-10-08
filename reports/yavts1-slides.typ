@@ -41,7 +41,8 @@ learn, and how must width grow with graph size $n$?*
 
 - *Theory* gives width bounds for _representing_ graph algorithms: one attention layer
   needs width ≈ (what each token must gather) — q-sparse averaging, Sanford et al. 2023;
-  connectivity at depth $log n$ needs only $n^epsilon$ width (Sanford et al. 2024).
+  connectivity at depth $log N$ needs width only just above $sqrt(N)$, with no extra
+  tokens ($N$ = vertices + edges; Sanford et al. 2024).
 - *Nobody has measured* the width a transformer needs to _learn_ a graph task, how it
   scales with $n$, or how it trades against depth.
 
@@ -193,8 +194,8 @@ roughly as $n^2$ — while theory says this depth needs far less width to *repre
   `swap`; the leaky data had hidden the width requirement.
 + *A measured scaling law.* The critical width to learn connectivity grows ≈ $n^(1.9)$
   over $n = 32$–$56$, robust to five confounds.
-+ *Representation ≠ learning.* Theory: depth $log n$ needs sublinear width to
-  represent connectivity. Measured: learning needs ≈ $n^2$. Depth helps only mildly.
++ *Representation ≠ learning.* Theory: depth $log N$ needs width just above $sqrt(N)$
+  to represent connectivity. Measured: learning needs ≈ $n^2$. Depth helps only mildly.
 
 == Limitations
 
