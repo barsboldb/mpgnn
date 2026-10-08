@@ -54,9 +54,10 @@ the task — and how it moves with $n$, depth, data and training.]
   [
     - *Task:* connectivity matrix — for every pair of nodes, are they in the same
       component? (dense supervision; a single yes/no per graph does not train)
-    - *Model:* transformer encoder, one token per node (its adjacency row), head
-      dimension 8, pairwise read-out
-    - *Width* $m$ = embedding dimension
+    - *Model:* transformer encoder, one token per node (its adjacency row), pairwise
+      read-out
+    - *Width* $m$ = embedding dimension; the whole model scales with it: $m\/8$
+      attention heads of size 8, feed-forward layer $4m$
     - *Metric:* pair accuracy (fraction of pairs right); trivial "all connected" ≈ 0.75
   ],
   [
