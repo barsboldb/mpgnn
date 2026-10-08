@@ -102,7 +102,10 @@ scale with graph size $n$?
 / Model: transformer encoder whose tokens are the rows of $A + I$ (one token per node),
   pre-norm blocks, multi-head attention with head dimension fixed at 8 (so heads
   $= m\/8$), pairwise bilinear read-out $H W H^top$.
-/ Width: $m$, the embedding dimension. Depth $L$ = number of blocks.
+/ Width: $m$, the embedding (residual-stream) dimension. Every part of the model scales
+  with it: attention uses $m\/8$ heads of dimension 8 (so heads × head size $= m$, the
+  product $m H$ that the theory bounds), and each feed-forward layer is $4m$ wide.
+  Depth $L$ = number of blocks.
 / Metrics: *exact-match* (the whole matrix right) and *pair accuracy* (fraction of
   entries right). The trivial "everything connected" predictor scores 0.5 exact-match
   (half the graphs are connected) and ≈ 0.75–0.77 pair accuracy.
@@ -112,6 +115,142 @@ scale with graph size $n$?
 / Compute: sweeps run on Kaggle (2 × T4) as 6–8 parallel shards
   (#kbd("width_sweep.py"), #kbd("kaggle/width_sweep.ipynb")); every run is one JSON line
   in #kbd("results/width/").
+
+= Why these numbers
+
+Every number in the set-up is either *principled* (follows from the question or a
+measurement), *checked* (chosen, then tested and shown not to drive the result),
+*inherited* (the default of the June connectivity code this work started from, kept for
+continuity), or *budget* (set by Kaggle's 30 GPU-hours a week). The tags below say which.
+
+#let tag(t) = box(inset: (x: 3pt, y: 1pt), radius: 2pt, fill: (
+  principled: c-good, checked: c-algo, inherited: luma(130), budget: rgb("#b9770e"),
+).at(t).lighten(80%), text(8pt, weight: "bold", t))
+#let why(..a) = block(breakable: false, table(columns: (auto, auto, 1fr),
+  stroke: 0.4pt + luma(170), inset: 5pt, align: (left, center, left), ..a))
+
+== The model and what "width" changes
+
+#why(
+  [*Choice*], [*Value*], [*Why*],
+  [width $m$], [embedding dim], [The residual-stream dimension is what every theory
+   bound calls width (the $m$ in $m H p$) and what "model width" means for transformers.
+   One knob that makes the whole model wider in proportion. #tag("principled")],
+  [head size], [8], [Fixed so that only width moves: a wider model gets *more* heads, not
+   bigger ones. 8 is the largest size that still gives the narrowest model ($m = 8$) one
+   head; the literature sweep flagged that changing head size together with width
+   confounds the two (Q5 would vary them separately). #tag("principled")],
+  [heads $H$], [$m \/ 8$], [Follows from the fixed head size. Heads × head size $= m$, so
+   our width equals the product $m H$ in Sanford et al.'s bounds. #tag("principled")],
+  [feed-forward], [$4m$, ReLU], [The standard transformer ratio (Vaswani et al. 2017),
+   kept proportional so it scales with $m$ rather than being a second width.
+   #tag("inherited")],
+  [blocks], [pre-norm], [Pre-norm residual blocks train stably without careful
+   initialisation. #tag("inherited")],
+  [input], [adjacency row $A + I$], [One token per node carrying its neighbour set — the
+   tokenization of Yehudai et al. 2025, so their linear-width result is the comparison
+   point. Q6 replaced it with a fixed 96-wide code and the scaling held. #tag("checked")],
+  [read-out], [$H W H^top$], [Scores every node pair, giving the $n times n$ connectivity
+   matrix directly; symmetrised because connectivity is symmetric. #tag("inherited")],
+  [dropout, weight decay], [0, 0], [In the July chain-of-thought experiments weight decay
+   alone blocked circuit formation (it pushes attention towards low rank) and dropout
+   gave no benefit; both were left off here and not re-tested on this task.
+   #tag("inherited")],
+)
+
+== Training
+
+#why(
+  [*Choice*], [*Value*], [*Why*],
+  [optimiser], [Adam], [Standard for transformers; no weight decay (above). #tag("inherited")],
+  [schedule], [5 % warm-up, cosine], [Q1 showed wide models diverge at high rates
+   without warm-up; Q1b added it and the instability went away. #tag("checked")],
+  [learning rate], [tuned per width], [Q1: one fixed rate fakes a width effect of up to
+   0.4; the best rate falls as width grows. Grids: $3 dot 10^(-4)$ … $3 dot 10^(-2)$ in
+   Q1/Q1b, where the best rate fell from $10^(-2)$–$3 dot 10^(-2)$ at small widths to
+   $10^(-3)$ at $m = 256$. Q3 used $3 dot 10^(-3)$ (the only rate that started learning at
+   $n = 64$) and then re-checked with $10^(-3)$, which helped only the widest models at
+   $n = 56$. #tag("checked")],
+  [batch size], [128], [Large enough for stable gradients, small enough for many steps
+   per epoch; never varied. #tag("inherited")],
+  [steps], [4 800 → 24 000], [Held *fixed* across data sizes so more data never means more
+   training. 4 800 is Q1's 300 epochs × 16 batches; 24 000 is where the
+   learnability probe had converged (it was at 0.95–0.98 halfway through 24 000); 48 000
+   in the step check moved nothing. #tag("checked")],
+  [evaluation], [≈ 15 times per run], [Enough points for learning curves; training
+   accuracy on the first 8 000 training graphs only, so evaluation stays cheap at 128 000.
+   #tag("budget")],
+  [checkpoint], [final epoch], [Choosing the "best" epoch by validation exact-match
+   picks epoch 1 when exact-match never moves, hiding real learning (the 10-05
+   correction). The cosine schedule makes the final epoch a fair choice. #tag("checked")],
+)
+
+== Data
+
+#why(
+  [*Choice*], [*Value*], [*Why*],
+  [generator], [`swap`], [The only one of five candidates on which every heuristic we
+   could build — graph statistics, ≤ 4-hop checks, node indices — sits at chance.
+   #tag("principled")],
+  [chords], [¼ × blob size], [Sparse enough that graphs are not locally solvable, dense
+   enough that diameter grows only ≈ $log n$ (a pure cycle's diameter grows ≈ $n\/2$,
+   and nothing learned at $n >= 32$ in pilot 1). #tag("checked")],
+  [$d_min$], [6 hops], [Every cycle the two swapped edges close has ≥ 7 edges, so
+   closed-walk counts up to length 6 cannot see the label. With 5, statistics still
+   predicted the label at $n = 32$ (0.63). Cost: graphs below $n ≈ 32$ cannot be built.
+   #tag("checked")],
+  [blob split], [$n_a tilde U[n\/4, 3n\/4]$], [Avoids tiny blobs that are trivially
+   dense or cannot hold a far-apart pair. #tag("principled")],
+  [training graphs], [2 000 → 128 000], [Raised until the data ceiling disappeared: at
+   32 000, fitting and generalizing still came apart; at 128 000 they coincide.
+   2 000 was the June default. #tag("checked")],
+  [val / test], [400 / 400], [Separate seeds; 400 graphs give ≈ 110 000–620 000 scored
+   node pairs each ($n$ = 24–56) — far more than needed for pair accuracy.
+   #tag("inherited")],
+)
+
+== Measurement
+
+#why(
+  [*Choice*], [*Value*], [*Why*],
+  [main metric], [pair accuracy], [Exact-match needs all ≈ $n^2\/2$ pairs right, so it
+   gets stricter as $n$ grows and would build a fake $n$-dependence into the result.
+   Pair accuracy is comparable across $n$. #tag("principled")],
+  [threshold], [0.95], [Well above the trivial ≈ 0.75 and below the ≈ 0.99 the best
+   models reach, so the crossing sits on the steep part of the curve. 0.90 and 0.99 were
+   also reported in Q1–Q3; they shift $m^*$ but not the conclusions. #tag("checked")],
+  [$m^*$], [per-seed crossing], [Interpolated in $log_2 m$ between grid widths, then
+   averaged over seeds — sturdier than crossing the averaged curve when one seed dips at a
+   single width. #tag("principled")],
+  [seeds], [2–3], [Three in the early and fine grids; two in the large-data checks,
+   where seeds agreed within ≈ ±3 and runs cost most. #tag("budget")],
+)
+
+== Sweep grids
+
+#why(
+  [*Choice*], [*Value*], [*Why*],
+  [widths], [16 … 192], [Powers of two, with in-between points (24, 48, 96) near each
+   threshold so the crossing is located to within ≈ 20 %. Later sweeps placed the grid
+   around each size's or depth's expected threshold to spend no runs far from it.
+   #tag("budget")],
+  [graph sizes], [$n$ = 32 … 56], [The range where $m^*$ can be measured: `swap` cannot
+   be built below ≈ 32, and at $n >= 64$ nothing learned within affordable width. $n = 24$
+   in Q1 was the June default. #tag("budget")],
+  [depth], [$ceil(log_2 n)$, fixed 6], [Theory's depth for connectivity; fixed at 6 —
+   which is $ceil(log_2 n)$ for every $n$ in 33–64 — so depth does not step up between
+   sizes. Q7a varied it from 2 to 8. #tag("principled")],
+  [projected input], [$k = 96$], [The smallest code width that keeps each neighbour set
+   recoverable (≈ 99 % at $n$ = 32 and 56); $k = 32$ recovered only 60–70 %, which would
+   have confused width with lost information. #tag("checked")],
+)
+
+#warn[
+  The *inherited* and *budget* choices (feed-forward ratio, batch size, dropout and
+  weight decay, number of seeds, the $n$ range) were not varied; head size is fixed by
+  design and is what Q5 would vary. The checked ones were, and none of
+  them changed the main result.
+]
 
 = Timeline
 
