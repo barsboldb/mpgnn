@@ -4,6 +4,23 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-08
+
+### Q7a: depth trades for width only mildly; 2 layers learn at m ≈ 1.1 n
+
+q7depth: n=40 `swap` data (connected diameter ~10), 128k graphs, 24 000 steps, LR 1e-3,
+depth ∈ {2, 3, 4, 6, 8}, per-depth widths around the threshold, 2 seeds (60 runs).
+Critical width to generalize (mean of per-seed crossings): **45.3 / 37.9 / 34.5 / 30.1 /
+32.3** (m*/n 1.13 → 0.75); fit 44.4 / 34.2 / 31.1 / 28.2 / 29.7. Seeds within ~±2.
+
+- Depth 2 learns: m=48 test pair 0.968, m≥64 ≈ 0.99, on diameter-10 graphs — the
+  "2^L ≥ diameter" prediction was wrong; the model doesn't trace paths hop by hop.
+- Mild, saturating trade-off: 2 → 6 layers saves ~⅓ of the width; 8 = 6.
+- L=6 reproduces q3lr's n=40 critical width exactly (30.1).
+- Matches Yehudai et al. 2025 (adjacency rows: linear width ⇒ constant depth); measured
+  constant ≈ 1.1 n at L=2. Open: does depth-2 m* grow linearly or ~n² across n (Q7c)?
+  Kaggle quota exhausted until the Saturday reset. (`results/width/q7depth.shard*of8.jsonl`)
+
 ## 2026-10-07
 
 ### Q6: a fixed-width input keeps the ~n² growth — not the read-in

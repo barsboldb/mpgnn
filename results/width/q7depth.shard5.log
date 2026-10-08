@@ -1,0 +1,10 @@
+Device cuda | sweep q7depth shard 5/8: 7 runs to go (0 on disk)
+  loading data for seed 0, n=40, 128000 train graphs...
+  [1/7] n=40  L=2  N=128000 m=192  H=24  lr=0.001   seed=0  train=0.919 val=0.855 test@bestval=0.858 test@final=0.870  (1702.3s)
+  [2/7] n=40  L=4  N=128000 m=24   H=3   lr=0.001   seed=0  train=0.457 val=0.495 test@bestval=0.500 test@final=0.417  (800.5s)
+  [3/7] n=40  L=6  N=128000 m=48   H=6   lr=0.001   seed=0  train=0.880 val=0.810 test@bestval=0.848 test@final=0.855  (1226.4s)
+  [4/7] n=40  L=8  N=128000 m=96   H=12  lr=0.001   seed=0  train=0.991 val=0.993 test@bestval=0.980 test@final=0.980  (3049.6s)
+  loading data for seed 1, n=40, 128000 train graphs...
+  [5/7] n=40  L=3  N=128000 m=32   H=4   lr=0.001   seed=1  train=0.467 val=0.472 test@bestval=0.420 test@final=0.420  (465.6s)
+  [6/7] n=40  L=4  N=128000 m=48   H=6   lr=0.001   seed=1  train=0.879 val=0.850 test@bestval=0.853 test@final=0.855  (663.3s)
+  [7/7] n=40  L=6  N=128000 m=96   H=12  lr=0.001   seed=1  train=0.994 val=0.998 test@bestval=0.988 test@final=0.985  (1566.4s)

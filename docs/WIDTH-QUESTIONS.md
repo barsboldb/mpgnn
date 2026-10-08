@@ -102,8 +102,13 @@ Adjacency-row tokens are n-dimensional, so m < n compresses the input.
   Edge tokens remain an optional further variant.
 
 ### Q7 — Can depth substitute for width?
-Depth {1, 2, 4, 8} × width grid at fixed n; iso-accuracy contours; test the Loukas-style
-collapse of accuracy onto m·H·L.
+- **Q7a (done):** n = 40, depth {2, 3, 4, 6, 8}: critical width 45.3 / 37.9 / 34.5 / 30.1 /
+  32.3. Two layers learn at m ≈ 1.1 n (Yehudai's linear-width/constant-depth regime);
+  depth saves ~⅓ of the width and saturates by 4–6 layers.
+- **Q7c (next):** depth 2 at n = 32 / 48 / 56 — does the shallow critical width grow
+  linearly or ~n² (like depth 6)?
+- **Q7b (planned):** fix n, vary the diameter (chord density) with an audit per setting —
+  separates path length from node count.
 
 ## Timeline (department calendar, week 1 = 2026-09-07)
 
