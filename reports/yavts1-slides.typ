@@ -55,7 +55,7 @@ the task — and how it moves with $n$, depth, data and training.]
     - *Task:* connectivity matrix — for every pair of nodes, are they in the same
       component? (dense supervision; a single yes/no per graph does not train)
     - *Model:* transformer encoder, one token per node (its adjacency row), pairwise
-      read-out
+      read-out — task, tokens and read-out from Ye et al. (2026)
     - *Width* $m$ = embedding dimension; the whole model scales with it: $m\/8$
       attention heads of size 8, feed-forward layer $4m$
     - *Metric:* pair accuracy (fraction of pairs right); trivial "all connected" ≈ 0.75
@@ -112,8 +112,9 @@ The first dataset could be solved without tracing a single path:
 #v(0.3em)
 
 *Fix — the `swap` generator:* the two classes differ only by swapping two far-apart
-edges (the 1-cycle vs 2-cycle idea); node labels shuffled. Audit: statistics
-#good[at chance (0.49–0.53)], 4-hop checks #good[score 0], diameter grows ≈ $log n$.
+edges (the two-cycles-vs-one "cycle task" of Abbe et al., NeurIPS 2024, plus chords
+and a dense target); node labels shuffled. Audit: statistics #good[at chance
+(0.49–0.53)], 4-hop checks #good[score 0], diameter grows ≈ $log n$.
 
 #rc[On the leaky data width 8 sufficed at $n = 24$ — the shortcuts hid the width requirement.]
 
