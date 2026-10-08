@@ -215,15 +215,3 @@ roughly as $n^2$ — while theory says this depth needs far less width to *repre
   [Q4], [Graphormer-style distance bias — on a task it does not give away], [weeks 6–7],
   [Q2], [task hierarchy: retrieval < connectivity < shortest path], [week 7],
 ))
-
-
-== Questions for the committee
-
-- Is the *learnability* angle (vs. representability) the right framing for the thesis?
-- Is $n = 32$–$56$ convincing for a scaling claim, or should compute go to larger $n$
-  over new questions (Q4, Q2)?
-- Any expectation on comparing with other graph-transformer families (e.g. Graphormer)?
-
-#v(1em)
-#align(center)[*Thank you*]
-#align(center)[#rc[Full report: `reports/width-progress.pdf` · code and logs: github.com/barsboldb/mpgnn]]
