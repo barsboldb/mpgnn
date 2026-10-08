@@ -133,6 +133,14 @@ SWEEPS["q7depth"] = dict(SWEEPS["q3lr"], ns=[40], depths=[2, 3, 4, 6, 8], widths
                          widths=[16, 24, 32, 48, 64, 96],
                          widths_by_depth={2: [32, 48, 64, 96, 128, 192],
                                           3: [24, 32, 48, 64, 96, 128]})
+# Q7c: does the depth-2 critical width grow linearly (Yehudai: 2 layers, width O(n)) or
+# ~n^2 like depth 6 (q3)? Same setting as q7depth (n=40, depth 2: m* = 45.3), at
+# n = 32/48/56; widths cover both predictions (m* ~ n vs ~ n^2). Analyse with
+# `--scaling --also q7depth` to include the n=40 point.
+SWEEPS["q7c"] = dict(SWEEPS["q7depth"], ns=[32, 48, 56], depths=[2], widths_by_depth={},
+                     widths_by_n={32: [16, 24, 32, 48, 64, 96],
+                                  48: [32, 48, 64, 96, 128],
+                                  56: [32, 48, 64, 96, 128, 192]})
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
@@ -567,7 +575,7 @@ def crossing(widths, ys, th):
     return float("nan")
 
 
-def scaling(name, th=0.95, max_width=None):
+def scaling(name, th=0.95, max_width=None, also=()):
     """Critical width vs n: where the seed-mean curve crosses `th` for fitting (final
     train pair accuracy) and generalizing (final test pair accuracy), per seed and
     pooled, with a log-log slope across n for each (depth, train size). "seed-mean" is
@@ -578,7 +586,10 @@ def scaling(name, th=0.95, max_width=None):
     Both use the final epoch: the best-val checkpoint is chosen on validation
     *exact-match*, which ties at 0.5 when no graph is fully right, and then picks
     epoch 1 — whose pair accuracy is the trivial predictor's, not the model's."""
-    runs = [r for r in load_runs(name) if max_width is None or r["width"] <= max_width]
+    own = load_runs(name)
+    groups_own = {(c[1], c[2]) for c in map(cell, own)}
+    extra = [r for a in also for r in load_runs(a) if cell(r)[1:] in groups_own]
+    runs = [r for r in own + extra if max_width is None or r["width"] <= max_width]
     groups = sorted({(c[1], c[2]) for c in map(cell, runs)})
     for depth, size in groups:
         sub = [r for r in runs if cell(r)[1:] == (depth, size)]
@@ -677,9 +688,11 @@ if __name__ == "__main__":
     ap.add_argument("--prepare", action="store_true", help="build the sweep's datasets first")
     ap.add_argument("--scaling", action="store_true", help="critical width vs n, log-log slope")
     ap.add_argument("--max-width", type=int, default=None, help="--scaling: drop wider runs")
+    ap.add_argument("--also", nargs="*", default=[],
+                    help="--scaling: add runs of other sweeps in the same (depth, train size)")
     a = ap.parse_args()
     if a.scaling:
-        scaling(a.sweep, max_width=a.max_width)
+        scaling(a.sweep, max_width=a.max_width, also=a.also)
     elif a.prepare:
         prepare(a.sweep)
     elif a.curves:
