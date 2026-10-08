@@ -58,7 +58,7 @@
   #v(-0.3em)
   #text(11pt, fill: luma(80))[Progress report — what was done, what came out, and what it means]
   #v(-0.2em)
-  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-07 ·
+  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-08 ·
   raw log: #kbd("docs/CHANGELOG.md") · questions: #kbd("docs/WIDTH-QUESTIONS.md")]
 ]
 
@@ -83,6 +83,10 @@
     with the rate tuned where tested (seed-bootstrap 90 % range 1.68–2.03). Doubling the
     training steps does not lower it, and neither does a fixed-width input encoding (Q6).
     Theory says this depth needs far less width just to *represent* connectivity.
+  + *Depth trades for width only mildly.* At $n = 40$, two layers learn connectivity at
+    width ≈ $1.1 n$ (45) and six layers at ≈ $0.75 n$ (30); beyond 4–6 layers depth buys
+    nothing. A 2-layer model solves graphs of diameter ≈ 10 — it does not follow paths
+    hop by hop.
 ]
 
 = Question and set-up
@@ -130,6 +134,7 @@ scale with graph size $n$?
     [10-07], [Q3 step budget: 2× steps (16 runs)], [critical width unchanged — not a training-time effect],
     [10-07], [Q3 learning rate: $10^(-3)$ (16 runs)], [helps wide models at $n = 56$; slope $n^(1.94)$ → $n^(1.85)$],
     [10-07], [Q6: fixed 96-wide input (24 runs)], [growth persists ($n^(2.0)$) — not the read-in],
+    [10-08], [Q7a: depth 2–8 × width at $n = 40$ (60 runs)], [depth 2 learns at $m ≈ 1.1 n$; depth saves ≈ ⅓ of the width],
   ),
   caption: [What was done, in order.],
 )
@@ -536,6 +541,46 @@ $n$ = 40 / 56, $m$ = 16 … 96, 2 seeds (24 runs).
   needs width growing roughly as $n^2$ over this range.
 ]
 
+= Q7a — can depth replace width?
+
+$n = 40$, the audited `swap` data (connected diameter ≈ 10), 128 000 graphs, 24 000
+steps, rate $10^(-3)$, depth $L$ ∈ {2, 3, 4, 6, 8}, widths around each threshold, 2 seeds
+(60 runs).
+
+#figure(
+  image("figures/width-q7depth.png", width: 78%),
+  caption: [Critical width vs depth at $n = 40$ (error bars: range over two seeds).],
+)
+
+#figure(
+  tbl(columns: 6,
+    [depth $L$], [2], [3], [4], [6], [8],
+    [critical width to generalize], [45.3], [37.9], [34.5], [30.1], [32.3],
+    [$m^* \/ n$], [1.13], [0.95], [0.86], [0.75], [0.81],
+  ),
+  caption: [Mean of per-seed crossings at 0.95, final epoch; seeds agree within ≈ ±2.],
+)
+
+#finding[
+  - *Two layers are enough.* At $L = 2$, $m = 48$ reaches test pair 0.968 and $m >= 64$
+    reach ≈ 0.99 — on graphs of diameter ≈ 10. The prediction "depth must cover the
+    diameter by doubling, $2^L >= 10$" was wrong: the model does not trace paths hop by
+    hop.
+  - *The trade-off is mild and saturates.* Going from 2 to 6 layers saves about a third
+    of the width (45 → 30); depth 8 is no better than 6.
+  - *Exact reproduction.* The $L = 6$ runs repeat the Q3 learning-rate baseline at
+    $n = 40$ and give the same critical width (30.1).
+]
+
+#meaning[
+  With adjacency-row tokens, width ≈ $n$ makes constant depth sufficient — the regime
+  Yehudai et al. (2025) prove for their tokenization ("linear width, constant depth");
+  we measure the constant: ≈ $1.1 n$ at depth 2. At fixed $n$ depth matters little, yet at
+  depth 6 the critical width grows ≈ $n^2$ across sizes. Whether the depth-2 critical
+  width also grows ≈ $n^2$, or only linearly as the construction suggests, is the next
+  question (Q7c).
+]
+
 = What it all means so far
 
 + *Measuring width is a protocol problem first.* Learning rate and training-set size
@@ -568,7 +613,8 @@ $n$ = 40 / 56, $m$ = 16 … 96, 2 seeds (24 runs).
 #figure(
   tbl(columns: (auto, 1fr, auto), align: (left, left, center),
     [*Item*], [*Purpose*], [*Status*],
-    [Q7 depth × width], [fix $n$, vary diameter and depth: can depth replace width, and is path length or node count driving the growth?], [next],
+    [Q7c depth-2 scaling], [depth 2 at $n$ = 32 / 48 / 56: does the shallow critical width grow linearly or ≈ $n^2$?], [next],
+    [Q7b diameter], [fix $n$, vary the diameter: is path length or node count driving the growth?], [planned],
     [Q4 Graphormer bias], [shortest-path bias gives connectivity away; needs a task it doesn't leak], [planned],
     [Q2 task hierarchy], [retrieval < connectivity < shortest path, each with its own audit], [planned],
   ),
@@ -580,6 +626,6 @@ $n$ = 40 / 56, $m$ = 16 … 96, 2 seeds (24 runs).
   *Reproduce.* Every number above comes from #kbd("python width_sweep.py <sweep> --analyze")
   or #kbd("--curves") over #kbd("results/width/<sweep>*.jsonl") (sweeps #kbd("q1"),
   #kbd("q1b"), #kbd("q1c"), #kbd("q3pilot"), #kbd("q3pilot2"), #kbd("q3probe"),
-  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
+  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj"), #kbd("q7depth")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
   #kbd("reports/figures/width_progress_plots.py").
 ]

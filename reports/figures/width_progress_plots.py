@@ -197,10 +197,41 @@ def fig_q3fine_scaling():
     fig.savefig(os.path.join(OUT, "width-q3fine-scaling.png"))
 
 
+def fig_q7depth():
+    runs = load_runs("q7depth")
+    depths = [2, 3, 4, 6, 8]
+    fig, ax = plt.subplots(figsize=(4.6, 2.8))
+    for i, (label, key) in enumerate((("to generalize (test)", "test_pair"),
+                                      ("to fit (train)", "train_pair"))):
+        ys, lo, hi = [], [], []
+        for d in depths:
+            sub = [r for r in runs if cell(r)[1] == d]
+            ws = sorted({r["width"] for r in sub})
+            per = []
+            for sd in (0, 1):
+                curve = [np.mean([r["final"][key] for r in sub if r["width"] == w
+                                  and r["seed"] == sd]) for w in ws]
+                per.append(crossing(ws, curve, 0.95))
+            ys.append(np.mean(per)); lo.append(min(per)); hi.append(max(per))
+        ys, lo, hi = map(np.array, (ys, lo, hi))
+        ax.errorbar(depths, ys, yerr=[ys - lo, hi - ys], color=SERIES[i], marker=MARKERS[i],
+                    label=label, markeredgecolor="#fcfcfb", markeredgewidth=1.2, capsize=2.5,
+                    elinewidth=1, zorder=3)
+    ax.axhline(40, color=INK2, lw=1, ls=(0, (3, 3)), zorder=1)
+    ax.text(6.9, 41, "m = n = 40", color=INK2, fontsize=7.5)
+    ax.set_xticks(depths)
+    ax.set_xlabel("depth L (layers)")
+    ax.set_ylabel("critical width m* (n = 40)")
+    ax.set_ylim(20, 52)
+    legend_top(ax, ncol=2)
+    fig.savefig(os.path.join(OUT, "width-q7depth.png"))
+
+
 if __name__ == "__main__":
     fig_q1b()
     fig_q1c()
     fig_q3trim()
     fig_q3fine_curves()
     fig_q3fine_scaling()
+    fig_q7depth()
     print("wrote", ", ".join(f for f in sorted(os.listdir(OUT)) if f.startswith("width-")))
