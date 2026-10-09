@@ -6,6 +6,26 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-10-09
 
+### Sanford et al. 2024a reproduction set up; their connectivity data is degree-solvable
+
+Supervisor asked whether Sanford's experiment was reproduced. Their §4/App. E: GraphQA
+`Reachability` (ER, n 5–19, p ~ U(0,1), one s–t pair; 1K / 100K train), vertex + edge +
+task tokens, decoder-only L=12, m=768, H=12, ~60M params, 1M steps → test 92.9 (1K) /
+98.0 (100K). Their experiment fixes m = 768 (≈ 40× n), so it never tests the
+sublinear-width claim, which is theory only (√N without pause tokens, N^ε with).
+
+Audit of the same distribution (`sanford_repro.py a1k --audit`, 20k examples; mean
+nodes 12.0 / edges 37.7 vs the paper's 11.9 / 37.0): always-yes 0.833; **"yes iff both
+endpoints have degree > 0" 0.973**; within 2 hops 0.932, within 3 hops 0.981. A
+one-line degree rule matches their 100K transformer.
+
+`sanford_repro.py`: re-implemented generator (same distribution, not the same graphs),
+their tokenization, pre-LN causal decoder with GLU (71M params at L=12, m=768), AdamW
+5e-4, dropout 0.1; unstated choices (batch 64, wd 0.01, 1k warm-up, clip 1, length-
+bucketed batches) in the docstring. Sweeps: `a1k` / `a100k` (part A, 20k / 60k steps
+instead of 1M), `bwidth` (part B1: m = 8…768 at L=12, 100K graphs). Kaggle notebook
+generalized to run either script (`SCRIPT`, `SWEEPS`).
+
 ### Q7c: depth-2 critical width grows ~n³, not linearly
 
 q7c: depth 2 at n = 32 / 48 / 56, same setting as q7depth (`swap`, 128k graphs, 24 000
