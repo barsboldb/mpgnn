@@ -58,6 +58,13 @@ SWEEPS = {
     "a100k": dict(BASE, train=100000, steps=60000, eval_every=3000, max_minutes=600),
     # Part B1: their claim is about width, their experiment fixes m = 768. Same model
     # and 100K data, widths 8 ... 768 (heads = m / 64, at least 1).
+    # a100k (constant 5e-4 after warm-up) never fitted its training set (train ~0.92,
+    # loss flat at ~0.19 from step 3k) and went NaN at ~31k under fp16. Rerun with the
+    # rate decayed (cosine to 10 %), at their peak rate and at 1e-4.
+    "a100k_cos": dict(BASE, train=100000, steps=60000, eval_every=3000, max_minutes=600,
+                      schedule="cosine"),
+    "a100k_lr1e4": dict(BASE, train=100000, steps=60000, eval_every=3000, max_minutes=600,
+                        schedule="cosine", lr=1e-4),
     "bwidth": dict(BASE, train=100000, steps=30000, eval_every=3000, max_minutes=240,
                    widths=[8, 16, 32, 64, 128, 256, 768]),
 }
@@ -217,12 +224,19 @@ def train_one(cfg, width, seed, splits):
     model = GraphDecoder(MAX_NODES[cfg["data"]], MAX_LEN[cfg["data"]], width, cfg["depth"],
                          heads, cfg["dropout"]).to(DEVICE)
     opt = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg["weight_decay"])
-    warm = cfg["warmup"]
-    sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda t: min(1.0, (t + 1) / warm))
+    warm, total = cfg["warmup"], cfg["steps"]
+
+    def rate(t):    # linear warm-up, then constant or cosine down to 10 %
+        if t < warm:
+            return (t + 1) / warm
+        if cfg.get("schedule") == "cosine":
+            return 0.1 + 0.45 * (1 + math.cos(math.pi * (t - warm) / max(1, total - warm)))
+        return 1.0
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, rate)
     scaler = torch.amp.GradScaler("cuda", enabled=DEVICE.type == "cuda")
     N, bs = tr[0].size(0), cfg["batch"]
     sub = tuple(t[:2000] for t in tr)
-    history, t0, batches, tot, since = [], time.time(), [], 0.0, 0
+    history, t0, batches, tot, since, bad = [], time.time(), [], 0.0, 0, 0
     for step in range(1, cfg["steps"] + 1):
         model.train()
         if not batches:
@@ -235,21 +249,28 @@ def train_one(cfg, width, seed, splits):
         scaler.unscale_(opt)
         nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         scaler.step(opt); scaler.update(); sched.step()
-        tot += loss.item(); since += 1
+        if math.isfinite(loss.item()):
+            tot += loss.item(); since += 1
+        else:
+            bad += 1          # fp16 overflow: GradScaler skips the step
         out_of_time = time.time() - t0 > 60 * cfg.get("max_minutes", float("inf"))
         if step % cfg["eval_every"] == 0 or step == cfg["steps"] or out_of_time:
-            h = {"step": step, "loss": tot / since, "train": accuracy(model, sub),
+            h = {"step": step, "loss": tot / max(since, 1), "nonfinite": bad,
+                 "train": accuracy(model, sub),
                  "val": accuracy(model, va), "test": accuracy(model, te)}
-            history.append(h); tot, since = 0.0, 0
+            history.append(h)
+            diverged = bad > since         # mostly NaN/inf since the last evaluation
+            tot, since, bad = 0.0, 0, 0
             print(f"    step {step:>7d}  loss {h['loss']:.4f}  train {h['train']:.3f}  "
                   f"val {h['val']:.3f}  test {h['test']:.3f}  ({time.time() - t0:.0f}s)", flush=True)
-            if out_of_time:
-                print(f"    out of time at step {step}", flush=True)
+            if out_of_time or diverged:
+                print(f"    {'out of time' if out_of_time else 'diverged'} at step {step}", flush=True)
                 break
     best = max(history, key=lambda h: h["val"])
     return {"width": width, "depth": cfg["depth"], "seed": seed, "heads": heads,
             "train_size": N, "params": model.num_parameters(), "steps": history[-1]["step"],
-            "seconds": round(time.time() - t0, 1), "final": history[-1], "best_val": best,
+            "seconds": round(time.time() - t0, 1), "diverged": diverged,
+            "final": history[-1], "best_val": best,
             "history": history}
 
 

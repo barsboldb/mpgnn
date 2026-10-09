@@ -6,6 +6,20 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-10-09
 
+### Sanford part A: 1K reproduced (93.0 vs 92.9); 100K failed to optimize, rerun
+
+Kaggle T4, `sanford_repro.py a1k` / `a100k`, m=768 L=12, seed 0, test = 2000 graphs.
+- **a1k: test 0.930 (dev-selected), 0.932 final — their 92.9.** Train 1.000 by step 1k,
+  test flat at 0.93 after; memorizes, and stays below the degree rule (0.971 on this
+  exact test split). 48 min.
+- **a100k: failed.** Train ~0.92, loss flat ~0.19 from step 3k (dip to 0.83 at 6k) —
+  never fit, near the 2-hop rule (0.935); NaN at ~31k under fp16, then all-"no" (0.17).
+  Best dev-selected test 0.920 vs their 98.0. Likely the constant 5e-4 (schedule not
+  stated in the paper) at batch 64.
+- Rerun: `a100k_cos` (cosine 5e-4 → 10 %) and `a100k_lr1e4` (cosine 1e-4), one per GPU;
+  runs now stop when the loss is mostly non-finite. ~0.13 s/step on a T4.
+  (`results/sanford/a1k.jsonl`, `a100k.jsonl`)
+
 ### Sanford et al. 2024a reproduction set up; their connectivity data is degree-solvable
 
 Supervisor asked whether Sanford's experiment was reproduced. Their §4/App. E: GraphQA
