@@ -7,8 +7,22 @@ supervisor on 2026-10-09: "did you reproduce what they claimed and what they did
 
 Code: `sanford_repro.py` (sweeps `a1k`, `a100k*`, `bwidth`; `--audit`, `--analyze`).
 Runs on Kaggle via `kaggle/width_sweep.ipynb` with `SCRIPT = "sanford_repro.py"`.
-Results: `results/sanford/`. Dated log: `docs/CHANGELOG.md` (2026-10-09, 2026-10-10).
+Results: `results/sanford/`. Dated log: `docs/CHANGELOG.md` (2026-10-09 → 2026-10-11).
 Reading notes on the paper's theory: `reports/sanford-2024-notes.typ`.
+
+## Summary
+
+| What | Theirs | Ours | Status |
+|---|---|---|---|
+| Data distribution (GraphQA reachability) | 11.9 nodes / 37.0 edges | 12.0 / 37.7 | ✓ reproduced |
+| Test accuracy, 1K training graphs | 92.9 | **93.0** | ✓ reproduced |
+| Test accuracy, 100K training graphs | 98.0 | **98.2** | ✓ reproduced — at LR 1e-4, not their 5e-4 |
+| Their LR 5e-4 at 100K | (works for them) | stuck at ~0.93, NaN | ✗ not reproduced (batch size unknown) |
+| "Transformers excel at *global* reasoning" | claimed | a 2-hop classifier scores 99.5 | ✗ not supported by this data |
+| Width claim (√N / N^ε) | theory only, never varied | 98 reached at m = 32; hard cases flat in m | ✗ untestable on GraphQA |
+| Other GraphQA tasks, GNN and prompting baselines, T5-11B | reported | — | not attempted (connectivity only) |
+
+Added beyond the paper: a shortcut audit (§4), a hard test set, and a width sweep (§6).
 
 ---
 
@@ -116,7 +130,51 @@ the only rate run above. Hard-set columns ±1.5 pt; one seed.)
 - So on GraphQA width only buys the local shortcuts, and they saturate at m ≈ 32 for
   n ≤ 19. There is no connectivity-specific critical width to measure on this data.
 
-## 7. Next
+## 7. Why GraphQA, and why no audit
+
+The paper doesn't say; this is inference from the paper and the benchmark's origin.
+
+- **Their own benchmark.** GraphQA is from Fatemi, Halcrow & Perozzi, *Talk like a Graph*
+  (ICLR 2024) — all three are co-authors here. It already existed, with published
+  baselines.
+- **Built for LLM prompting, not for algorithmic reasoning.** Graphs are 5–19 nodes so
+  they fit in a prompt as text; plain ER, no shortcut control.
+- **Their empirical claims are comparisons** (trained transformers vs GNNs vs prompted
+  LLMs), and the prompting / GraphToken numbers exist only on GraphQA.
+- **The paper is mainly theory;** §4 is framed as "illuminating" the hierarchy.
+- **They partly noticed.** App. E: GraphQA graphs "do not resemble the large-diameter
+  worst-case instance" behind their lower bounds, and cycle check is "inherently local".
+  The same was not quantified for connectivity.
+- **Shortcut audits weren't yet standard** for graph-reasoning benchmarks in 2024;
+  Abbe et al. (NeurIPS 2024, cycle task) and Ye et al. (2026, degree heuristic) made the
+  issue prominent around and after it.
+- **Their ranking claims don't need one.** Only "global reasoning" does, and they assert
+  it without a direct test. In their favour: local GNNs score below the transformer
+  (94.4 vs 98.0) — but a 2-hop classifier beats both, so that gap more likely reflects
+  trainability than reach.
+
+Thesis framing: complete their App. E caveat rather than "catch" an error — quantify how
+local GraphQA is, show m = 32 suffices there, and test the width claim on audited data.
+
+## 8. Run log
+
+All on Kaggle T4 (2 per session), seed 0, fp16 autocast.
+
+| Sweep | Runs | Steps | Time | Outcome |
+|---|---|---|---|---|
+| `a1k` | 1 | 20k | 48 min | 0.930 |
+| `a100k` | 1 (+1 repeat, not kept) | 60k | 2.1 h each | failed: plateau ~0.92, NaN at ~31k (repeat: ~52k) |
+| `a100k_cos` | 1 | 60k | 2.3 h | 0.932, plateau |
+| `a100k_lr1e4` | 1 | 60k | 2.5 h | 0.982 |
+| `bwidth` | 12 | 30k | ~30 min each, m=768 88 min | §6 |
+
+```sh
+python sanford_repro.py a1k --audit        # §4 (any sweep name; ~40 s)
+python sanford_repro.py <sweep>            # train (resumes; --shard i/k for workers)
+python sanford_repro.py <sweep> --analyze  # tables incl. hard-set buckets
+```
+
+## 9. Next
 
 - **B2 — their encoding on our graphs** (to build): edge tokens + s–t query on audited
   `swap` graphs at n = 32–56; critical width vs n, against √N and our ~n² (Q3). B1 shows
