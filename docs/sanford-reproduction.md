@@ -68,7 +68,8 @@ no-path pairs whose endpoints both have edges (the degree rule is always wrong).
 | trees: graph size (n, edges, density) | 0.944 | 0.878 | 0.720 |
 | trees: + endpoint degrees | 0.977 | 0.938 | 0.411 |
 | **trees: + 2-hop neighbourhoods** | **0.995** | **0.932** | **0.893** |
-| reproduced transformer (`a100k_lr1e4`) | 0.982 | pending (`bwidth` m=768) | pending |
+| reproduced transformer (`a100k_lr1e4`) | 0.982 | — | — |
+| same model at 30k steps (`bwidth` m=768) | 0.980 | 0.808 | 0.700 |
 
 - **Graph size alone gives 0.944**, and the model sees it: the token count is n + |E| + 1.
 - **A 2-hop learner beats the reproduced 71M transformer** (0.995 vs 0.982). With ≤ 19
@@ -87,10 +88,36 @@ no-path pairs whose endpoints both have edges (the degree rule is always wrong).
    our own first benchmark had, and why `swap` exists (`reports/width-progress.pdf`, §
    "Making the task honest").
 
-## 6. Next
+## 6. Part B1 — width on their setup
 
-- **B1 — width on their setup** (`bwidth`, running): m = 8…768 at L = 12, 100K graphs,
-  cosine 1e-4 (and 1e-3 for m ≤ 128). Read the hard-set accuracy against the 2-hop
-  trees, not just test accuracy.
+`bwidth`: their model and 100K graphs at m = 8…768 (L = 12, heads m/64 ≥ 1), 30k steps,
+cosine 1e-4, plus 1e-3 for m ≤ 128; seed 0. Best rate per width, final step:
+
+| m | params | test | hard: 4+ | hard: no path |
+|---|---|---|---|---|
+| 8 | 0.01M | 0.957 | 0.892 | 0.626 |
+| 16 | 0.04M | 0.967 | 0.863 | 0.641 |
+| 32 | 0.13M | **0.983** | 0.869 | 0.644 |
+| 64 | 0.52M | 0.980 | 0.824 | 0.618 |
+| 128 | 2.0M | 0.982 | 0.807 | 0.677 |
+| 256 | 8.0M | 0.984 | 0.846 | 0.686 |
+| 768 | 71M | 0.980 | 0.808 | 0.700 |
+| *2-hop trees* | | *0.995* | *0.932* | *0.893* |
+
+(Row per width: the rate with the higher dev accuracy where both ran — 1e-3 for
+m ≤ 64, 1e-4 above. Hard-set columns ±1.5 pt; one seed.)
+
+- **Their 98.0 needs only m = 32** (130K parameters, ~550× fewer than theirs); test
+  accuracy is flat at ~0.98 from m = 32 to 768.
+- **No width beats the 2-hop learner on the hard set** — every model sits at 0.81–0.89
+  (4+) and 0.62–0.70 (no path), below 0.93 / 0.89, and width does not move it.
+- Narrow models don't even finish the degree rule: "no path, isolated" (degree rule
+  1.00) is 0.84–0.94 at m ≤ 16 and ≥ 0.98 from m = 32.
+- So on GraphQA width only buys the local shortcuts, and they saturate at m ≈ 32 for
+  n ≤ 19. There is no connectivity-specific critical width to measure on this data.
+
+## 7. Next
+
 - **B2 — their encoding on our graphs** (to build): edge tokens + s–t query on audited
-  `swap` graphs at n = 32–56; critical width vs n, against √N and our ~n² (Q3).
+  `swap` graphs at n = 32–56; critical width vs n, against √N and our ~n² (Q3). B1 shows
+  this is the only way to measure their width claim: GraphQA saturates on shortcuts.
