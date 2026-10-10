@@ -9,9 +9,9 @@ Record of findings, bugs, and decisions made during experiments.
 ### Sanford B1: their 98 needs only m = 32; no width beats a 2-hop learner on the hard set
 
 `bwidth` (Kaggle, 12 runs, ~30 min each, m=768 88 min): L=12, 100K GraphQA graphs, 30k
-steps, cosine 1e-4 (+1e-3 for m ≤ 128). Best rate per width, final test: m=8 0.957,
-16 0.967, **32 0.983**, 64 0.980, 128 0.982, 256 0.984, 768 0.980. Hard set (4+ / no path,
-both have edges): 0.81–0.89 / 0.62–0.70 at every width, m=768 0.808 / 0.700 — all below
+steps, cosine 1e-4 (+1e-3 for m ≤ 128). Rate picked on final dev, final test: m=8 0.957,
+16 0.967, **32 0.983**, 64 0.979, 128 0.979, 256 0.984, 768 0.980. Hard set (4+ / no path,
+both have edges): 0.81–0.89 / 0.63–0.70 at every width, m=768 0.808 / 0.700 — all below
 the 2-hop boosted trees (0.932 / 0.893), and flat in width. m ≤ 16 don't fully learn even
 the degree rule ("no path, isolated" 0.84–0.94). GraphQA saturates on local shortcuts at
 m ≈ 32 for n ≤ 19, so it can't measure a connectivity critical width → B2 (their encoding
