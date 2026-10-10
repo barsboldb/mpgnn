@@ -70,6 +70,18 @@ SWEEPS = {
     "bwidth": dict(BASE, train=100000, steps=30000, eval_every=3000, max_minutes=240,
                    schedule="cosine", lr=1e-4,
                    lrs={1e-4: [8, 16, 32, 64, 128, 256, 768], 1e-3: [8, 16, 32, 64, 128]}),
+    # Result: 98 from m = 32; no width beats a 2-hop learner on the hard set (GraphQA
+    # saturates on shortcuts). Part B2: their encoding on our audited `swap` graphs —
+    # Q3 (q3lr) with vertex + edge + query tokens instead of adjacency rows. 32 random
+    # (s, t) query tokens per graph, each read at its own position, so test query
+    # accuracy estimates Q3's pair accuracy; critical width where it crosses 0.95.
+    # Q3's optimizer and model size (depth 6, head dim 8, Adam 1e-3, no dropout,
+    # batch 128, 24k steps). One training set per n (data_seed), shared by both seeds.
+    "b2": dict(data="swap", ns=[32, 40, 48, 56], queries=32, chord_frac=0.25, dmin=6,
+               depth=6, head_dim=8, dropout=0.0, lr=1e-3, weight_decay=0.0, batch=128,
+               warmup=1200, schedule="cosine", steps=24000, eval_every=2000,
+               train=128000, val=400, test=400, data_seed=0, seeds=[0, 1],
+               widths=[8, 16, 24, 32, 48, 64, 96], max_minutes=90),
 }
 
 
@@ -93,36 +105,89 @@ def graphqa_reachability(num, seed):
     return out
 
 
+def swap_examples(num, n, seed, queries, chord_frac=0.25, dmin=6):
+    """Audited `swap` graphs (width_sweep.swap_blob_graphs: two blobs, two far edges
+    swapped or not), node labels shuffled per graph, with `queries` uniform random
+    (s, t) pairs, s != t. Examples: (n, edges [E, 2], pairs [K, 2], labels [K])."""
+    from width_sweep import swap_blob_graphs
+    rng = np.random.default_rng(seed + 1)
+    out = []
+    for A, _ in swap_blob_graphs(num, n, seed, chord_frac, dmin):
+        perm = rng.permutation(n)
+        A = A[np.ix_(perm, perm)]
+        _, comp = connected_components(csr_matrix(A), directed=False)
+        s = rng.integers(n, size=queries)
+        t = (s + rng.integers(1, n, size=queries)) % n
+        out.append((n, np.argwhere(np.triu(A, 1)), np.stack([s, t], 1),
+                    (comp[s] == comp[t]).astype(np.uint8)))
+    return out
+
+
+def _queries(ex):
+    """(n, edges, pairs [K, 2], labels [K]) for either example format."""
+    if len(ex) == 5:                      # GraphQA: one (s, t) question
+        n, edges, s, t, label = ex
+        return n, edges, np.array([[s, t]]), np.array([label])
+    return ex
+
+
 def tokenize(examples, max_len):
-    """Right-padded token tensors: type, endpoint a, endpoint b [num, max_len]; the
-    task token sits at index length - 1. Vertex v -> (v, v); edge uv -> (u, v)."""
-    num = len(examples)
+    """Right-padded token tensors: type, endpoints a, b [num, max_len]; the K task
+    tokens are the last K before padding, labels y [num, K]. Vertex v -> (v, v);
+    edge uv -> (u, v); task (s, t)."""
+    num, K = len(examples), len(_queries(examples[0])[3])
     typ = torch.zeros(num, max_len, dtype=torch.uint8)
     ab = torch.zeros(num, max_len, 2, dtype=torch.uint8)
     length = torch.zeros(num, dtype=torch.int16)
-    y = torch.zeros(num, dtype=torch.uint8)
-    for k, (n, edges, s, t, label) in enumerate(examples):
-        L = n + len(edges) + 1
+    y = torch.zeros(num, K, dtype=torch.uint8)
+    for k, ex in enumerate(examples):
+        n, edges, pairs, labels = _queries(ex)
+        E = len(edges)
+        L = n + E + K
         assert L <= max_len, (L, max_len)
         ab[k, :n, 0] = ab[k, :n, 1] = torch.arange(n)
-        typ[k, n:n + len(edges)] = EDGE
-        ab[k, n:n + len(edges)] = torch.as_tensor(edges, dtype=torch.uint8).reshape(-1, 2)
-        typ[k, L - 1] = QUERY
-        ab[k, L - 1] = torch.tensor([s, t])
-        length[k], y[k] = L, label
+        typ[k, n:n + E] = EDGE
+        ab[k, n:n + E] = torch.as_tensor(edges, dtype=torch.uint8).reshape(-1, 2)
+        typ[k, n + E:L] = QUERY
+        ab[k, n + E:L] = torch.as_tensor(pairs, dtype=torch.uint8)
+        length[k] = L
+        y[k] = torch.as_tensor(labels, dtype=torch.uint8)
     return typ, ab, length, y
 
 
-MAX_LEN = {"graphqa": 192}      # 19 vertices + C(19, 2) = 171 edges + task token
-MAX_NODES = {"graphqa": 20}
+def max_nodes(cfg):
+    return 20 if cfg["data"] == "graphqa" else cfg["n"]
 
 
-def make_split(cfg, num, seed):
-    key = f"sanford_{cfg['data']}_N{num}_s{seed}"
-    path = os.path.join(CACHE_DIR, key + ".pt")
+def max_len(cfg):
+    if cfg["data"] == "graphqa":
+        return 192              # 19 vertices + C(19, 2) = 171 edges + task token
+    n = cfg["n"]                # swap: two cycles + chords + 2 new edges <= 1.25 n + 3
+    return n + int(1.25 * n) + 4 + cfg["queries"]
+
+
+def _swap_chunk(args):
+    cfg, num, seed = args
+    return tokenize(swap_examples(num, cfg["n"], seed, cfg["queries"], cfg["chord_frac"],
+                                  cfg["dmin"]), max_len(cfg))
+
+
+def make_split(cfg, num, seed, chunk=4000):
+    """Cached tokenized split. swap is built in parallel chunks of `chunk` graphs
+    (n = 32 takes ~27 ms per graph: the dmin filter redraws small blobs)."""
+    tag = "graphqa" if cfg["data"] == "graphqa" else \
+        f"swap_n{cfg['n']}_cf{cfg['chord_frac']}_d{cfg['dmin']}_q{cfg['queries']}"
+    path = os.path.join(CACHE_DIR, f"sanford2_{tag}_N{num}_s{seed}.pt")
     if os.path.exists(path):
         return torch.load(path)
-    data = tokenize(graphqa_reachability(num, seed), MAX_LEN[cfg["data"]])
+    if cfg["data"] == "graphqa":
+        data = tokenize(graphqa_reachability(num, seed), max_len(cfg))
+    else:
+        from multiprocessing import Pool
+        jobs = [(cfg, min(chunk, num - i), seed * 1000 + i // chunk) for i in range(0, num, chunk)]
+        with Pool(min(len(jobs), os.cpu_count() or 1)) as pool:
+            parts = pool.map(_swap_chunk, jobs)
+        data = tuple(torch.cat(t) for t in zip(*parts))
     os.makedirs(CACHE_DIR, exist_ok=True)
     torch.save(data, path + ".tmp")
     os.replace(path + ".tmp", path)
@@ -130,9 +195,9 @@ def make_split(cfg, num, seed):
 
 
 def make_splits(cfg, seed):
-    """Train depends on the run seed; dev and test are fixed across runs."""
-    return (make_split(cfg, cfg["train"], seed), make_split(cfg, cfg["val"], 5555),
-            make_split(cfg, cfg["test"], 9999))
+    """Train depends on the run seed (or a shared data_seed); dev and test are fixed."""
+    return (make_split(cfg, cfg["train"], cfg.get("data_seed", seed)),
+            make_split(cfg, cfg["val"], 5555), make_split(cfg, cfg["test"], 9999))
 
 
 # ── model ─────────────────────────────────────────────────────────────────────
@@ -169,13 +234,15 @@ class GraphDecoder(nn.Module):
         self.norm = nn.LayerNorm(width)
         self.head = nn.Linear(width, 2)
 
-    def forward(self, typ, ab, length):
+    def forward(self, typ, ab, length, K=1):
+        """Logits [B, K, 2] at the K task tokens (the last K before padding)."""
         L = typ.size(1)
         x = (self.typ(typ) + self.node(ab[..., 0]) + self.node(ab[..., 1])
              + self.pos(torch.arange(L, device=typ.device)))
         for blk in self.blocks:
             x = blk(x)
-        last = x[torch.arange(x.size(0), device=x.device), length - 1]
+        pos = length[:, None] - K + torch.arange(K, device=x.device)
+        last = x[torch.arange(x.size(0), device=x.device)[:, None], pos]
         return self.head(self.norm(last))
 
     def num_parameters(self):
@@ -213,8 +280,8 @@ def correct(model, data, bs=256):
     for i in range(0, data[0].size(0), bs):
         typ, ab, length, y = batch_to(data, torch.arange(i, min(i + bs, data[0].size(0))))
         with autocast():
-            out.append((model(typ, ab, length).argmax(-1) == y).cpu())
-    return torch.cat(out)
+            out.append((model(typ, ab, length, y.size(1)).argmax(-1) == y).cpu())
+    return torch.cat(out)            # [num, K]
 
 
 def accuracy(model, data):
@@ -256,7 +323,7 @@ HARD = ("4+", "no path, both have edges")
 def make_hard_split(cfg, per_bucket=1000, seed=7777):
     """Only the examples both shortcuts can't settle: per_bucket of each HARD bucket,
     drawn from the same generator (they are ~2-3 % of it)."""
-    key = f"sanford_{cfg['data']}_hard{per_bucket}_s{seed}"
+    key = f"sanford2_{cfg['data']}_hard{per_bucket}_s{seed}"
     path = os.path.join(CACHE_DIR, key + ".pt")
     if os.path.exists(path):
         return torch.load(path)
@@ -264,10 +331,10 @@ def make_hard_split(cfg, per_bucket=1000, seed=7777):
     while min(have.values()) < per_bucket:
         ex = graphqa_reachability(20000, sd)
         sd += 1
-        for e, b in zip(ex, distance_buckets(tokenize(ex, MAX_LEN[cfg["data"]]))):
+        for e, b in zip(ex, distance_buckets(tokenize(ex, max_len(cfg)))):
             if b in have and have[b] < per_bucket:
                 keep.append(e); have[b] += 1
-    data = tokenize(keep, MAX_LEN[cfg["data"]])
+    data = tokenize(keep, max_len(cfg))
     os.makedirs(CACHE_DIR, exist_ok=True)
     torch.save(data, path + ".tmp")
     os.replace(path + ".tmp", path)
@@ -282,7 +349,7 @@ def train_one(cfg, width, lr, seed, splits):
     tr, va, te = splits
     torch.manual_seed(seed)
     heads = max(1, width // cfg["head_dim"])
-    model = GraphDecoder(MAX_NODES[cfg["data"]], MAX_LEN[cfg["data"]], width, cfg["depth"],
+    model = GraphDecoder(max_nodes(cfg), max_len(cfg), width, cfg["depth"],
                          heads, cfg["dropout"]).to(DEVICE)
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=cfg["weight_decay"])
     warm, total = cfg["warmup"], cfg["steps"]
@@ -304,7 +371,7 @@ def train_one(cfg, width, lr, seed, splits):
             batches = epoch_batches(tr[2], min(bs, N))
         typ, ab, length, y = batch_to(tr, batches.pop())
         with autocast():
-            loss = F.cross_entropy(model(typ, ab, length), y)
+            loss = F.cross_entropy(model(typ, ab, length, y.size(1)).flatten(0, 1), y.flatten())
         opt.zero_grad(set_to_none=True)
         scaler.scale(loss).backward()
         scaler.unscale_(opt)
@@ -328,18 +395,18 @@ def train_one(cfg, width, lr, seed, splits):
                 print(f"    {'out of time' if out_of_time else 'diverged'} at step {step}", flush=True)
                 break
     best = max(history, key=lambda h: h["val"])
-    test_by_dist = by_bucket(correct(model, te), distance_buckets(te))
-    hard = make_hard_split(cfg)
-    hard_by_dist = by_bucket(correct(model, hard), distance_buckets(hard))
-    for label, d in (("test", test_by_dist), ("hard set", hard_by_dist)):
-        print(f"    final {label} by s-t distance: " + "  ".join(
-            f"{b} {v['acc']:.3f} (n={v['count']})" for b, v in d.items()), flush=True)
-    return {"width": width, "lr": lr, "depth": cfg["depth"], "seed": seed, "heads": heads,
+    extra = {"final_test_exact": correct(model, te).all(1).float().mean().item()}
+    if cfg["data"] == "graphqa":
+        hard = make_hard_split(cfg)
+        extra["final_test_by_dist"] = by_bucket(correct(model, te)[:, 0], distance_buckets(te))
+        extra["final_hard_by_dist"] = by_bucket(correct(model, hard)[:, 0], distance_buckets(hard))
+        for label, key in (("test", "final_test_by_dist"), ("hard set", "final_hard_by_dist")):
+            print(f"    final {label} by s-t distance: " + "  ".join(
+                f"{b} {v['acc']:.3f} (n={v['count']})" for b, v in extra[key].items()), flush=True)
+    return {"width": width, "lr": lr, "n": cfg.get("n"), "depth": cfg["depth"], "seed": seed, "heads": heads,
             "train_size": N, "params": model.num_parameters(), "steps": history[-1]["step"],
             "seconds": round(time.time() - t0, 1), "diverged": diverged,
-            "final": history[-1], "best_val": best, "final_test_by_dist": test_by_dist,
-            "final_hard_by_dist": hard_by_dist,
-            "history": history}
+            "final": history[-1], "best_val": best, **extra, "history": history}
 
 
 def load_runs(sweep):
@@ -355,41 +422,75 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
     cfg = dict(SWEEPS[name])
     if smoke:
         cfg.update(train=512, val=128, test=128, steps=60, eval_every=30, warmup=10,
-                   widths=[16, 64], depth=2)
+                   widths=[16, 64], depth=2, ns=cfg.get("ns", [None])[:1], seeds=[0])
         name = f"{name}_smoke"
     os.makedirs(OUT_DIR, exist_ok=True)
     suffix = f".shard{shard[0]}of{shard[1]}" if shard[1] > 1 else ""
     path = os.path.join(OUT_DIR, f"{name}{suffix}.jsonl")
-    done = {(r["width"], r.get("lr", r["config"]["lr"]), r["seed"]) for r in load_runs(name)}
-    lrs = cfg.get("lrs", {cfg["lr"]: cfg.get("widths", [cfg["width"]])})
+    done = {(r.get("n"), r["width"], r.get("lr", r["config"]["lr"]), r["seed"])
+            for r in load_runs(name)}
+    lrs = cfg.get("lrs") or {cfg["lr"]: cfg["widths"] if "widths" in cfg else [cfg["width"]]}
     if smoke:
         lrs = {lr: cfg["widths"] for lr in list(lrs)[:1]}
-    todo = [(w, lr, s) for s in cfg["seeds"] for lr, ws in lrs.items() for w in ws
-            if (w, lr, s) not in done]
+    todo = [(n, w, lr, s) for s in cfg["seeds"] for n in cfg.get("ns", [None])
+            for lr, ws in lrs.items() for w in ws if (n, w, lr, s) not in done]
     todo = todo[shard[0]::shard[1]]
     print(f"Device {DEVICE} | sweep {name} shard {shard[0]}/{shard[1]}: "
           f"{len(todo)} runs to go ({len(done)} on disk)", flush=True)
-    for k, (w, lr, s) in enumerate(todo, 1):
-        r = train_one(cfg, w, lr, s, make_splits(cfg, s))
+    splits = {}
+    for k, (n, w, lr, s) in enumerate(todo, 1):
+        c = dict(cfg, n=n) if n else cfg
+        key = (n, c.get("data_seed", s))
+        if key not in splits:
+            splits.clear()               # one training set in memory at a time
+            splits[key] = make_splits(c, s)
+        r = train_one(c, w, lr, s, splits[key])
         r["sweep"], r["config"] = name, {k2: v for k2, v in cfg.items()
                                          if k2 not in ("widths", "seeds", "lrs")}
         with open(path, "a") as f:
             f.write(json.dumps(r) + "\n")
-        print(f"  [{k}/{len(todo)}] m={w:<4d} lr={lr:g} L={cfg['depth']} N={cfg['train']} seed={s}  "
+        print(f"  [{k}/{len(todo)}] n={n} m={w:<4d} lr={lr:g} L={cfg['depth']} N={cfg['train']} seed={s}  "
               f"params={r['params']/1e6:.1f}M  train={r['final']['train']:.3f}  "
               f"test@bestval={r['best_val']['test']:.3f}  test@final={r['final']['test']:.3f}  "
               f"({r['seconds']}s)", flush=True)
 
 
 def analyze(name):
-    runs = sorted(load_runs(name), key=lambda r: (r["width"], r.get("lr", r["config"]["lr"]), r["seed"]))
+    runs = sorted(load_runs(name), key=lambda r: (r.get("n") or 0, r["width"],
+                                                  r.get("lr", r["config"]["lr"]), r["seed"]))
     print(f"\n{name}: test accuracy (dev-selected step / final step; hard set by bucket)")
     for r in runs:
         dist = "  ".join(f"{b}:{v['acc']:.3f}" for b, v in r.get("final_hard_by_dist", {}).items())
-        print(f"  m={r['width']:<4d} lr={r.get('lr', r['config']['lr']):<6g} L={r['depth']:<2d} "
+        if "final_test_exact" in r and r.get("n"):
+            dist = f"exact {r['final_test_exact']:.3f}"
+        print(f"  n={r.get('n')} m={r['width']:<4d} lr={r.get('lr', r['config']['lr']):<6g} L={r['depth']:<2d} "
               f"N={r['train_size']:<6d} seed={r['seed']}  params {r['params']/1e6:6.2f}M  "
               f"train {r['final']['train']:.3f}  test {r['best_val']['test']:.3f} / "
               f"{r['final']['test']:.3f}  {dist}")
+
+
+def scaling(name, th=0.95):
+    """Critical width vs n (swap sweeps): where each seed's final train / test query-
+    accuracy curve crosses th, and the log-log slope of the seed-mean across n."""
+    from width_sweep import crossing
+    runs = load_runs(name)
+    print(f"\n{name}: critical width at query accuracy {th} (final step)")
+    for label, key in (("fit", "train"), ("generalize", "test")):
+        pts = []
+        for n in sorted({r["n"] for r in runs}):
+            sub = [r for r in runs if r["n"] == n]
+            ws = sorted({r["width"] for r in sub})
+            per = [crossing(ws, [np.mean([r["final"][key] for r in sub if r["width"] == w
+                                          and r["seed"] == sd]) for w in ws], th)
+                   for sd in sorted({r["seed"] for r in sub})]
+            print(f"  {label:10s} n={n:<3d} per seed " + ", ".join(f"{x:6.1f}" for x in per) +
+                  f"   mean {np.mean(per):6.1f}   ({len(ws)} widths {ws[0]}-{ws[-1]})")
+            if not np.isnan(per).any():
+                pts.append((n, np.mean(per)))
+        if len(pts) >= 2:
+            x, y = map(np.array, zip(*pts))
+            b = np.polyfit(np.log(x), np.log(y), 1)[0]
+            print(f"  {label:10s} slope d log m*/d log n = {b:.2f} over n={list(x)}")
 
 
 def _features(examples):
@@ -416,12 +517,35 @@ FEATURE_SETS = {"graph size (n, edges, density)": [0, 1, 2],
                 "+ 2-hop neighbourhoods": list(range(11))}
 
 
+def audit_swap(name, train=2000, test=400):
+    """The same audit on the swap queries, per n: rules and boosted trees, each query
+    treated as a GraphQA-style (s, t) question."""
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    cfg = SWEEPS[name]
+    flat = lambda exs: [(n, e, int(p[0]), int(p[1]), int(l)) for n, e, P, L in exs
+                        for p, l in zip(P, L)]
+    print(f"  {'':46s} {'n':>4s} {'query acc':>9s}")
+    for n in cfg["ns"]:
+        Xtr, _, ytr = _features(flat(swap_examples(train, n, 0, cfg["queries"])))
+        Xte, dte, yte = _features(flat(swap_examples(test, n, 9999, cfg["queries"])))
+        rows = [("always yes", np.ones_like(yte))]
+        rows += [(f"yes iff within {k} hops", dte <= k) for k in (2, 4, 6, 8)]
+        for label, cols in FEATURE_SETS.items():
+            clf = HistGradientBoostingClassifier(max_iter=300, random_state=0)
+            rows.append((f"boosted trees: {label}", clf.fit(Xtr[:, cols], ytr).predict(Xte[:, cols])))
+        for label, pred in rows:
+            print(f"  {label:46s} {n:4d} {(pred == yte).mean():9.3f}")
+        print()
+
+
 def audit(name, train=50000):
     """Shortcut audit of the GraphQA reachability data: fixed rules, then gradient-
     boosted classifiers on features of growing reach (fit on a train-distribution
     sample, scored on the test distribution and on the hard set)."""
     from sklearn.ensemble import HistGradientBoostingClassifier
     cfg = SWEEPS[name]
+    if cfg["data"] == "swap":
+        return audit_swap(name)
     Xtr, _, ytr = _features(graphqa_reachability(train, 0))
     test = graphqa_reachability(20000, 9999)
     Xte, dte, yte = _features(test)
@@ -460,16 +584,24 @@ if __name__ == "__main__":
     ap.add_argument("--analyze", action="store_true")
     ap.add_argument("--audit", action="store_true")
     ap.add_argument("--prepare", action="store_true", help="build the sweep's datasets first")
+    ap.add_argument("--scaling", action="store_true", help="swap sweeps: critical width vs n")
     ap.add_argument("--shard", default="0/1", help="i/k: run every k-th pending run from i")
     a = ap.parse_args()
     if a.analyze:
         analyze(f"{a.sweep}_smoke" if a.smoke else a.sweep)
     elif a.audit:
         audit(a.sweep)
+    elif a.scaling:
+        scaling(a.sweep)
     elif a.prepare:
-        for sd in SWEEPS[a.sweep]["seeds"]:
-            make_splits(SWEEPS[a.sweep], sd)
-        make_hard_split(SWEEPS[a.sweep])
+        cfg = SWEEPS[a.sweep]
+        for n in cfg.get("ns", [None]):
+            c = dict(cfg, n=n) if n else cfg
+            for sd in sorted({c.get("data_seed", sd) for sd in c["seeds"]}):
+                make_splits(c, sd)
+                print(f"  ready: n={n} data seed {sd}", flush=True)
+        if cfg["data"] == "graphqa":
+            make_hard_split(cfg)
     else:
         i, k = map(int, a.shard.split("/"))
         run_sweep(a.sweep, smoke=a.smoke, shard=(i, k))

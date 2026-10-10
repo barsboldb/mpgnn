@@ -174,8 +174,31 @@ python sanford_repro.py <sweep>            # train (resumes; --shard i/k for wor
 python sanford_repro.py <sweep> --analyze  # tables incl. hard-set buckets
 ```
 
-## 9. Next
+## 9. Part B2 — their encoding on audited graphs (set up)
 
-- **B2 — their encoding on our graphs** (to build): edge tokens + s–t query on audited
-  `swap` graphs at n = 32–56; critical width vs n, against √N and our ~n² (Q3). B1 shows
-  this is the only way to measure their width claim: GraphQA saturates on shortcuts.
+`b2`: Q3's setting (q3lr) with Sanford's tokenization instead of adjacency rows.
+
+- **Graphs:** `swap` (chord fraction 0.25, d_min 6), n = 32 / 40 / 48 / 56, node labels
+  shuffled per graph, 128k training graphs (one set per n, shared by both seeds),
+  400 dev / 400 test.
+- **Tokens:** n vertex + |E| edge + **32 query tokens** (uniform random s ≠ t), each read
+  out at its own position; test query accuracy estimates Q3's pair accuracy. N = n + |E|
+  ≈ 2.25n graph tokens (73–128).
+- **Model:** the causal GLU decoder, depth 6, head dim 8, Adam 1e-3 → cosine, no dropout,
+  batch 128, 24k steps — Q3's optimizer and size, so only the encoding / read-out differ.
+- **Sweep:** m = 8, 16, 24, 32, 48, 64, 96 × 4 n × 2 seeds = 56 runs; critical width where
+  test query accuracy crosses 0.95 (`--scaling`), against Q3 (21.9 / 30.2 / 51.1 / 57.9,
+  ∝ n^1.85), √N (≈ 9–11) and linear.
+
+**Audit** (`python sanford_repro.py b2 --audit`, 400 test graphs × 32 queries per n):
+
+| Predictor | n=32 | 40 | 48 | 56 |
+|---|---|---|---|---|
+| always "yes" | 0.749 | 0.748 | 0.757 | 0.760 |
+| within 4 hops | 0.751 | 0.693 | 0.639 | 0.602 |
+| within 6 hops | 0.917 | 0.870 | 0.840 | 0.809 |
+| within 8 hops | 0.998 | 0.981 | 0.961 | 0.933 |
+| trees: + 2-hop neighbourhoods | 0.749 | 0.746 | 0.756 | 0.759 |
+
+Local learners sit at the trivial rate (vs 0.995 on GraphQA); 0.95 needs ~7–8 hops of
+reach, i.e. computing reachability over most of the diameter.

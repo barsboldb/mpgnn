@@ -6,6 +6,16 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-10-11
 
+### Sanford B2 set up: their encoding on swap; local learners at the trivial rate
+
+`sanford_repro.py b2`: q3lr's setting with vertex + edge + 32 query tokens per graph
+(uniform s ≠ t, read at each query position) on `swap` n = 32–56, 128k graphs, depth 6,
+m = 8…96, 2 seeds (56 runs); `--scaling` gives critical width at query accuracy 0.95.
+Script generalized to K queries per graph, an n axis, parallel chunked swap generation
+(n = 32 is ~27 ms/graph), shared data seed. Audit: boosted trees on 2-hop features
+0.746–0.759 = always-yes (0.748–0.760); 8-hop rule 0.998 / 0.981 / 0.961 / 0.933.
+GraphQA path unchanged (smoke numbers identical). Details: `docs/sanford-reproduction.md` §9.
+
 ### Sanford B1: their 98 needs only m = 32; no width beats a 2-hop learner on the hard set
 
 `bwidth` (Kaggle, 12 runs, ~30 min each, m=768 88 min): L=12, 100K GraphQA graphs, 30k
