@@ -392,24 +392,65 @@ def analyze(name):
               f"{r['final']['test']:.3f}  {dist}")
 
 
-def audit(name):
-    """No-learning rules on the sweep's test distribution."""
-    cfg = SWEEPS[name]
-    ex = graphqa_reachability(cfg["test"] * 10, 9999)
-    y = np.array([e[4] for e in ex])
-    d, both = [], []
-    for n, edges, s, t, _ in ex:
+def _features(examples):
+    """Per-example features of growing reach, the s-t distance and the label."""
+    rows, d, y = [], [], []
+    for n, edges, s, t, label in examples:
         A = csr_matrix((np.ones(len(edges)), (edges[:, 0], edges[:, 1])), shape=(n, n))
+        A = ((A + A.T) > 0).astype(np.int32)
+        deg = np.asarray(A.sum(1)).ravel()
+        n1 = [set(A[v].indices) for v in (s, t)]
+        n2 = [set().union(*(A[u].indices for u in nb)) | nb if nb else set() for nb in n1]
+        m = len(edges)
+        rows.append([n, m, m / (n * (n - 1) / 2),                       # graph size
+                     deg[s], deg[t], min(deg[s], deg[t]),               # 1 hop
+                     int(t in n1[0]), len(n1[0] & n1[1]),               # 2 hops
+                     len(n2[0]), len(n2[1]), int(t in n2[0])])
         d.append(shortest_path(A, directed=False, unweighted=True, indices=s)[t])
-        deg = np.bincount(edges.ravel(), minlength=n)
-        both.append(deg[s] > 0 and deg[t] > 0)
-    d, both = np.array(d), np.array(both)
-    print(f"{len(ex)} test-distribution examples, mean nodes "
-          f"{np.mean([e[0] for e in ex]):.2f}, mean edges {np.mean([len(e[1]) for e in ex]):.1f}")
-    print(f"  always yes               {y.mean():.3f}")
-    print(f"  yes iff both degrees > 0 {(both == y).mean():.3f}")
+        y.append(label)
+    return np.array(rows, dtype=float), np.array(d), np.array(y)
+
+
+FEATURE_SETS = {"graph size (n, edges, density)": [0, 1, 2],
+                "+ endpoint degrees": [0, 1, 2, 3, 4, 5],
+                "+ 2-hop neighbourhoods": list(range(11))}
+
+
+def audit(name, train=50000):
+    """Shortcut audit of the GraphQA reachability data: fixed rules, then gradient-
+    boosted classifiers on features of growing reach (fit on a train-distribution
+    sample, scored on the test distribution and on the hard set)."""
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    cfg = SWEEPS[name]
+    Xtr, _, ytr = _features(graphqa_reachability(train, 0))
+    test = graphqa_reachability(20000, 9999)
+    Xte, dte, yte = _features(test)
+    hard = make_hard_split(cfg)
+    hard_ex = []
+    for k in range(hard[0].size(0)):          # decode the tokenized hard set
+        typ, ab, L = hard[0][k], hard[1][k], int(hard[2][k])
+        n = int((typ[:L] == VERTEX).sum())
+        e = ab[:L][typ[:L] == EDGE].long().numpy().reshape(-1, 2)
+        s, t = (int(x) for x in ab[L - 1])
+        hard_ex.append((n, e, s, t, int(hard[3][k])))
+    Xh, dh, yh = _features(hard_ex)
+    far, cut = np.isfinite(dh), ~np.isfinite(dh)   # 4+ hops / no path, both have edges
+    print(f"test distribution: {len(test)} examples, mean nodes {Xte[:, 0].mean():.2f}, "
+          f"mean edges {Xte[:, 1].mean():.1f}, yes {yte.mean():.3f}")
+    print(f"hard set: {far.sum()} connected pairs >= 4 hops, {cut.sum()} no-path pairs "
+          f"with both endpoints' degree > 0\n")
+    print(f"  {'':46s} {'test':>6s} {'hard: 4+':>9s} {'hard: no path':>14s}")
+
+    def row(label, pt, ph):
+        print(f"  {label:46s} {(pt == yte).mean():6.3f} {(ph[far] == yh[far]).mean():9.3f} "
+              f"{(ph[cut] == yh[cut]).mean():14.3f}")
+    row("always yes", np.ones_like(yte), np.ones_like(yh))
+    row("yes iff both degrees > 0", Xte[:, 5] > 0, Xh[:, 5] > 0)
     for k in (1, 2, 3):
-        print(f"  yes iff within {k} hops   {((d <= k) == y).mean():.3f}")
+        row(f"yes iff within {k} hops", dte <= k, dh <= k)
+    for label, cols in FEATURE_SETS.items():
+        clf = HistGradientBoostingClassifier(max_iter=300, random_state=0).fit(Xtr[:, cols], ytr)
+        row(f"boosted trees: {label}", clf.predict(Xte[:, cols]), clf.predict(Xh[:, cols]))
 
 
 if __name__ == "__main__":

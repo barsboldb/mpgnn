@@ -6,6 +6,26 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-10-10
 
+### GraphQA reachability is solvable from 2-hop features (0.995) — even its hard cases
+
+`sanford_repro.py bwidth --audit`: rules, then gradient-boosted trees fit on 50k
+train-distribution examples, scored on 20k test-distribution examples and the hard set
+(1000 connected pairs ≥ 4 hops, 1000 no-path pairs with both degrees > 0).
+
+| | test | hard: 4+ | hard: no path |
+|---|---|---|---|
+| degree rule / 3-hop rule | 0.973 / 0.981 | 1.000 / 0.000 | 0.000 / 1.000 |
+| trees: graph size (n, edges, density) | 0.944 | 0.878 | 0.720 |
+| trees: + endpoint degrees | 0.977 | 0.938 | 0.411 |
+| trees: + 2-hop neighbourhoods | **0.995** | 0.932 | 0.893 |
+
+- Graph size alone gives 0.944 — and the token count reveals n + |E|.
+- A 2-hop learner beats the reproduced 71M transformer (0.982). On graphs of ≤ 19 nodes
+  the 2-hop ball mostly covers the component, so even the hard set is ~90 % local.
+- So GraphQA reachability cannot separate computing connectivity from local statistics;
+  Sanford's experiment can't support a global-reasoning claim. The hard set is a
+  sharper check than the full test set but must be read against 0.93 / 0.89, not 0.5.
+
 ### Sanford part A reproduced at 100K with LR 1e-4 (0.982 vs 98.0) — level with the 3-hop rule
 
 `a100k_lr1e4` (cosine from 1e-4): test **0.982** dev-selected, 0.979 final, train 1.000;
