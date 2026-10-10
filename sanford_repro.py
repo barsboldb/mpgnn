@@ -56,8 +56,6 @@ SWEEPS = {
     # max_minutes stops a run early (evaluated and saved) inside Kaggle's 12 h session.
     "a1k": dict(BASE, train=1000, steps=20000, eval_every=1000, max_minutes=300),
     "a100k": dict(BASE, train=100000, steps=60000, eval_every=3000, max_minutes=600),
-    # Part B1: their claim is about width, their experiment fixes m = 768. Same model
-    # and 100K data, widths 8 ... 768 (heads = m / 64, at least 1).
     # a100k (constant 5e-4 after warm-up) never fitted its training set (train ~0.92,
     # loss flat at ~0.19 from step 3k) and went NaN at ~31k under fp16. Rerun with the
     # rate decayed (cosine to 10 %), at their peak rate and at 1e-4.
@@ -65,8 +63,13 @@ SWEEPS = {
                       schedule="cosine"),
     "a100k_lr1e4": dict(BASE, train=100000, steps=60000, eval_every=3000, max_minutes=600,
                         schedule="cosine", lr=1e-4),
+    # Result: 1e-4 reproduces their 98.0 (0.982); 5e-4 + cosine still stuck at 0.93.
+    # Part B1: their claim is about width, their experiment fixes m = 768. Same model
+    # and 100K data at the rate that worked, widths 8 ... 768 (heads = m / 64, at
+    # least 1). Narrow models may want a higher rate (Q1), so m <= 128 also get 1e-3.
     "bwidth": dict(BASE, train=100000, steps=30000, eval_every=3000, max_minutes=240,
-                   widths=[8, 16, 32, 64, 128, 256, 768]),
+                   schedule="cosine", lr=1e-4,
+                   lrs={1e-4: [8, 16, 32, 64, 128, 256, 768], 1e-3: [8, 16, 32, 64, 128]}),
 }
 
 
@@ -203,27 +206,85 @@ def batch_to(data, idx):
 
 
 @torch.no_grad()
-def accuracy(model, data, bs=256):
+def correct(model, data, bs=256):
+    """Per-example right/wrong, as a bool tensor."""
     model.eval()
-    right = 0
+    out = []
     for i in range(0, data[0].size(0), bs):
         typ, ab, length, y = batch_to(data, torch.arange(i, min(i + bs, data[0].size(0))))
         with autocast():
-            right += (model(typ, ab, length).argmax(-1) == y).sum().item()
-    return right / data[0].size(0)
+            out.append((model(typ, ab, length).argmax(-1) == y).cpu())
+    return torch.cat(out)
+
+
+def accuracy(model, data):
+    return correct(model, data).float().mean().item()
+
+
+def distance_buckets(data):
+    """s-t distance of each example, bucketed: "1", "2", "3", "4+", "no path, isolated"
+    (s or t has no edge) and "no path, both have edges". The 3-hop rule is wrong on
+    exactly "4+", the degree rule on exactly "no path, both have edges"; a model right
+    on both does more than either shortcut."""
+    typ, ab, length, _ = data
+    out = []
+    for k in range(typ.size(0)):
+        L = int(length[k])
+        n = int((typ[k, :L] == VERTEX).sum())
+        e = ab[k, :L][typ[k, :L] == EDGE].long().numpy()
+        s, t = (int(x) for x in ab[k, L - 1])
+        A = csr_matrix((np.ones(len(e)), (e[:, 0], e[:, 1])), shape=(n, n))
+        d = shortest_path(A, directed=False, unweighted=True, indices=s)[t]
+        if np.isfinite(d):
+            out.append(str(int(d)) if d <= 3 else "4+")
+        else:
+            deg = np.bincount(e.ravel(), minlength=n)
+            out.append("no path, both have edges" if deg[s] and deg[t] else "no path, isolated")
+    return np.array(out)
+
+
+def by_bucket(ok, buckets):
+    return {b: {"acc": round(float(ok[buckets == b].float().mean()), 4),
+                "count": int((buckets == b).sum())}
+            for b in BUCKETS if (buckets == b).any()}
+
+
+BUCKETS = ("1", "2", "3", "4+", "no path, isolated", "no path, both have edges")
+HARD = ("4+", "no path, both have edges")
+
+
+def make_hard_split(cfg, per_bucket=1000, seed=7777):
+    """Only the examples both shortcuts can't settle: per_bucket of each HARD bucket,
+    drawn from the same generator (they are ~2-3 % of it)."""
+    key = f"sanford_{cfg['data']}_hard{per_bucket}_s{seed}"
+    path = os.path.join(CACHE_DIR, key + ".pt")
+    if os.path.exists(path):
+        return torch.load(path)
+    keep, have, sd = [], {b: 0 for b in HARD}, seed
+    while min(have.values()) < per_bucket:
+        ex = graphqa_reachability(20000, sd)
+        sd += 1
+        for e, b in zip(ex, distance_buckets(tokenize(ex, MAX_LEN[cfg["data"]]))):
+            if b in have and have[b] < per_bucket:
+                keep.append(e); have[b] += 1
+    data = tokenize(keep, MAX_LEN[cfg["data"]])
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    torch.save(data, path + ".tmp")
+    os.replace(path + ".tmp", path)
+    return data
 
 
 def autocast():
     return torch.autocast("cuda", dtype=torch.float16, enabled=DEVICE.type == "cuda")
 
 
-def train_one(cfg, width, seed, splits):
+def train_one(cfg, width, lr, seed, splits):
     tr, va, te = splits
     torch.manual_seed(seed)
     heads = max(1, width // cfg["head_dim"])
     model = GraphDecoder(MAX_NODES[cfg["data"]], MAX_LEN[cfg["data"]], width, cfg["depth"],
                          heads, cfg["dropout"]).to(DEVICE)
-    opt = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg["weight_decay"])
+    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=cfg["weight_decay"])
     warm, total = cfg["warmup"], cfg["steps"]
 
     def rate(t):    # linear warm-up, then constant or cosine down to 10 %
@@ -267,10 +328,17 @@ def train_one(cfg, width, seed, splits):
                 print(f"    {'out of time' if out_of_time else 'diverged'} at step {step}", flush=True)
                 break
     best = max(history, key=lambda h: h["val"])
-    return {"width": width, "depth": cfg["depth"], "seed": seed, "heads": heads,
+    test_by_dist = by_bucket(correct(model, te), distance_buckets(te))
+    hard = make_hard_split(cfg)
+    hard_by_dist = by_bucket(correct(model, hard), distance_buckets(hard))
+    for label, d in (("test", test_by_dist), ("hard set", hard_by_dist)):
+        print(f"    final {label} by s-t distance: " + "  ".join(
+            f"{b} {v['acc']:.3f} (n={v['count']})" for b, v in d.items()), flush=True)
+    return {"width": width, "lr": lr, "depth": cfg["depth"], "seed": seed, "heads": heads,
             "train_size": N, "params": model.num_parameters(), "steps": history[-1]["step"],
             "seconds": round(time.time() - t0, 1), "diverged": diverged,
-            "final": history[-1], "best_val": best,
+            "final": history[-1], "best_val": best, "final_test_by_dist": test_by_dist,
+            "final_hard_by_dist": hard_by_dist,
             "history": history}
 
 
@@ -292,30 +360,36 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
     os.makedirs(OUT_DIR, exist_ok=True)
     suffix = f".shard{shard[0]}of{shard[1]}" if shard[1] > 1 else ""
     path = os.path.join(OUT_DIR, f"{name}{suffix}.jsonl")
-    done = {(r["width"], r["seed"]) for r in load_runs(name)}
-    todo = [(w, s) for s in cfg["seeds"] for w in cfg.get("widths", [cfg["width"]])
-            if (w, s) not in done]
+    done = {(r["width"], r.get("lr", r["config"]["lr"]), r["seed"]) for r in load_runs(name)}
+    lrs = cfg.get("lrs", {cfg["lr"]: cfg.get("widths", [cfg["width"]])})
+    if smoke:
+        lrs = {lr: cfg["widths"] for lr in list(lrs)[:1]}
+    todo = [(w, lr, s) for s in cfg["seeds"] for lr, ws in lrs.items() for w in ws
+            if (w, lr, s) not in done]
     todo = todo[shard[0]::shard[1]]
     print(f"Device {DEVICE} | sweep {name} shard {shard[0]}/{shard[1]}: "
           f"{len(todo)} runs to go ({len(done)} on disk)", flush=True)
-    for k, (w, s) in enumerate(todo, 1):
-        r = train_one(cfg, w, s, make_splits(cfg, s))
-        r["sweep"], r["config"] = name, {k2: v for k2, v in cfg.items() if k2 not in ("widths", "seeds")}
+    for k, (w, lr, s) in enumerate(todo, 1):
+        r = train_one(cfg, w, lr, s, make_splits(cfg, s))
+        r["sweep"], r["config"] = name, {k2: v for k2, v in cfg.items()
+                                         if k2 not in ("widths", "seeds", "lrs")}
         with open(path, "a") as f:
             f.write(json.dumps(r) + "\n")
-        print(f"  [{k}/{len(todo)}] m={w:<4d} L={cfg['depth']} N={cfg['train']} seed={s}  "
+        print(f"  [{k}/{len(todo)}] m={w:<4d} lr={lr:g} L={cfg['depth']} N={cfg['train']} seed={s}  "
               f"params={r['params']/1e6:.1f}M  train={r['final']['train']:.3f}  "
               f"test@bestval={r['best_val']['test']:.3f}  test@final={r['final']['test']:.3f}  "
               f"({r['seconds']}s)", flush=True)
 
 
 def analyze(name):
-    runs = sorted(load_runs(name), key=lambda r: (r["width"], r["seed"]))
-    print(f"\n{name}: test accuracy (dev-selected step / final step)")
+    runs = sorted(load_runs(name), key=lambda r: (r["width"], r.get("lr", r["config"]["lr"]), r["seed"]))
+    print(f"\n{name}: test accuracy (dev-selected step / final step; hard set by bucket)")
     for r in runs:
-        print(f"  m={r['width']:<4d} L={r['depth']:<2d} N={r['train_size']:<6d} seed={r['seed']}  "
-              f"params {r['params']/1e6:6.2f}M  train {r['final']['train']:.3f}  "
-              f"test {r['best_val']['test']:.3f} / {r['final']['test']:.3f}")
+        dist = "  ".join(f"{b}:{v['acc']:.3f}" for b, v in r.get("final_hard_by_dist", {}).items())
+        print(f"  m={r['width']:<4d} lr={r.get('lr', r['config']['lr']):<6g} L={r['depth']:<2d} "
+              f"N={r['train_size']:<6d} seed={r['seed']}  params {r['params']/1e6:6.2f}M  "
+              f"train {r['final']['train']:.3f}  test {r['best_val']['test']:.3f} / "
+              f"{r['final']['test']:.3f}  {dist}")
 
 
 def audit(name):
@@ -354,6 +428,7 @@ if __name__ == "__main__":
     elif a.prepare:
         for sd in SWEEPS[a.sweep]["seeds"]:
             make_splits(SWEEPS[a.sweep], sd)
+        make_hard_split(SWEEPS[a.sweep])
     else:
         i, k = map(int, a.shard.split("/"))
         run_sweep(a.sweep, smoke=a.smoke, shard=(i, k))

@@ -4,6 +4,25 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-10
+
+### Sanford part A reproduced at 100K with LR 1e-4 (0.982 vs 98.0) — level with the 3-hop rule
+
+`a100k_lr1e4` (cosine from 1e-4): test **0.982** dev-selected, 0.979 final, train 1.000;
+±0.003 at 2000 test graphs, so it matches their 98.0. `a100k_cos` (cosine from 5e-4):
+still stuck, train/test ~0.93 — their peak rate is too hot in our setup (batch 64; theirs
+unstated), decay alone doesn't fix it. A repeat of the constant-5e-4 run failed the same
+way (plateau ~0.93, NaN at ~52k; kept in `kaggle/working/sanford2`, not in results).
+
+Same test split: degree rule 0.971, 3-hop rule 0.980 — the reproduced 98.2 doesn't show
+connectivity is computed. `sanford_repro.py` now reports final accuracy per s–t distance
+bucket and on a **hard set** (seed 7777, same generator): 1000 connected pairs ≥ 4 hops
+apart (3-hop rule always wrong) + 1000 no-path pairs whose endpoints both have edges
+(degree rule always wrong). A 2-layer m=16/64 smoke model scores ~0.87–0.90 / ~0.10 there,
+i.e. the degree rule. `bwidth` (B1) now at cosine 1e-4 for m = 8…768 plus 1e-3 for
+m ≤ 128 (12 runs); its m=768 run gives the hard-set numbers for the reproduced model.
+(`results/sanford/a100k_cos.jsonl`, `a100k_lr1e4.jsonl`)
+
 ## 2026-10-09
 
 ### Sanford part A: 1K reproduced (93.0 vs 92.9); 100K failed to optimize, rerun
