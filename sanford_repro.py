@@ -183,10 +183,17 @@ def make_split(cfg, num, seed, chunk=4000):
     if cfg["data"] == "graphqa":
         data = tokenize(graphqa_reachability(num, seed), max_len(cfg))
     else:
-        from multiprocessing import Pool
+        # spawn, not Linux's default fork: a child forked after the parent's OpenMP pool
+        # has run (torch.cat of the previous split) deadlocks on its first torch op.
+        import multiprocessing as mp
         jobs = [(cfg, min(chunk, num - i), seed * 1000 + i // chunk) for i in range(0, num, chunk)]
-        with Pool(min(len(jobs), os.cpu_count() or 1)) as pool:
-            parts = pool.map(_swap_chunk, jobs)
+        t0, parts = time.time(), []
+        with mp.get_context("spawn").Pool(min(len(jobs), os.cpu_count() or 1)) as pool:
+            for k, part in enumerate(pool.imap(_swap_chunk, jobs), 1):
+                parts.append(part)
+                if len(jobs) > 1:
+                    print(f"    {tag} seed {seed}: chunk {k}/{len(jobs)}  "
+                          f"{(time.time() - t0) / 60:.1f} min", flush=True)
         data = tuple(torch.cat(t) for t in zip(*parts))
     os.makedirs(CACHE_DIR, exist_ok=True)
     torch.save(data, path + ".tmp")
