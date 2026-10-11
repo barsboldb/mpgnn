@@ -9,7 +9,6 @@
     subtitle: [Progress review 1 (Явц 1) — weeks 1–5],
     author: [Barsbold Bayarerdene],
     date: [October 2026],
-    institution: [Diploma research],
   ),
 )
 
