@@ -234,3 +234,10 @@ therefore *harder* to learn on this task, not easier — the opposite of what Sa
 representation bound would suggest. What B2 cannot yet give is the critical width itself:
 that needs a longer budget (or wider models) for the escape to complete.
 
+**Next — `b2long` (diagnostic, set up 2026-10-12).** Does the escape complete with more
+steps, and at what width? 100k steps (vs 24k), seed 0, cap 9 h per run: n = 32 and 48 at
+m = 32 / 96 / 192 with 1e-3, plus m = 96 / 192 at 3e-4 for n = 32 (8 runs, one per
+shard, 4 per GPU). Reading: wide models reach 0.95 → a full sweep at 100k gives the
+critical width; nothing escapes at m = 192 → their encoding is not learnable at
+affordable width here; only 3e-4 escapes → rerun the sweep at the lower rate.
+

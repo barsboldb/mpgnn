@@ -83,6 +83,14 @@ SWEEPS = {
                train=128000, val=400, test=400, data_seed=0, seeds=[0, 1],
                widths=[8, 16, 24, 32, 48, 64, 96], max_minutes=90),
 }
+# b2 left every m <= 96 at always-"yes" in 24k steps, the loss only starting to drop late
+# and in width order. Diagnostic: 100k steps, m up to 192, and 3e-4 at n = 32 in case the
+# wide models need a lower rate (Q1). `runs` lists (n, width, lr) explicitly, ordered so
+# the shards' round-robin over 2 GPUs gives each GPU one wide n = 32 run.
+SWEEPS["b2long"] = dict(SWEEPS["b2"], ns=[32, 48], seeds=[0], steps=100000, eval_every=5000,
+                        max_minutes=540,
+                        runs=[(48, 192, 1e-3), (32, 192, 1e-3), (32, 192, 3e-4), (48, 96, 1e-3),
+                              (32, 32, 1e-3), (32, 96, 3e-4), (48, 32, 1e-3), (32, 96, 1e-3)])
 
 
 # ── data ──────────────────────────────────────────────────────────────────────
@@ -429,7 +437,7 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
     cfg = dict(SWEEPS[name])
     if smoke:
         cfg.update(train=512, val=128, test=128, steps=60, eval_every=30, warmup=10,
-                   widths=[16, 64], depth=2, ns=cfg.get("ns", [None])[:1], seeds=[0])
+                   widths=[16, 64], depth=2, ns=cfg.get("ns", [None])[:1], seeds=[0], runs=None)
         name = f"{name}_smoke"
     os.makedirs(OUT_DIR, exist_ok=True)
     suffix = f".shard{shard[0]}of{shard[1]}" if shard[1] > 1 else ""
@@ -439,8 +447,9 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
     lrs = cfg.get("lrs") or {cfg["lr"]: cfg["widths"] if "widths" in cfg else [cfg["width"]]}
     if smoke:
         lrs = {lr: cfg["widths"] for lr in list(lrs)[:1]}
-    todo = [(n, w, lr, s) for s in cfg["seeds"] for n in cfg.get("ns", [None])
-            for lr, ws in lrs.items() for w in ws if (n, w, lr, s) not in done]
+    grid = cfg.get("runs") or [(n, w, lr) for n in cfg.get("ns", [None])
+                               for lr, ws in lrs.items() for w in ws]
+    todo = [(n, w, lr, s) for s in cfg["seeds"] for n, w, lr in grid if (n, w, lr, s) not in done]
     todo = todo[shard[0]::shard[1]]
     print(f"Device {DEVICE} | sweep {name} shard {shard[0]}/{shard[1]}: "
           f"{len(todo)} runs to go ({len(done)} on disk)", flush=True)
@@ -453,7 +462,7 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
             splits[key] = make_splits(c, s)
         r = train_one(c, w, lr, s, splits[key])
         r["sweep"], r["config"] = name, {k2: v for k2, v in cfg.items()
-                                         if k2 not in ("widths", "seeds", "lrs")}
+                                         if k2 not in ("widths", "seeds", "lrs", "runs")}
         with open(path, "a") as f:
             f.write(json.dumps(r) + "\n")
         print(f"  [{k}/{len(todo)}] n={n} m={w:<4d} lr={lr:g} L={cfg['depth']} N={cfg['train']} seed={s}  "
