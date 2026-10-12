@@ -5,9 +5,10 @@ Transformer Reasoning Capabilities via Graph Algorithms* (NeurIPS 2024; §4, App
 `papers/sanford-2024-transformer-reasoning-graph-algorithms.pdf`), asked for by the
 supervisor on 2026-10-09: "did you reproduce what they claimed and what they did?"
 
-Code: `sanford_repro.py` (sweeps `a1k`, `a100k*`, `bwidth`; `--audit`, `--analyze`).
+Code: `sanford_repro.py` (sweeps `a1k`, `a100k*`, `bwidth`, `b2`; `--audit`, `--analyze`,
+`--scaling`).
 Runs on Kaggle via `kaggle/width_sweep.ipynb` with `SCRIPT = "sanford_repro.py"`.
-Results: `results/sanford/`. Dated log: `docs/CHANGELOG.md` (2026-10-09 → 2026-10-11).
+Results: `results/sanford/`. Dated log: `docs/CHANGELOG.md` (2026-10-09 → 2026-10-12).
 Reading notes on the paper's theory: `reports/sanford-2024-notes.typ`.
 
 ## Summary
@@ -20,9 +21,11 @@ Reading notes on the paper's theory: `reports/sanford-2024-notes.typ`.
 | Their LR 5e-4 at 100K | (works for them) | stuck at ~0.93, NaN | ✗ not reproduced (batch size unknown) |
 | "Transformers excel at *global* reasoning" | claimed | a 2-hop classifier scores 99.5 | ✗ not supported by this data |
 | Width claim (√N / N^ε) | theory only, never varied | 98 reached at m = 32; hard cases flat in m | ✗ untestable on GraphQA |
+| Their encoding on audited `swap` graphs (n = 32–56, depth 6) | — | every m ≤ 96 stays at always-"yes" in 24k steps; adjacency rows learn at m ≈ 22–58 | their encoding is *harder* to learn; critical width open (§9) |
 | Other GraphQA tasks, GNN and prompting baselines, T5-11B | reported | — | not attempted (connectivity only) |
 
-Added beyond the paper: a shortcut audit (§4), a hard test set, and a width sweep (§6).
+Added beyond the paper: a shortcut audit (§4), a hard test set, a width sweep (§6), and
+their encoding on audited data (§9).
 
 ---
 
@@ -167,6 +170,11 @@ All on Kaggle T4 (2 per session), seed 0, fp16 autocast.
 | `a100k_cos` | 1 | 60k | 2.3 h | 0.932, plateau |
 | `a100k_lr1e4` | 1 | 60k | 2.5 h | 0.982 |
 | `bwidth` | 12 | 30k | ~30 min each, m=768 88 min | §6 |
+| `b2` | 56 (2 seeds) | 24k | ~35–50 min each, 8 jobs on 2 GPUs; data prep ~2 h; ~7.5 h total | §9: all at always-"yes" |
+
+First `b2` attempt hung ~6.7 h in `--prepare`: the fork-started worker pool deadlocked on
+Linux after the parent's torch thread pool had run (macOS spawns, so it passed locally).
+Fixed with a spawn pool and per-chunk progress lines (6a7b210).
 
 ```sh
 python sanford_repro.py a1k --audit        # §4 (any sweep name; ~40 s)

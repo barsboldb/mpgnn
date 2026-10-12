@@ -58,7 +58,7 @@
   #v(-0.3em)
   #text(11pt, fill: luma(80))[Progress report — what was done, what came out, and what it means]
   #v(-0.2em)
-  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-09 ·
+  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-12 ·
   raw log: #kbd("docs/CHANGELOG.md") · questions: #kbd("docs/WIDTH-QUESTIONS.md")]
 ]
 
@@ -90,6 +90,11 @@
     ≈ $n^3$, not linearly as the constant-depth construction allows: at $n = 56$ two
     layers need about 3× the width of six (fit 168 vs 53) and do not generalize to
     0.95 by width 192 (Q7c).
+  + *Sanford et al.'s experiment reproduces, but cannot test their width claim.* Their
+    GraphQA numbers come out at 93.0 / 98.2 (theirs 92.9 / 98.0), yet a 2-hop classifier
+    scores 0.995 and width 32 already gives 98. With their encoding on the audited data,
+    no width up to 96 leaves the trivial predictor at the budget where adjacency rows
+    learn at 22–58.
 ]
 
 = Question and set-up
@@ -279,6 +284,10 @@ continuity), or *budget* (set by Kaggle's 30 GPU-hours a week). The tags below s
     [10-07], [Q6: fixed 96-wide input (24 runs)], [growth persists ($n^(2.0)$) — not the read-in],
     [10-08], [Q7a: depth 2–8 × width at $n = 40$ (60 runs)], [depth 2 learns at $m ≈ 1.1 n$; depth saves ≈ ⅓ of the width],
     [10-09], [Q7c: depth 2 at $n$ = 32 / 48 / 56 (34 runs)], [depth-2 critical width $prop n^(3.1)$ (fit), not linear],
+    [10-10], [Sanford A: their GraphQA experiment (4 runs)], [92.9 / 98.0 reproduced (93.0 / 98.2)],
+    [10-10], [GraphQA shortcut audit], [degree rule 0.973, 2-hop trees 0.995],
+    [10-11], [Sanford B1: width 8–768 on GraphQA (12 runs)], [98 at $m = 32$; hard cases flat in width],
+    [10-12], [Sanford B2: their encoding on `swap` (56 runs)], [no width ≤ 96 leaves always-"yes" in 24k steps],
   ),
   caption: [What was done, in order.],
 )
@@ -784,6 +793,72 @@ supply $n = 40$.
   stand in for depth at a rising cost.
 ]
 
+= Reproducing Sanford et al. 2024a
+
+The supervisor asked whether the experiment behind Sanford et al.'s claim — connectivity
+at depth $O(log N)$ with width ≈ $sqrt(N)$ — had been reproduced. Their model is fixed
+(decoder, $L = 12$, $m = 768$, GLU, vertex + edge + task tokens) and trained on GraphQA
+connectivity (ER graphs, $n <= 19$, one $s$–$t$ question) at 1K and 100K graphs. No code
+was released; we re-implemented data, tokens and model (#kbd("sanford_repro.py"),
+details in #kbd("docs/sanford-reproduction.md")).
+
+#figure(
+  tbl(columns: 3, align: (left, center, center),
+    [], [*Theirs*], [*Ours*],
+    [test accuracy, 1K graphs], [92.9], [*93.0*],
+    [test accuracy, 100K graphs], [98.0], [*98.2* (learning rate $10^(-4)$, not their $5 dot 10^(-4)$)],
+    [their rate at 100K], [—], [stuck at 0.93, then NaN],
+    [rule: both endpoints have an edge], [—], [0.973],
+    [boosted trees on 2-hop neighbourhoods], [—], [*0.995*],
+    [width needed for 98 (B1, $m$ = 8 … 768)], [never varied], [$m = 32$],
+  ),
+  caption: [Part A reproduces both numbers; the audit and B1 show what they measure.],
+)
+
+#finding[
+  - *Both numbers reproduce* (within ± 0.3 pt), the 100K one only at a lower learning rate.
+  - *GraphQA connectivity is local.* A degree rule gets 0.973 and a 2-hop classifier
+    0.995 — above the reproduced 71M-parameter transformer. 94 % of connected pairs are
+    ≤ 2 hops apart.
+  - *Width only buys the shortcut* (B1). Test accuracy reaches 0.98 at $m = 32$ and stays
+    flat to 768; on a hard set (pairs ≥ 4 hops apart, no-path pairs with edges) every
+    width sits at 0.81–0.89 / 0.63–0.70, below the 2-hop classifier.
+]
+
+*B2 — their encoding on audited data.* Q3's setting (`swap`, $n$ = 32–56, depth 6,
+128 000 graphs, 24 000 steps, rate $10^(-3)$) with their tokens instead of adjacency rows:
+$n$ vertex + $|E|$ edge tokens and 32 query tokens per graph, each read out at its own
+position. Local classifiers sit at the always-"yes" rate (≈ 0.75); 0.95 needs ≈ 8 hops of
+reach. $m$ = 8 … 96, 2 seeds (56 runs).
+
+#figure(
+  tbl(columns: 5,
+    [final training loss (seed 0)], [$m = 8$], [$m = 32$], [$m = 64$], [$m = 96$],
+    [$n = 32$], [0.567], [0.567], [0.556], [*0.532*],
+    [$n = 40$], [0.562], [0.561], [0.559], [0.548],
+    [$n = 48$], [0.557], [0.557], [0.552], [0.539],
+    [$n = 56$], [0.552], [0.551], [0.546], [0.537],
+  ),
+  caption: [B2: every run ends at the always-"yes" accuracy (test 0.74–0.76); the
+  always-"yes" loss is ≈ 0.568 at $n = 32$ and 0.552 at $n = 56$.],
+)
+
+#finding[
+  - *No width up to 96 learns*, at any $n$ — the same budget at which adjacency rows
+    cross 0.95 at $m$ = 22–58 (Q3). Labels and read-out were checked against the tokens.
+  - *The escape has begun, in width order.* The loss leaves the trivial level late and
+    further for wider models; at $n = 32$, $m = 96$ is flat to step 14 000 and then falls.
+]
+
+#meaning[
+  Their experiment reproduces, but it does not test their claim: GraphQA is solved
+  locally, and $m = 32$ suffices for $n <= 19$. On data that requires reachability, their
+  own encoding is *harder* to learn than ours, not easier — the representation bound
+  ($m approx sqrt(N)$, here ≈ 9–11) is far from what training reaches. The critical width
+  for their encoding needs a longer budget; a diagnostic run (100 000 steps, $m$ up to 192)
+  is next.
+]
+
 = What it all means so far
 
 + *Measuring width is a protocol problem first.* Learning rate and training-set size
@@ -803,7 +878,8 @@ supply $n = 40$.
   roughly as $n^(1.9)$ over $n = 32$–$56$ — with 128 000 graphs, with twice the training
   steps, with the learning rate tuned, and with a fixed-width input encoding — and the
   data has to grow too; at $n = 128$ nothing up to $m = 128$ learns. At depth 2, where the
-  linear-width construction lives, it grows faster still (≈ $n^3$). This matches Saparov et al. (ICLR 2025): transformers
+  linear-width construction lives, it grows faster still (≈ $n^3$), and with Sanford et
+  al.'s own encoding nothing up to $m = 96$ learns at all. This matches Saparov et al. (ICLR 2025): transformers
   struggle to learn search even when it is representable.
 + *A hypothesis for the $n^2$.* $n^2$ is the number of bits in the adjacency matrix, and
   Yehudai et al. note that quadratic width suffices for *any* graph task by copying the
@@ -828,7 +904,8 @@ supply $n = 40$.
 #figure(
   tbl(columns: (auto, 1fr, auto), align: (left, left, center),
     [*Item*], [*Purpose*], [*Status*],
-    [Probing], [read what each layer computes: path doubling ($A^(2^ell)$) or a copy of the whole graph? — explains the $n^2$], [next],
+    [Sanford B2, longer], [their encoding at 100 000 steps, $m$ up to 192: does the escape complete, and at what width?], [next],
+    [Probing], [read what each layer computes: path doubling ($A^(2^ell)$) or a copy of the whole graph? — explains the $n^2$], [then],
     [Q7b diameter], [fix $n$, vary the diameter: is path length or node count driving the growth?], [planned],
     [Q4 Graphormer bias], [shortest-path bias gives connectivity away; needs a task it doesn't leak], [planned],
     [Q2 task hierarchy], [retrieval < connectivity < shortest path, each with its own audit], [planned],
@@ -842,5 +919,6 @@ supply $n = 40$.
   or #kbd("--curves") over #kbd("results/width/<sweep>*.jsonl") (sweeps #kbd("q1"),
   #kbd("q1b"), #kbd("q1c"), #kbd("q3pilot"), #kbd("q3pilot2"), #kbd("q3probe"),
   #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj"), #kbd("q7depth"), #kbd("q7c")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
-  #kbd("reports/figures/width_progress_plots.py").
+  #kbd("reports/figures/width_progress_plots.py"). The Sanford section: #kbd("python sanford_repro.py <sweep> --analyze")
+  over #kbd("results/sanford/") (#kbd("a1k"), #kbd("a100k_lr1e4"), #kbd("bwidth"), #kbd("b2")) and #kbd("--audit").
 ]
