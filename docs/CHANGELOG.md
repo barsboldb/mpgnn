@@ -6,6 +6,17 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-10-13
 
+### Q7b set up: node count vs path length
+
+`width_sweep.py` sweeps `q7b_n` (connected diameter held at ~11 via chord_frac per n:
+40/0.1, 48/0.25, 56/0.35, 64/0.35) and `q7b_d0` / `q7b_d10` (n = 56, chord_frac 0 / 0.1:
+diameter 17.5 / 14.5 vs q3lr's 11.8), q3lr protocol (128k graphs, 24k steps, depth 6,
+LR 1e-3, 2 seeds), 60 runs; new `chord_by_n` config key. At fixed n the swap diameter
+range is narrow (n = 40: 10–12; chord_frac >= 0.5 fails d_min 6), hence the n = 56 cut.
+Audit (`audit_width_data.py`, 1000 graphs): stats->y 0.47–0.52, k-hop exact 0 up to k = 4
+everywhere; k = 8: 0.26–0.48 for diameter-11 settings, 0.005 at cf 0.1, 0 at cf 0 (where
+even k = 12 is 0).
+
 ### Sanford b2long: the loss escapes but only into memorization; B2 has a supervision confound
 
 `b2long` (8 runs, 100k steps, n = 32 / 48, m = 32 / 96 / 192, LR 1e-3 / 3e-4): every run

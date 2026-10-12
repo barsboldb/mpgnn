@@ -108,8 +108,11 @@ Adjacency-row tokens are n-dimensional, so m < n compresses the input.
 - **Q7c (done):** depth 2 at n = 32 / 48 / 56 — the shallow critical width grows ~n³
   (fit 28 / 44 / 71 / 168 at n = 32–56), steeper than depth 6 (~n^1.85), not linearly;
   at n = 56 no width ≤ 192 generalizes to 0.95.
-- **Q7b (planned):** fix n, vary the diameter (chord density) with an audit per setting —
-  separates path length from node count.
+- **Q7b (running, 2026-10-13):** separates path length from node count, in the q3lr
+  protocol. `q7b_n`: connected diameter held at ≈ 11 (chord_frac per n) while n = 40 → 64;
+  `q7b_d0` / `q7b_d10`: n = 56 while the diameter grows 11.8 (q3lr) → 14.3 → 17.6. At
+  fixed n the `swap` diameter range is narrow (n = 40: 10–12; denser blobs fail d_min 6),
+  so the diameter cut is made at n = 56.
 
 ## Timeline (department calendar, week 1 = 2026-09-07)
 

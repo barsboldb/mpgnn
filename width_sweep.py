@@ -141,6 +141,23 @@ SWEEPS["q7c"] = dict(SWEEPS["q7depth"], ns=[32, 48, 56], depths=[2], widths_by_d
                      widths_by_n={32: [16, 24, 32, 48, 64, 96],
                                   48: [32, 48, 64, 96, 128],
                                   56: [32, 48, 64, 96, 128, 192]})
+# Q7b: node count or path length? In q3 (chord_frac 0.25) the connected diameter grows
+# only 8.7 -> 11.8 over n = 32 -> 56 while m* grows 2.6x, but the two still rise
+# together. Two cuts through the same tuned protocol as q3lr (128k graphs, 24 000 steps,
+# depth 6, LR 1e-3, 2 seeds):
+#   q7b_n: diameter held at ~11 (chord_frac per n: 40/0.1 -> 11.2, 48/0.25 -> 10.9,
+#          56/0.35 -> 11.0, 64/0.35 -> 11.5) while n grows 40 -> 64;
+#   q7b_d0 / q7b_d10: n held at 56 while the diameter grows 11.8 (q3lr, cf 0.25) ->
+#          14.3 (cf 0.1) -> 17.6 (cf 0, two plain cycles).
+# Node count drives it -> m* grows in q7b_n and stays flat in q7b_d*; path length -> the
+# reverse. Widths cover both readings.
+SWEEPS["q7b_n"] = dict(SWEEPS["q3lr"], ns=[40, 48, 56, 64], steps=24000,
+                       chord_by_n={40: 0.1, 48: 0.25, 56: 0.35, 64: 0.35},
+                       widths_by_n={40: [16, 24, 32, 48, 64], 48: [24, 32, 48, 64, 96],
+                                    56: [24, 32, 48, 64, 96], 64: [32, 48, 64, 96, 128]})
+SWEEPS["q7b_d0"] = dict(SWEEPS["q3lr"], ns=[56], chord_frac=0.0, widths_by_n={},
+                        widths=[32, 48, 64, 96, 128])
+SWEEPS["q7b_d10"] = dict(SWEEPS["q7b_d0"], chord_frac=0.1)
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
@@ -173,8 +190,11 @@ def resolve_depth(depth, n):
 
 
 def point(cfg, n, depth, size):
-    """cfg for one (n, depth, train size); with `steps`, epochs keep the step count fixed."""
+    """cfg for one (n, depth, train size); with `steps`, epochs keep the step count fixed.
+    `chord_by_n` overrides chord_frac per n (Q7b: hold the diameter while n grows)."""
     c = dict(cfg, n=n, depth=resolve_depth(depth, n), train=size)
+    if n in cfg.get("chord_by_n", {}):
+        c["chord_frac"] = cfg["chord_by_n"][n]
     if "steps" in cfg:
         c["epochs"] = math.ceil(cfg["steps"] / math.ceil(size / cfg["batch"]))
     return c
