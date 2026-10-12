@@ -21,7 +21,7 @@ Reading notes on the paper's theory: `reports/sanford-2024-notes.typ`.
 | Their LR 5e-4 at 100K | (works for them) | stuck at ~0.93, NaN | ✗ not reproduced (batch size unknown) |
 | "Transformers excel at *global* reasoning" | claimed | a 2-hop classifier scores 99.5 | ✗ not supported by this data |
 | Width claim (√N / N^ε) | theory only, never varied | 98 reached at m = 32; hard cases flat in m | ✗ untestable on GraphQA |
-| Their encoding on audited `swap` graphs (n = 32–56, depth 6) | — | every m ≤ 96 stays at always-"yes" in 24k steps; adjacency rows learn at m ≈ 22–58 | their encoding is *harder* to learn; critical width open (§9) |
+| Their encoding on audited `swap` graphs (n = 32–56, depth 6) | — | every m ≤ 96 stays at always-"yes" in 24k steps; at 100k steps m ≤ 192 memorizes (test below always-"yes") | not learned — but with 32 labels per graph vs Q3's n², a confound (§9) |
 | Other GraphQA tasks, GNN and prompting baselines, T5-11B | reported | — | not attempted (connectivity only) |
 
 Added beyond the paper: a shortcut audit (§4), a hard test set, a width sweep (§6), and
@@ -240,4 +240,38 @@ m = 32 / 96 / 192 with 1e-3, plus m = 96 / 192 at 3e-4 for n = 32 (8 runs, one p
 shard, 4 per GPU). Reading: wide models reach 0.95 → a full sweep at 100k gives the
 critical width; nothing escapes at m = 192 → their encoding is not learnable at
 affordable width here; only 3e-4 escapes → rerun the sweep at the lower rate.
+
+**`b2long` result (Kaggle, 2026-10-13, 8 runs, 2.9–5.1 h each): the loss escapes, the
+accuracy never does.** Final step (escape = first eval with loss < 0.53):
+
+| n | m | LR | escape | final loss | train | val | test |
+|---|---|---|---|---|---|---|---|
+| 32 | 32 | 1e-3 | 60k | 0.469 | 0.746 | 0.733 | 0.728 |
+| 32 | 96 | 1e-3 | 45k | 0.367 | 0.757 | 0.657 | 0.659 |
+| 32 | 96 | 3e-4 | 25k | 0.339 | 0.783 | 0.628 | 0.643 |
+| 32 | 192 | 1e-3 | — | 0.559 | 0.745 | 0.747 | 0.739 |
+| 32 | 192 | 3e-4 | 20k | 0.268 | 0.855 | 0.632 | 0.641 |
+| 48 | 32 | 1e-3 | 65k | 0.476 | 0.755 | 0.757 | 0.757 |
+| 48 | 96 | 1e-3 | 40k | 0.362 | 0.762 | 0.700 | 0.681 |
+| 48 | 192 | 1e-3 | — | 0.552 | 0.754 | 0.760 | 0.758 |
+
+(always-"yes": train 0.745 / 0.754, test 0.739 / 0.758 at n = 32 / 48.)
+
+- **Every run that escapes overfits.** Training loss falls far below the trivial 0.568
+  while training accuracy barely moves (0.75 → 0.76–0.86) and dev/test fall *below*
+  always-"yes" (to 0.63–0.68). Best dev is at the first evaluation in every run.
+- **Loss without accuracy** means confidence, not new answers: the model becomes sure of
+  "yes" on (training) graphs it identifies as connected — half the graphs, all 32 answers
+  "yes" — while still answering "yes" on the rest. On unseen graphs that identification
+  misfires and costs accuracy. 100k steps × 128 = 100 epochs over 128k graphs, so
+  memorizing a per-graph bit is cheap (most likely reading; models weren't saved to check).
+- **Escape is ordered by width and rate** (192 @ 3e-4 at 20k, 96 @ 3e-4 at 25k, 96 @ 1e-3
+  at 40–45k, 32 at 60–65k); m = 192 at 1e-3 never moves — that rate is too high for it.
+
+**Confound found while reading this: supervision per graph.** Q3 trains on the whole
+reachability matrix — n² = 1024–3136 labels per graph (`width_sweep.py`, BCE over all
+pairs) — while B2 gives 32 query labels per graph, 32–98× fewer, at the same 128k graphs.
+So "their encoding is harder to learn" (above) is confounded with "32–98× less signal per
+graph", and the memorization here fits a model starved of labels. A fair encoding
+comparison needs the same supervision: Sanford's tokens with an all-pairs read-out.
 

@@ -4,6 +4,18 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-13
+
+### Sanford b2long: the loss escapes but only into memorization; B2 has a supervision confound
+
+`b2long` (8 runs, 100k steps, n = 32 / 48, m = 32 / 96 / 192, LR 1e-3 / 3e-4): every run
+whose loss leaves the trivial level (escape at 20k–65k steps, earlier for wider models
+and 3e-4) overfits — training loss down to 0.27–0.48, training accuracy 0.75 → ≤ 0.86,
+dev/test *below* always-"yes" (0.63–0.68 at m ≥ 96). m = 192 at 1e-3 never moves. No run
+generalizes above the trivial rate. Confound: Q3 supervises all n² pairs per graph,
+B2 only 32 queries (32–98× fewer labels on the same 128k graphs), so B2 cannot yet
+separate "harder encoding" from "less supervision". Details: `docs/sanford-reproduction.md` §9.
+
 ## 2026-10-12
 
 ### Sanford B2: their encoding stays at "always yes" at every width ≤ 96
