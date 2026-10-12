@@ -58,7 +58,7 @@
   #v(-0.3em)
   #text(11pt, fill: luma(80))[Progress report — what was done, what came out, and what it means]
   #v(-0.2em)
-  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-12 ·
+  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-13 ·
   raw log: #kbd("docs/CHANGELOG.md") · questions: #kbd("docs/WIDTH-QUESTIONS.md")]
 ]
 
@@ -93,8 +93,8 @@
   + *Sanford et al.'s experiment reproduces, but cannot test their width claim.* Their
     GraphQA numbers come out at 93.0 / 98.2 (theirs 92.9 / 98.0), yet a 2-hop classifier
     scores 0.995 and width 32 already gives 98. With their encoding on the audited data,
-    no width up to 96 leaves the trivial predictor at the budget where adjacency rows
-    learn at 22–58.
+    no width up to 192 generalizes (at 100 000 steps the wide models memorize) — though
+    with 32 labels per graph against Q3's $n^2$, a confound still to remove.
 ]
 
 = Question and set-up
@@ -288,6 +288,7 @@ continuity), or *budget* (set by Kaggle's 30 GPU-hours a week). The tags below s
     [10-10], [GraphQA shortcut audit], [degree rule 0.973, 2-hop trees 0.995],
     [10-11], [Sanford B1: width 8–768 on GraphQA (12 runs)], [98 at $m = 32$; hard cases flat in width],
     [10-12], [Sanford B2: their encoding on `swap` (56 runs)], [no width ≤ 96 leaves always-"yes" in 24k steps],
+    [10-13], [Sanford b2long: 100k steps, $m <= 192$ (8 runs)], [loss escapes into memorization; supervision confound found],
   ),
   caption: [What was done, in order.],
 )
@@ -850,13 +851,27 @@ reach. $m$ = 8 … 96, 2 seeds (56 runs).
     further for wider models; at $n = 32$, $m = 96$ is flat to step 14 000 and then falls.
 ]
 
+*Longer budget (b2long).* 100 000 steps, $n$ = 32 / 48, $m$ = 32 / 96 / 192, rates
+$10^(-3)$ and $3 dot 10^(-4)$ (8 runs). The loss now leaves the trivial level (after
+20 000–65 000 steps, earlier for wider models and the lower rate), but only into
+memorization: training loss falls to 0.27–0.48 while training accuracy moves little
+(≤ 0.86) and test accuracy drops *below* always-"yes" (0.64–0.68 at $m >= 96$). No run
+generalizes.
+
+#warn[
+  *Supervision confound.* Q3 trains on the whole reachability matrix — $n^2$ = 1024–3136
+  labels per graph — while B2 gives 32 query labels per graph, 32–98× fewer on the same
+  128 000 graphs. B2's failure therefore mixes "their encoding is harder" with "far less
+  signal per graph"; the memorization fits a model starved of labels.
+]
+
 #meaning[
   Their experiment reproduces, but it does not test their claim: GraphQA is solved
   locally, and $m = 32$ suffices for $n <= 19$. On data that requires reachability, their
-  own encoding is *harder* to learn than ours, not easier — the representation bound
-  ($m approx sqrt(N)$, here ≈ 9–11) is far from what training reaches. The critical width
-  for their encoding needs a longer budget; a diagnostic run (100 000 steps, $m$ up to 192)
-  is next.
+  set-up (task tokens, 32 questions per graph) does not learn at any width up to 192 —
+  far from the representation bound ($m approx sqrt(N)$, ≈ 9–11). Whether the *encoding*
+  is to blame needs the same supervision as Q3: their tokens with an all-pairs read-out
+  (next).
 ]
 
 = What it all means so far
@@ -879,7 +894,7 @@ reach. $m$ = 8 … 96, 2 seeds (56 runs).
   steps, with the learning rate tuned, and with a fixed-width input encoding — and the
   data has to grow too; at $n = 128$ nothing up to $m = 128$ learns. At depth 2, where the
   linear-width construction lives, it grows faster still (≈ $n^3$), and with Sanford et
-  al.'s own encoding nothing up to $m = 96$ learns at all. This matches Saparov et al. (ICLR 2025): transformers
+  al.'s own set-up nothing up to $m = 192$ generalizes (with less supervision per graph). This matches Saparov et al. (ICLR 2025): transformers
   struggle to learn search even when it is representable.
 + *A hypothesis for the $n^2$.* $n^2$ is the number of bits in the adjacency matrix, and
   Yehudai et al. note that quadratic width suffices for *any* graph task by copying the
@@ -904,7 +919,7 @@ reach. $m$ = 8 … 96, 2 seeds (56 runs).
 #figure(
   tbl(columns: (auto, 1fr, auto), align: (left, left, center),
     [*Item*], [*Purpose*], [*Status*],
-    [Sanford B2, longer], [their encoding at 100 000 steps, $m$ up to 192: does the escape complete, and at what width?], [next],
+    [Sanford B2, all pairs], [their tokens with Q3's supervision (all $n^2$ pairs): is the encoding or the label count to blame?], [next],
     [Probing], [read what each layer computes: path doubling ($A^(2^ell)$) or a copy of the whole graph? — explains the $n^2$], [then],
     [Q7b diameter], [fix $n$, vary the diameter: is path length or node count driving the growth?], [planned],
     [Q4 Graphormer bias], [shortest-path bias gives connectivity away; needs a task it doesn't leak], [planned],
@@ -920,5 +935,5 @@ reach. $m$ = 8 … 96, 2 seeds (56 runs).
   #kbd("q1b"), #kbd("q1c"), #kbd("q3pilot"), #kbd("q3pilot2"), #kbd("q3probe"),
   #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj"), #kbd("q7depth"), #kbd("q7c")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
   #kbd("reports/figures/width_progress_plots.py"). The Sanford section: #kbd("python sanford_repro.py <sweep> --analyze")
-  over #kbd("results/sanford/") (#kbd("a1k"), #kbd("a100k_lr1e4"), #kbd("bwidth"), #kbd("b2")) and #kbd("--audit").
+  over #kbd("results/sanford/") (#kbd("a1k"), #kbd("a100k_lr1e4"), #kbd("bwidth"), #kbd("b2"), #kbd("b2long")) and #kbd("--audit").
 ]
