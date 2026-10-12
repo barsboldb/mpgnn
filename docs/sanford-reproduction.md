@@ -174,7 +174,7 @@ python sanford_repro.py <sweep>            # train (resumes; --shard i/k for wor
 python sanford_repro.py <sweep> --analyze  # tables incl. hard-set buckets
 ```
 
-## 9. Part B2 — their encoding on audited graphs (set up)
+## 9. Part B2 — their encoding on audited graphs
 
 `b2`: Q3's setting (q3lr) with Sanford's tokenization instead of adjacency rows.
 
@@ -202,3 +202,27 @@ python sanford_repro.py <sweep> --analyze  # tables incl. hard-set buckets
 
 Local learners sit at the trivial rate (vs 0.995 on GraphQA); 0.95 needs ~7–8 hops of
 reach, i.e. computing reachability over most of the diameter.
+
+**Result (Kaggle, 2026-10-12, 56 runs, ~35–50 min each): no run leaves the trivial
+solution.** Every width at every n ends at train / test accuracy = the always-"yes" rate
+(train 0.745 / 0.749 / 0.754 / 0.756, test 0.739 / 0.751 / 0.758 / 0.761), exact-graph
+accuracy 0.50; no critical width exists up to m = 96. Not a bug: labels recomputed from the
+decoded tokens match (0 / 9600 mismatches) and the read-out takes the 32 query positions.
+
+The loss shows where it is heading. It sits at the always-"yes" entropy (≈ 0.568 at
+n = 32) and drifts below it only late, by an amount ordered by width — final loss at seed 0:
+
+| n | m=8 | 32 | 64 | 96 |
+|---|---|---|---|---|
+| 32 | 0.567 | 0.567 | 0.556 | **0.532** |
+| 40 | 0.562 | 0.562 | 0.559 | 0.548 |
+| 48 | 0.557 | 0.557 | 0.552 | 0.539 |
+| 56 | 0.552 | 0.551 | 0.546 | 0.537 |
+
+(m = 96 n = 32 seed 0: flat to step 14k, then 0.566 → 0.532 by 24k; seed 1 only 0.559.)
+So the widest models are just starting to escape when the budget ends. Under the **same**
+budget and depth, adjacency rows (Q3) cross 0.95 at m = 21.9 – 57.9. Their encoding is
+therefore *harder* to learn on this task, not easier — the opposite of what Sanford's √N
+representation bound would suggest. What B2 cannot yet give is the critical width itself:
+that needs a longer budget (or wider models) for the escape to complete.
+

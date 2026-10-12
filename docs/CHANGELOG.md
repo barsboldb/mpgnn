@@ -4,6 +4,19 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-12
+
+### Sanford B2: their encoding stays at "always yes" at every width ≤ 96
+
+`b2` on Kaggle (56 runs, 24k steps): every run ends at the always-"yes" rate (test 0.739 /
+0.751 / 0.758 / 0.761 for n = 32…56; exact 0.50). Data and read-out verified (0 label
+mismatches from decoded tokens). Loss drifts below the trivial entropy late and in width
+order (n = 32 final loss: m ≤ 32 0.567, m = 64 0.556, m = 96 0.532), so the widest models
+are only starting to escape. Same budget/depth as Q3, where adjacency rows cross 0.95 at
+m ≈ 22–58: Sanford's encoding is harder to learn here. Critical width needs a longer run.
+Also: swap data is now built in a spawn pool — fork deadlocked on Kaggle (first B2 attempt
+hung ~6.7 h in --prepare). Details: `docs/sanford-reproduction.md` §9.
+
 ## 2026-10-11
 
 ### Sanford B2 set up: their encoding on swap; local learners at the trivial rate
