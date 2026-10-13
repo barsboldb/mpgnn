@@ -6,6 +6,21 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-10-13
 
+### Thesis direction: input encodings; Q7b dropped; enc_edges set up
+
+Supervisor: leave the diameter question (Q7b) out and study how the input encoding affects
+width. First new encoding, `enc_edges`: Sanford et al.'s vertex + edge tokens
+(`EdgeTokenModel`: learned node-ID table, no positions, padded edges masked) with the same
+bidirectional encoder and all-pairs bilinear read-out as q3 — B2 without its 32-label
+confound. q3lr protocol, n = 32–56, 5 widths per n (8–96), 2 seeds = 40 runs; ~3.2× the
+step cost of adjacency rows. Checks: symmetric output, batch-independent (mask works),
+smoke test. Learnability: on the 1-hop task (predict A) the edge model sits at the
+trivial rate for ≥ 1500 steps, then learns it (edge recall 0.992 at 4000) — a plateau
+before it finds ID-matching attention, which adjacency rows get for free; on reachability
+at n = 32, m = 48 it is still trivial at 3000 steps where adjacency rows reach pair 0.927.
+Notebook: absolute 11 h deadline from session start (workers stopped, catch-up skipped)
+so a slow sweep keeps its finished runs.
+
 ### Q7b set up: node count vs path length
 
 `width_sweep.py` sweeps `q7b_n` (connected diameter held at ~11 via chord_frac per n:

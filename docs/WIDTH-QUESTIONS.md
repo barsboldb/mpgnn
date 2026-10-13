@@ -108,11 +108,24 @@ Adjacency-row tokens are n-dimensional, so m < n compresses the input.
 - **Q7c (done):** depth 2 at n = 32 / 48 / 56 — the shallow critical width grows ~n³
   (fit 28 / 44 / 71 / 168 at n = 32–56), steeper than depth 6 (~n^1.85), not linearly;
   at n = 56 no width ≤ 192 generalizes to 0.95.
-- **Q7b (running, 2026-10-13):** separates path length from node count, in the q3lr
-  protocol. `q7b_n`: connected diameter held at ≈ 11 (chord_frac per n) while n = 40 → 64;
-  `q7b_d0` / `q7b_d10`: n = 56 while the diameter grows 11.8 (q3lr) → 14.3 → 17.6. At
-  fixed n the `swap` diameter range is narrow (n = 40: 10–12; denser blobs fail d_min 6),
-  so the diameter cut is made at n = 56.
+- **Q7b (dropped 2026-10-13, supervisor):** node count vs path length. Sweeps `q7b_n`,
+  `q7b_d0`, `q7b_d10` are defined and audited but not run; in the thesis it is a stated
+  limitation (q3's diameter grows 8.7 → 11.8 alongside n).
+
+## E — input encodings (from 2026-10-13, supervisor's direction)
+
+How does the input encoding change the critical width and its growth with n? Same task
+(audited `swap`, all-pairs reachability) and protocol as q3lr (128k graphs, 24k steps,
+depth 6, LR 1e-3, 2 seeds, n = 32–56).
+
+| Encoding | Sweep | Status |
+|---|---|---|
+| adjacency rows | q3lr / q3big / q3data | done: m* ∝ n^1.85 |
+| fixed random-projection IDs (96 wide) | q6proj | done: ∝ n^2.0, ~20 % above |
+| edge-list tokens (Sanford), all-pairs read-out | `enc_edges` | running |
+| adjacency + k-step random-walk features (k = 2, 4, 8) | — | planned: width saved per free hop |
+| node-ID variants (learned / random / one-hot) | — | optional |
+| Laplacian eigenvectors, shortest-path bias | — | positive controls only (they give connectivity away) |
 
 ## Timeline (department calendar, week 1 = 2026-09-07)
 

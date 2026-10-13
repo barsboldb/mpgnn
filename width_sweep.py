@@ -32,6 +32,7 @@ import torch.nn.functional as F
 from scipy.sparse.csgraph import shortest_path
 
 from src.connectivity import DEVICE, ConnectivityTransformer, make_set, reachability
+from src.transformer import _EncoderBlock
 from src.dataset import (_cycle_blob_edges, make_connectedness_hard_dataset,
                          make_connectedness_hard_diam_dataset)
 
@@ -158,6 +159,17 @@ SWEEPS["q7b_n"] = dict(SWEEPS["q3lr"], ns=[40, 48, 56, 64], steps=24000,
 SWEEPS["q7b_d0"] = dict(SWEEPS["q3lr"], ns=[56], chord_frac=0.0, widths_by_n={},
                         widths=[32, 48, 64, 96, 128])
 SWEEPS["q7b_d10"] = dict(SWEEPS["q7b_d0"], chord_frac=0.1)
+# Q7b dropped 2026-10-13 (supervisor: focus the thesis on input encodings); kept for
+# reference, never run.
+# Encoding study (E): how does the input encoding change the critical width and its
+# growth with n? Baselines: adjacency rows (q3lr / q3big / q3data, ~n^1.85) and projected
+# IDs (q6proj, ~n^2.0). enc_edges: Sanford et al.'s edge-list tokens with the same
+# all-pairs supervision, encoder and read-out (EdgeTokenModel) — B2 without its 32-label
+# confound. q3lr protocol at n = 32-56; widths reach below sqrt(N) (~9-11) and above
+# the adjacency thresholds (22-58). ~3x the step cost of adjacency rows (2.25n tokens).
+SWEEPS["enc_edges"] = dict(SWEEPS["q3lr"], input="edges", ns=[32, 40, 48, 56],
+                           widths_by_n={32: [8, 16, 24, 32, 48], 40: [8, 16, 32, 48, 64],
+                                        48: [16, 32, 48, 64, 96], 56: [16, 32, 48, 64, 96]})
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
@@ -430,9 +442,51 @@ class ProjectedInput(nn.Module):
         return self.inner.num_parameters()
 
 
+class EdgeTokenModel(nn.Module):
+    """Encoding study, edge-list input (Sanford et al. 2024a): one token per vertex
+    (type + id(v)) and one per edge (type + id(u) + id(v)), ids a learned n-entry table,
+    no positions (the edge order carries no information). Built on the fly from the same
+    A + I as the baseline; padded edge slots are masked out. Same bidirectional encoder
+    blocks and bilinear all-pairs read-out on the vertex tokens as ConnectivityTransformer,
+    so only the input encoding differs from q3."""
+
+    def __init__(self, n, width, depth, heads):
+        super().__init__()
+        self.n = n
+        self.typ = nn.Embedding(2, width)
+        self.node = nn.Embedding(n, width)
+        self.blocks = nn.ModuleList([_EncoderBlock(width, heads, 0.0) for _ in range(depth)])
+        self.norm = nn.LayerNorm(width)
+        self.W = nn.Linear(width, width, bias=False)
+        self.register_buffer("iu", torch.triu_indices(n, n, 1), persistent=False)
+
+    def forward(self, Aaug):                          # [B, n, n] -> [B, n, n] logits
+        B, n = Aaug.size(0), self.n
+        present = Aaug[:, self.iu[0], self.iu[1]] > 0                  # [B, n(n-1)/2]
+        count = present.sum(1)
+        order = torch.argsort(present.to(torch.int8), dim=1, descending=True,
+                              stable=True)[:, :int(count.max())]       # edges first
+        u, v = self.iu[0][order], self.iu[1][order]                    # [B, E]
+        pad = torch.arange(order.size(1), device=Aaug.device)[None] >= count[:, None]
+        verts = (self.typ.weight[0] + self.node.weight).expand(B, n, -1)
+        edges = self.typ.weight[1] + self.node(u) + self.node(v)
+        h = torch.cat([verts, edges], 1)
+        mask = torch.cat([torch.zeros(B, n, dtype=torch.bool, device=Aaug.device), pad], 1)
+        for blk in self.blocks:
+            h = blk(h, mask)
+        h = self.norm(h[:, :n])
+        logits = torch.bmm(self.W(h), h.transpose(1, 2))
+        return 0.5 * (logits + logits.transpose(1, 2))
+
+    def num_parameters(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+
 def build_model(cfg, width, heads, seed):
     if cfg.get("input", "adj") == "idproj":
         return ProjectedInput(cfg["n"], cfg["id_dim"], width, cfg["depth"], heads, seed)
+    if cfg.get("input") == "edges":
+        return EdgeTokenModel(cfg["n"], width, cfg["depth"], heads)
     return ConnectivityTransformer(cfg["n"], width, cfg["depth"], heads)
 
 
