@@ -4,6 +4,38 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-14
+
+### enc_edges: edge tokens don't learn at the adjacency-row budget; resolves the B2 confound
+
+`enc_edges` on Kaggle (40 runs, 24k steps, n = 32–56, m = 8–96, 2 seeds, all complete).
+No n has a critical width: the only run to clear the trivial exact-match is n = 32, m = 48,
+seed 1 (exact 0.76, pair 0.968, still rising at the end; seed 0: 0.10 / 0.875). Final
+test pair accuracy, mean of 2 seeds (trivial ≈ 0.75):
+
+| n | m = 16 | 32 | 48 | 64 | 96 | adjacency rows (q3lr) |
+|---|---|---|---|---|---|---|
+| 32 | 0.745 | 0.820 | 0.921 | — | — | m* 21.9 |
+| 40 | 0.750 | 0.758 | 0.790 | 0.851 | — | m = 24: 0.919, m = 48: 0.985 |
+| 48 | 0.755 | 0.754 | 0.757 | 0.782 | 0.804 | m* 51.1 |
+| 56 | 0.759 | 0.759 | 0.759 | 0.759 | 0.775 | m = 32: 0.821, m = 96: 0.984 |
+
+Same shape as B2: the loss sits at ~0.55 until 7–18k steps (adjacency rows: 3–8k),
+escapes in width order, and is still falling at 24k; train ≈ test, so under-training,
+not memorization. Exact-match dips *below* 0.50 mid-learning (most graphs get at least
+one pair wrong once the model stops predicting the trivial matrix). For equal pair
+accuracy edge tokens need roughly 3× the width of adjacency rows at n = 40, more at
+n = 56. **B2 confound resolved:** with all n² labels per graph, edge tokens still fail
+where adjacency rows succeed — the encoding itself is harder to learn, not only the
+label count. Timing: 29–144 min per run, 10 jobs on 2 T4s; all 40 done in one session.
+
+### enc_edges96k set up: does a critical width exist with 4x the steps?
+
+`enc_edges96k`: 96 000 steps, n = 32 / 40, m = 32 / 48 / 64 / 96, 2 seeds (16 runs, one
+wave of 16 workers). New config key `max_minutes` (420 here): a run past the cap stops at
+its next evaluation and is saved with `"truncated": true`, so a slow run keeps its curve
+instead of dying at the session deadline. Expected ~1.5 h data prep + ≤ 7 h training.
+
 ## 2026-10-13
 
 ### Thesis direction: input encodings; Q7b dropped; enc_edges set up

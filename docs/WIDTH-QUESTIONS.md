@@ -122,7 +122,8 @@ depth 6, LR 1e-3, 2 seeds, n = 32–56).
 |---|---|---|
 | adjacency rows | q3lr / q3big / q3data | done: m* ∝ n^1.85 |
 | fixed random-projection IDs (96 wide) | q6proj | done: ∝ n^2.0, ~20 % above |
-| edge-list tokens (Sanford), all-pairs read-out | `enc_edges` | running |
+| edge-list tokens (Sanford), all-pairs read-out | `enc_edges` | done: no critical width at 24k steps for any n (best: n = 32, m = 48, one seed, exact 0.76); ~3× the width of adjacency rows for equal pair accuracy |
+| edge-list tokens, 4× steps (96k), n = 32 / 40 | `enc_edges96k` | running: does a critical width appear with time? |
 | adjacency + k-step random-walk features (k = 2, 4, 8) | — | planned: width saved per free hop |
 | node-ID variants (learned / random / one-hot) | — | optional |
 | Laplacian eigenvectors, shortest-path bias | — | positive controls only (they give connectivity away) |

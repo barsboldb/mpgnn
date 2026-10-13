@@ -170,6 +170,14 @@ SWEEPS["q7b_d10"] = dict(SWEEPS["q7b_d0"], chord_frac=0.1)
 SWEEPS["enc_edges"] = dict(SWEEPS["q3lr"], input="edges", ns=[32, 40, 48, 56],
                            widths_by_n={32: [8, 16, 24, 32, 48], 40: [8, 16, 32, 48, 64],
                                         48: [16, 32, 48, 64, 96], 56: [16, 32, 48, 64, 96]})
+# enc_edges at 4x the steps (2026-10-14). At 24 000 steps edge tokens sat on a loss
+# plateau (~0.55) for 8-10k steps, escaped in width order and were still improving at the
+# end; only n=32 m=48 (one seed) got going (exact 0.76). 96 000 steps at n=32/40 asks
+# whether a critical width exists given time, and where it sits against adjacency rows
+# (21.9 / 30.2). 16 runs, one Kaggle wave; max_minutes caps a run before the session
+# deadline (a capped run keeps its curve and is flagged "truncated").
+SWEEPS["enc_edges96k"] = dict(SWEEPS["enc_edges"], ns=[32, 40], steps=96000, max_minutes=420,
+                              widths_by_n={32: [32, 48, 64, 96], 40: [32, 48, 64, 96]})
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
@@ -526,11 +534,14 @@ def train_one(cfg, width, lr, seed, splits):
                             "train": train, "train_pair": train_pair,
                             **dict(zip(("val", "val_pair"), metrics(model, Ava, Rva, bs))),
                             "test": test, "test_pair": test_pair})
+            if time.time() - t0 > 60 * cfg.get("max_minutes", float("inf")):
+                break   # per-run cap: keep what was learned so far, flagged below
 
     best = max(history, key=lambda h: h["val"])
     return {"width": width, "lr": lr, "seed": seed, "heads": heads, "train_size": N,
             "params": model.num_parameters(), "seconds": round(time.time() - t0, 1),
-            "final": history[-1], "best_val": best, "history": history}
+            "final": history[-1], "best_val": best, "history": history,
+            **({"truncated": True} if history[-1]["epoch"] < epochs else {})}
 
 
 def run_sweep(name, smoke=False, shard=(0, 1)):

@@ -58,7 +58,7 @@
   #v(-0.3em)
   #text(11pt, fill: luma(80))[Progress report — what was done, what came out, and what it means]
   #v(-0.2em)
-  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-13 ·
+  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-14 ·
   raw log: #kbd("docs/CHANGELOG.md") · questions: #kbd("docs/WIDTH-QUESTIONS.md")]
 ]
 
@@ -93,8 +93,12 @@
   + *Sanford et al.'s experiment reproduces, but cannot test their width claim.* Their
     GraphQA numbers come out at 93.0 / 98.2 (theirs 92.9 / 98.0), yet a 2-hop classifier
     scores 0.995 and width 32 already gives 98. With their encoding on the audited data,
-    no width up to 192 generalizes (at 100 000 steps the wide models memorize) — though
-    with 32 labels per graph against Q3's $n^2$, a confound still to remove.
+    no width up to 192 generalizes (at 100 000 steps the wide models memorize).
+  + *Encoding matters as much as size: Sanford et al.'s edge tokens are far harder to
+    learn than adjacency rows.* With the same all-pairs supervision and budget, no width
+    up to 96 reaches the threshold at any $n$; for equal pair accuracy edge tokens need
+    ≈ 3× the width at $n = 40$. A 4× longer run is testing whether a critical width
+    appears given time.
 ]
 
 = Question and set-up
@@ -289,6 +293,8 @@ continuity), or *budget* (set by Kaggle's 30 GPU-hours a week). The tags below s
     [10-11], [Sanford B1: width 8–768 on GraphQA (12 runs)], [98 at $m = 32$; hard cases flat in width],
     [10-12], [Sanford B2: their encoding on `swap` (56 runs)], [no width ≤ 96 leaves always-"yes" in 24k steps],
     [10-13], [Sanford b2long: 100k steps, $m <= 192$ (8 runs)], [loss escapes into memorization; supervision confound found],
+    [10-13], [Supervisor: study input encodings; Q7b dropped], [encoding study (E) set up],
+    [10-14], [`enc_edges`: edge tokens, all-pairs labels (40 runs)], [no critical width at any $n$; ≈ 3× the width of adjacency rows],
   ),
   caption: [What was done, in order.],
 )
@@ -871,7 +877,54 @@ generalizes.
   set-up (task tokens, 32 questions per graph) does not learn at any width up to 192 —
   far from the representation bound ($m approx sqrt(N)$, ≈ 9–11). Whether the *encoding*
   is to blame needs the same supervision as Q3: their tokens with an all-pairs read-out
-  (next).
+  (next section).
+]
+
+= Encodings — Sanford's edge tokens with all-pairs labels
+
+The thesis now compares input encodings (supervisor, 10-13). The first is Sanford et
+al.'s: one token per vertex (a learned ID) and one per edge (the sum of its two vertex
+IDs), no positions, with the same depth-6 encoder and all-pairs read-out as Q3 — B2
+without its 32-label confound. Protocol as q3lr: 128 000 `swap` graphs, 24 000 steps,
+rate $10^(-3)$, $n$ = 32–56, $m$ = 8–96, 2 seeds (40 runs). Edge tokens make the
+sequence ≈ 2.25$n$ long, ≈ 3× the step cost.
+
+#figure(
+  tbl(columns: 7,
+    [$n$], [$m = 16$], [32], [48], [64], [96], [adjacency rows, same budget],
+    [32], [0.745], [0.820], [0.921], [—], [—], [critical width 21.9],
+    [40], [0.750], [0.758], [0.790], [0.851], [—], [$m = 24$: 0.919, $m = 48$: 0.985],
+    [48], [0.755], [0.754], [0.757], [0.782], [0.804], [critical width 51.1],
+    [56], [0.759], [0.759], [0.759], [0.759], [0.775], [$m = 32$: 0.821, $m = 96$: 0.984],
+  ),
+  caption: [Edge tokens: final test pair accuracy, mean of 2 seeds (always "not
+  connected" ≈ 0.75).],
+)
+
+#finding[
+  - *No critical width at any $n$.* The only run past the trivial exact-match is
+    $n = 32$, $m = 48$, one seed (0.76, pair 0.968, still rising); the other seed is at 0.10.
+  - *A long plateau, then slow progress in width order.* The loss sits at ≈ 0.55 for
+    7 000–18 000 steps (adjacency rows: 3 000–8 000) and is still falling at 24 000;
+    train ≈ test, so the models are under-trained, not memorizing.
+  - *≈ 3× the width for the same accuracy*: at $n = 40$, edge tokens at $m = 64$ (0.851)
+    sit between adjacency rows at $m = 16$ and 24; at $n = 56$, $m = 96$ (0.775) is below
+    adjacency rows at $m = 32$.
+]
+
+#meaning[
+  With the supervision equalized, Sanford et al.'s encoding still fails where adjacency
+  rows succeed, so B2's failure was the encoding, not only the label count. An
+  adjacency row hands each token its whole neighbourhood; with edge tokens the model
+  must first learn to match IDs to gather it (a plateau we also see on the 1-hop task),
+  and that step alone costs width and time. Their $sqrt(N)$ bound is for this encoding —
+  the one that is hardest to learn here.
+]
+
+#warn[
+  The models were still improving when training stopped, so "none" means "not within
+  24 000 steps". `enc_edges96k` (4× the steps, $n$ = 32 / 40, $m$ = 32–96) asks whether
+  a critical width appears with time, and where it sits against adjacency rows.
 ]
 
 = What it all means so far
@@ -894,7 +947,7 @@ generalizes.
   steps, with the learning rate tuned, and with a fixed-width input encoding — and the
   data has to grow too; at $n = 128$ nothing up to $m = 128$ learns. At depth 2, where the
   linear-width construction lives, it grows faster still (≈ $n^3$), and with Sanford et
-  al.'s own set-up nothing up to $m = 192$ generalizes (with less supervision per graph). This matches Saparov et al. (ICLR 2025): transformers
+  al.'s own encoding nothing up to $m = 96$ learns even with all-pairs labels. This matches Saparov et al. (ICLR 2025): transformers
   struggle to learn search even when it is representable.
 + *A hypothesis for the $n^2$.* $n^2$ is the number of bits in the adjacency matrix, and
   Yehudai et al. note that quadratic width suffices for *any* graph task by copying the
@@ -909,7 +962,7 @@ generalizes.
   - Exact-match gets stricter as $n^2$ grows; pair-accuracy thresholds are reported
     alongside from now on.
   - The `swap` diameter grows with $log n$, so $n$ and path length still rise together;
-    Q7b will separate them.
+    separating them (Q7b) is left out of the thesis (supervisor, 10-13).
   - One learning rate in the fine grid ($3 dot 10^(-3)$), for budget reasons; it is
     too high at $m = 128$, which is left out of the fit.
 ]
@@ -919,9 +972,10 @@ generalizes.
 #figure(
   tbl(columns: (auto, 1fr, auto), align: (left, left, center),
     [*Item*], [*Purpose*], [*Status*],
-    [Sanford B2, all pairs], [their tokens with Q3's supervision (all $n^2$ pairs): is the encoding or the label count to blame?], [next],
+    [Edge tokens, 4× steps], [`enc_edges96k`: does a critical width appear with time? where against adjacency rows?], [running],
+    [Random-walk features], [adjacency + $k$-step walk features ($k$ = 2, 4, 8): width saved per free hop], [next],
     [Probing], [read what each layer computes: path doubling ($A^(2^ell)$) or a copy of the whole graph? — explains the $n^2$], [then],
-    [Q7b diameter], [fix $n$, vary the diameter: is path length or node count driving the growth?], [planned],
+    [Q7b diameter], [fix $n$, vary the diameter], [dropped (supervisor)],
     [Q4 Graphormer bias], [shortest-path bias gives connectivity away; needs a task it doesn't leak], [planned],
     [Q2 task hierarchy], [retrieval < connectivity < shortest path, each with its own audit], [planned],
   ),
@@ -933,7 +987,7 @@ generalizes.
   *Reproduce.* Every number above comes from #kbd("python width_sweep.py <sweep> --analyze")
   or #kbd("--curves") over #kbd("results/width/<sweep>*.jsonl") (sweeps #kbd("q1"),
   #kbd("q1b"), #kbd("q1c"), #kbd("q3pilot"), #kbd("q3pilot2"), #kbd("q3probe"),
-  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj"), #kbd("q7depth"), #kbd("q7c")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
+  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj"), #kbd("q7depth"), #kbd("q7c"), #kbd("enc_edges")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
   #kbd("reports/figures/width_progress_plots.py"). The Sanford section: #kbd("python sanford_repro.py <sweep> --analyze")
   over #kbd("results/sanford/") (#kbd("a1k"), #kbd("a100k_lr1e4"), #kbd("bwidth"), #kbd("b2"), #kbd("b2long")) and #kbd("--audit").
 ]

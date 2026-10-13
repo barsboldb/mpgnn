@@ -21,7 +21,7 @@ Reading notes on the paper's theory: `reports/sanford-2024-notes.typ`.
 | Their LR 5e-4 at 100K | (works for them) | stuck at ~0.93, NaN | ✗ not reproduced (batch size unknown) |
 | "Transformers excel at *global* reasoning" | claimed | a 2-hop classifier scores 99.5 | ✗ not supported by this data |
 | Width claim (√N / N^ε) | theory only, never varied | 98 reached at m = 32; hard cases flat in m | ✗ untestable on GraphQA |
-| Their encoding on audited `swap` graphs (n = 32–56, depth 6) | — | every m ≤ 96 stays at always-"yes" in 24k steps; at 100k steps m ≤ 192 memorizes (test below always-"yes") | not learned — but with 32 labels per graph vs Q3's n², a confound (§9) |
+| Their encoding on audited `swap` graphs (n = 32–56, depth 6) | — | every m ≤ 96 stays at always-"yes" in 24k steps; at 100k steps m ≤ 192 memorizes (test below always-"yes") | not learned; with all n² labels (`enc_edges`) still not learned where adjacency rows are — the encoding is harder, not only the label count (§9) |
 | Other GraphQA tasks, GNN and prompting baselines, T5-11B | reported | — | not attempted (connectivity only) |
 
 Added beyond the paper: a shortcut audit (§4), a hard test set, a width sweep (§6), and
@@ -274,4 +274,24 @@ pairs) — while B2 gives 32 query labels per graph, 32–98× fewer, at the sam
 So "their encoding is harder to learn" (above) is confounded with "32–98× less signal per
 graph", and the memorization here fits a model starved of labels. A fair encoding
 comparison needs the same supervision: Sanford's tokens with an all-pairs read-out.
+
+**Confound resolved (2026-10-14, `enc_edges` in `width_sweep.py`).** Sanford's vertex + edge
+tokens with Q3's supervision — all n² pairs, same encoder depth 6, bilinear all-pairs
+read-out, q3lr protocol (128k graphs, 24k steps, LR 1e-3), n = 32–56, m = 8–96, 2 seeds.
+Final test pair accuracy, mean of 2 seeds (trivial ≈ 0.75):
+
+| n | m = 16 | 32 | 48 | 64 | 96 | adjacency rows, same budget |
+|---|---|---|---|---|---|---|
+| 32 | 0.745 | 0.820 | 0.921 | — | — | critical width 21.9 |
+| 40 | 0.750 | 0.758 | 0.790 | 0.851 | — | m = 24: 0.919 |
+| 48 | 0.755 | 0.754 | 0.757 | 0.782 | 0.804 | critical width 51.1 |
+| 56 | 0.759 | 0.759 | 0.759 | 0.759 | 0.775 | m = 32: 0.821 |
+
+No n reaches the 0.90 exact-match threshold at any width; the best run (n = 32, m = 48,
+seed 1) reaches 0.76 and is still climbing. The loss plateaus at ~0.55 for 7–18k steps
+(adjacency rows: 3–8k), escapes in width order and is still falling at 24k; train ≈ test,
+so this is slow optimization, not the memorization of b2long. With the labels equalized,
+edge tokens still fail where adjacency rows succeed: **the encoding is harder to learn**,
+by roughly 3× in width at n = 40. A 4× longer run (`enc_edges96k`, n = 32 / 40) asks
+whether a critical width appears given time.
 
