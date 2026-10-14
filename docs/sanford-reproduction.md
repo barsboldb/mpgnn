@@ -21,7 +21,7 @@ Reading notes on the paper's theory: `reports/sanford-2024-notes.typ`.
 | Their LR 5e-4 at 100K | (works for them) | stuck at ~0.93, NaN | ✗ not reproduced (batch size unknown) |
 | "Transformers excel at *global* reasoning" | claimed | a 2-hop classifier scores 99.5 | ✗ not supported by this data |
 | Width claim (√N / N^ε) | theory only, never varied | 98 reached at m = 32; hard cases flat in m | ✗ untestable on GraphQA |
-| Their encoding on audited `swap` graphs (n = 32–56, depth 6) | — | every m ≤ 96 stays at always-"yes" in 24k steps; at 100k steps m ≤ 192 memorizes (test below always-"yes") | not learned; with all n² labels (`enc_edges`) still not learned where adjacency rows are — the encoding is harder, not only the label count (§9) |
+| Their encoding on audited `swap` graphs (n = 32–56, depth 6) | — | every m ≤ 96 stays at always-"yes" in 24k steps; at 100k steps m ≤ 192 memorizes (test below always-"yes") | not learned; with all n² labels (`enc_edges`) not learned at the adjacency-row budget, and at 4× the steps learned at 2–3× their width (≥ 5× √N) — the encoding is harder, not only the label count (§9) |
 | Other GraphQA tasks, GNN and prompting baselines, T5-11B | reported | — | not attempted (connectivity only) |
 
 Added beyond the paper: a shortcut audit (§4), a hard test set, a width sweep (§6), and
@@ -292,6 +292,12 @@ seed 1) reaches 0.76 and is still climbing. The loss plateaus at ~0.55 for 7–1
 (adjacency rows: 3–8k), escapes in width order and is still falling at 24k; train ≈ test,
 so this is slow optimization, not the memorization of b2long. With the labels equalized,
 edge tokens still fail where adjacency rows succeed: **the encoding is harder to learn**,
-by roughly 3× in width at n = 40. A 4× longer run (`enc_edges96k`, n = 32 / 40) asks
-whether a critical width appears given time.
+by roughly 3× in width at n = 40.
+
+**With 4× the steps it does learn (`enc_edges96k`, 2026-10-15).** 96k steps, n = 32 / 40,
+m = 32–96 (some runs capped at 48–90k steps). Critical width (test pair ≥ 0.95, as for
+Q3): 48.2 at n = 32 (both seeds at m = 64 reach exact 0.995 / 0.897), ≥ 72 at n = 40 —
+2.2× and ≥ 2.4× the adjacency-row width, and ≥ 5× Sanford et al.'s √N ≈ 9–10 for these
+graphs. Seeds disagree: one often stalls on a partial solution for 50k+ steps while the
+other solves the task.
 

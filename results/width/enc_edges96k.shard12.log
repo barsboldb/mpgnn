@@ -1,0 +1,3 @@
+Device cuda | sweep enc_edges96k shard 12/16: 1 runs to go (0 on disk)
+  loading data for seed 1, n=40, 128000 train graphs...
+  [1/1] n=40  L=6  N=128000 m=32   H=4   lr=0.001   seed=1  train=0.275 val=0.500 test@bestval=0.500 test@final=0.223  (19762.5s)

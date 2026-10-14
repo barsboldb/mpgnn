@@ -58,7 +58,7 @@
   #v(-0.3em)
   #text(11pt, fill: luma(80))[Progress report — what was done, what came out, and what it means]
   #v(-0.2em)
-  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-14 ·
+  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-15 ·
   raw log: #kbd("docs/CHANGELOG.md") · questions: #kbd("docs/WIDTH-QUESTIONS.md")]
 ]
 
@@ -96,9 +96,9 @@
     no width up to 192 generalizes (at 100 000 steps the wide models memorize).
   + *Encoding matters as much as size: Sanford et al.'s edge tokens are far harder to
     learn than adjacency rows.* With the same all-pairs supervision and budget, no width
-    up to 96 reaches the threshold at any $n$; for equal pair accuracy edge tokens need
-    ≈ 3× the width at $n = 40$. A 4× longer run is testing whether a critical width
-    appears given time.
+    up to 96 reaches the threshold at any $n$. With 4× the steps they learn, but at
+    2.2× the adjacency-row width at $n = 32$ (48 vs 22) and ≥ 2.4× at $n = 40$ — at
+    least 5× Sanford et al.'s $sqrt(N)$ for this very encoding.
 ]
 
 = Question and set-up
@@ -295,6 +295,7 @@ continuity), or *budget* (set by Kaggle's 30 GPU-hours a week). The tags below s
     [10-13], [Sanford b2long: 100k steps, $m <= 192$ (8 runs)], [loss escapes into memorization; supervision confound found],
     [10-13], [Supervisor: study input encodings; Q7b dropped], [encoding study (E) set up],
     [10-14], [`enc_edges`: edge tokens, all-pairs labels (40 runs)], [no critical width at any $n$; ≈ 3× the width of adjacency rows],
+    [10-15], [`enc_edges96k`: 4× the steps, $n$ = 32 / 40 (16 runs)], [learns: $m^* = 48$ / ≥ 72, 2.2× / ≥ 2.4× adjacency rows],
   ),
   caption: [What was done, in order.],
 )
@@ -921,10 +922,39 @@ sequence ≈ 2.25$n$ long, ≈ 3× the step cost.
   the one that is hardest to learn here.
 ]
 
+*Four times the steps (`enc_edges96k`).* The models were still improving at 24 000
+steps, so we gave $n$ = 32 / 40 96 000 steps ($m$ = 32–96, 2 seeds; a 7 h cap stopped
+the $m = 96$ runs at 48 000–54 000 steps and some others at 84 000–90 000).
+
+#figure(
+  tbl(columns: 3,
+    [$m$], [$n = 32$], [$n = 40$],
+    [32], [0.52 / 0.939 · 0.50 / 0.915], [0.37 / 0.856 · 0.22 / 0.762],
+    [48], [0.74 / 0.972 · 0.36 / 0.816], [0.14 / 0.757 · 0.41 / 0.856],
+    [64], [*0.995 / 0.999 · 0.897 / 0.990*], [0.59 / 0.934 · 0.11 / 0.788],
+    [96], [0.835 / 0.979 · 0.960 / 0.996], [0.87 / 0.985 · 0.47 / 0.906],
+    [critical width], [*48.2* (adjacency rows: 21.9)], [*≥ 72* (adjacency rows: 30.2)],
+  ),
+  caption: [Edge tokens at 96 000 steps: final test exact / pair accuracy, seed 0 · seed 1.
+  Critical width as for Q3 (test pair ≥ 0.95, mean of per-seed crossings); at $n = 40$
+  seed 1 does not cross by $m = 96$, which was cut at 48 000 steps.],
+)
+
+#finding[
+  - *Given time, a threshold appears.* At $n = 32$ both seeds at $m = 64$ generalize
+    (exact 0.995 / 0.897), with train ≈ test.
+  - *It sits at 2–2.5× the adjacency-row width* (48 vs 22 at $n = 32$; ≥ 72 vs 30 at
+    $n = 40$), and the adjacency rows had a quarter of the steps — which do not lower
+    their critical width (Q3 step budget).
+  - *Seeds split.* After the first plateau, one seed often stalls on a partial solution
+    for 50 000+ steps (pair 0.79–0.82) while the other solves the task; adjacency-row
+    seeds agree within a few width units.
+]
+
 #warn[
-  The models were still improving when training stopped, so "none" means "not within
-  24 000 steps". `enc_edges96k` (4× the steps, $n$ = 32 / 40, $m$ = 32–96) asks whether
-  a critical width appears with time, and where it sits against adjacency rows.
+  Two sizes, and $n = 40$ is a lower bound, so there is no growth exponent for edge
+  tokens; the cap also cut the widest runs short. Extending it to $n$ = 48 / 56 would
+  need ≥ 2 sessions per size.
 ]
 
 = What it all means so far
@@ -947,7 +977,7 @@ sequence ≈ 2.25$n$ long, ≈ 3× the step cost.
   steps, with the learning rate tuned, and with a fixed-width input encoding — and the
   data has to grow too; at $n = 128$ nothing up to $m = 128$ learns. At depth 2, where the
   linear-width construction lives, it grows faster still (≈ $n^3$), and with Sanford et
-  al.'s own encoding nothing up to $m = 96$ learns even with all-pairs labels. This matches Saparov et al. (ICLR 2025): transformers
+  al.'s own encoding, even with all-pairs labels, the width that learns is ≥ 48 at $n = 32$ — ≥ 5× their $sqrt(N)$. This matches Saparov et al. (ICLR 2025): transformers
   struggle to learn search even when it is representable.
 + *A hypothesis for the $n^2$.* $n^2$ is the number of bits in the adjacency matrix, and
   Yehudai et al. note that quadratic width suffices for *any* graph task by copying the
@@ -972,8 +1002,8 @@ sequence ≈ 2.25$n$ long, ≈ 3× the step cost.
 #figure(
   tbl(columns: (auto, 1fr, auto), align: (left, left, center),
     [*Item*], [*Purpose*], [*Status*],
-    [Edge tokens, 4× steps], [`enc_edges96k`: does a critical width appear with time? where against adjacency rows?], [running],
-    [Random-walk features], [adjacency + $k$-step walk features ($k$ = 2, 4, 8): width saved per free hop], [next],
+    [Edge tokens, 4× steps], [`enc_edges96k`: does a critical width appear with time?], [done: 2–2.5× adjacency rows],
+    [Walk encodings], [$k$-hop rows ($k$ = 2, 4: width saved per free hop), RWSE ($j <= 8$; $j <= 16$ leaks, control)], [next],
     [Probing], [read what each layer computes: path doubling ($A^(2^ell)$) or a copy of the whole graph? — explains the $n^2$], [then],
     [Q7b diameter], [fix $n$, vary the diameter], [dropped (supervisor)],
     [Q4 Graphormer bias], [shortest-path bias gives connectivity away; needs a task it doesn't leak], [planned],
@@ -987,7 +1017,7 @@ sequence ≈ 2.25$n$ long, ≈ 3× the step cost.
   *Reproduce.* Every number above comes from #kbd("python width_sweep.py <sweep> --analyze")
   or #kbd("--curves") over #kbd("results/width/<sweep>*.jsonl") (sweeps #kbd("q1"),
   #kbd("q1b"), #kbd("q1c"), #kbd("q3pilot"), #kbd("q3pilot2"), #kbd("q3probe"),
-  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj"), #kbd("q7depth"), #kbd("q7c"), #kbd("enc_edges")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
+  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj"), #kbd("q7depth"), #kbd("q7c"), #kbd("enc_edges"), #kbd("enc_edges96k")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
   #kbd("reports/figures/width_progress_plots.py"). The Sanford section: #kbd("python sanford_repro.py <sweep> --analyze")
   over #kbd("results/sanford/") (#kbd("a1k"), #kbd("a100k_lr1e4"), #kbd("bwidth"), #kbd("b2"), #kbd("b2long")) and #kbd("--audit").
 ]

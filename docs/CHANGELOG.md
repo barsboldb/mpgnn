@@ -4,6 +4,35 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-15
+
+### enc_edges96k: with 4x the steps edge tokens learn, at 2-3x the width of adjacency rows
+
+`enc_edges96k` on Kaggle (16 runs, 16 workers on 2 T4s). 11 runs hit the 420 min cap
+(`truncated`): m = 96 got 48–54k of 96k steps, m = 48 / 64 at n = 40 84–90k; the
+m = 32 runs and n = 32 m = 64 finished. Final test exact / pair, seed 0 · seed 1:
+
+| m | n = 32 | n = 40 |
+|---|---|---|
+| 32 | 0.52 / 0.939 · 0.50 / 0.915 | 0.37 / 0.856 · 0.22 / 0.762 |
+| 48 | 0.74 / 0.972 · 0.36 / 0.816 (T) | 0.14 / 0.757 · 0.41 / 0.856 (T) |
+| 64 | **0.995 / 0.999 · 0.897 / 0.990** | 0.59 / 0.934 · 0.11 / 0.788 (T) |
+| 96 | 0.835 / 0.979 · 0.960 / 0.996 (T, 54k) | 0.87 / 0.985 · 0.47 / 0.906 (T, 48k) |
+
+Critical width (`--scaling`, test pair ≥ 0.95, final epoch, mean of per-seed crossings —
+the measure behind q3lr's 21.9 / 30.2): n = 32 **48.2** (36.5 / 59.9); n = 40 seed 0
+72.5, seed 1 > 96 (truncated at 48k steps, still rising) — so ≥ 72. That is 2.2× the
+adjacency-row width at n = 32 and ≥ 2.4× at n = 40, with 4× the steps (adjacency rows
+don't lower their m* with more steps, q3steps). No slope: n = 40 is a lower bound.
+- **A width threshold exists given time.** At n = 32 both seeds of m = 64 generalize
+  (exact 0.995 / 0.897); train ≈ test everywhere, no memorization.
+- **Seeds split.** Many runs escape the first plateau and then stall on a partial
+  solution for 50k+ steps (n = 32 m = 48 seed 1 at pair 0.82; n = 40 m = 64 seed 1 at
+  0.79–0.81) while the other seed goes on to solve it — unlike adjacency rows, whose
+  seeds agree within a few width units.
+- Sanford's representation bound for this encoding is √N ≈ 9–10 (N ≈ 2.25n tokens);
+  the width that learns is ≥ 5× that at n = 32.
+
 ## 2026-10-14
 
 ### enc_edges: edge tokens don't learn at the adjacency-row budget; resolves the B2 confound

@@ -123,7 +123,7 @@ depth 6, LR 1e-3, 2 seeds, n = 32–56).
 | adjacency rows | q3lr / q3big / q3data | done: m* ∝ n^1.85 |
 | fixed random-projection IDs (96 wide) | q6proj | done: ∝ n^2.0, ~20 % above |
 | edge-list tokens (Sanford), all-pairs read-out | `enc_edges` | done: no critical width at 24k steps for any n (best: n = 32, m = 48, one seed, exact 0.76); ~3× the width of adjacency rows for equal pair accuracy |
-| edge-list tokens, 4× steps (96k), n = 32 / 40 | `enc_edges96k` | running: does a critical width appear with time? |
+| edge-list tokens, 4× steps (96k), n = 32 / 40 | `enc_edges96k` | done: m* (pair 0.95) 48.2 at n = 32, ≥ 72 at n = 40 — 2.2× / ≥ 2.4× adjacency rows; seeds split (one stalls on a partial solution) |
 | adjacency + k-hop reachability rows (k = 2, 4) — k hops for free, diameter / k left | `enc_khop2`, `enc_khop4` | set up (n = 40 / 56); local check: khop4 learns at m = 8 where adjacency rows need ~22 |
 | adjacency + RWSE, return probabilities diag(Pʲ), j ≤ 8 | `enc_rwse8` | set up; audited clean (`audit_walk_features.py`) |
 | adjacency + RWSE j ≤ 16 (GraphGPS default) | `enc_rwse16` | set up as a positive control: leaks (graph-connected 0.90 / 0.72 at n = 40 / 56) |
