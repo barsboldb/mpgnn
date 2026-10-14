@@ -178,6 +178,23 @@ SWEEPS["enc_edges"] = dict(SWEEPS["q3lr"], input="edges", ns=[32, 40, 48, 56],
 # deadline (a capped run keeps its curve and is flagged "truncated").
 SWEEPS["enc_edges96k"] = dict(SWEEPS["enc_edges"], ns=[32, 40], steps=96000, max_minutes=420,
                               widths_by_n={32: [32, 48, 64, 96], 40: [32, 48, 64, 96]})
+# Precomputed walks (WalkInput), q3lr protocol at n = 40 / 56 (baseline m* 30.2 / 57.9),
+# 2 seeds. khop2 / khop4: adjacency row + k-hop reachability row — k hops for free, so the
+# remaining task is connectivity at diameter / k on the same graphs (k-hop exact-match is
+# 0 up to k = 4 on swap, so neither gives the answer away). rwse8: + return probabilities
+# diag(P^j), j <= 8 — clean (audit 2026-10-14: graph-connected from the features 0.53 at
+# n = 40 / 56). rwse16 is the GraphGPS default and a positive control: it leaks (0.90 at
+# n = 40, 0.72 at n = 56; walks of 16 steps approach deg / vol(component)).
+# Widths from a local check (n = 32, 3000 steps, 16k graphs; adjacency rows at m = 32:
+# exact 0.31): khop2 m = 12 0.78, m = 32 0.95; khop4 m = 8 0.97; rwse8 m = 32 0.26.
+SWEEPS["enc_khop2"] = dict(SWEEPS["q3lr"], input="khop", walk_k=2, ns=[40, 56],
+                           widths_by_n={40: [6, 8, 12, 16, 24], 56: [8, 12, 16, 24, 32]})
+SWEEPS["enc_khop4"] = dict(SWEEPS["enc_khop2"], walk_k=4,
+                           widths_by_n={40: [2, 4, 6, 8, 12], 56: [4, 6, 8, 12, 16]})
+SWEEPS["enc_rwse8"] = dict(SWEEPS["q3lr"], input="rwse", walk_k=8, ns=[40, 56],
+                           widths_by_n={40: [16, 24, 32, 48], 56: [32, 48, 64, 96]})
+SWEEPS["enc_rwse16"] = dict(SWEEPS["enc_rwse8"], walk_k=16,
+                            widths_by_n={40: [8, 16, 32, 48], 56: [8, 16, 32, 64]})
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
@@ -490,9 +507,41 @@ class EdgeTokenModel(nn.Module):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
+class WalkInput(nn.Module):
+    """Encoding study, precomputed walks. Each node token is its adjacency row plus
+      "khop": its k-hop reachability row [(A + I)^k > 0] (n more entries) — k hops
+              given for free, so the task left is connectivity at diameter / k;
+      "rwse": its random-walk return probabilities diag(P^j), j = 1..k, P = D^-1 (A + I)
+              (k more entries; Dwivedi et al. 2022, the GraphGPS default).
+    Built on the fly from A + I; same model and read-out as the baseline."""
+
+    def __init__(self, n, mode, k, width, depth, heads):
+        super().__init__()
+        self.mode, self.k = mode, k
+        self.inner = ConnectivityTransformer(n + (n if mode == "khop" else k), width, depth, heads)
+
+    def forward(self, Aaug):
+        if self.mode == "khop":
+            M = Aaug
+            for _ in range(self.k - 1):
+                M = (M @ Aaug).clamp_(max=1.0)           # stays 0/1, no overflow
+            return self.inner(torch.cat([Aaug, M], -1))
+        P = Aaug / Aaug.sum(-1, keepdim=True)
+        M, diags = P, []
+        for _ in range(self.k):
+            diags.append(torch.diagonal(M, dim1=-2, dim2=-1))
+            M = M @ P
+        return self.inner(torch.cat([Aaug, torch.stack(diags, -1)], -1))
+
+    def num_parameters(self):
+        return self.inner.num_parameters()
+
+
 def build_model(cfg, width, heads, seed):
     if cfg.get("input", "adj") == "idproj":
         return ProjectedInput(cfg["n"], cfg["id_dim"], width, cfg["depth"], heads, seed)
+    if cfg.get("input") in ("khop", "rwse"):
+        return WalkInput(cfg["n"], cfg["input"], cfg["walk_k"], width, cfg["depth"], heads)
     if cfg.get("input") == "edges":
         return EdgeTokenModel(cfg["n"], width, cfg["depth"], heads)
     return ConnectivityTransformer(cfg["n"], width, cfg["depth"], heads)

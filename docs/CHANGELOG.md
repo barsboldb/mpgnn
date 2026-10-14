@@ -36,6 +36,29 @@ wave of 16 workers). New config key `max_minutes` (420 here): a run past the cap
 its next evaluation and is saved with `"truncated": true`, so a slow run keeps its curve
 instead of dying at the session deadline. Expected ~1.5 h data prep + ≤ 7 h training.
 
+### Walk encodings set up: k-hop rows and RWSE; the GraphGPS RWSE default leaks connectivity
+
+`WalkInput` (width_sweep.py): adjacency row plus either the k-hop reachability row
+[(A + I)^k > 0] ("khop": k hops for free, leaving connectivity at diameter / k on the
+same graphs — also a path-length cut without new graphs, cf. the dropped Q7b) or the
+return probabilities diag(P^j), j ≤ K, P = D^-1 (A + I) ("rwse", Dwivedi et al. 2022).
+Inputs checked against numpy / shortest paths. Leak audit (`audit_walk_features.py`,
+2000 swap graphs, gradient boosting; graph-connected from the RWSE features, chance 0.5;
+far pairs (> 4 hops) same-component, base 0.56 / 0.63):
+
+| K | 4 | 8 | 16 | 32 |
+|---|---|---|---|---|
+| n = 40: graph / pair | 0.503 / 0.543 | 0.536 / 0.540 | **0.896 / 0.806** | **0.997 / 0.965** |
+| n = 56: graph / pair | 0.506 / 0.606 | 0.527 / 0.598 | **0.715 / 0.667** | **0.982 / 0.895** |
+
+K ≤ 8 is clean; K = 16, the GraphGPS default, gives connectivity away (long walks
+approach deg / vol(component)), less so at larger n. Local check (n = 32, 16k graphs,
+3000 steps, exact / pair): adjacency rows m = 32 0.31 / 0.82; rwse8 m = 32 0.26 / 0.81;
+khop2 m = 12 0.78 / 0.97, m = 32 0.95 / 0.99; khop4 m = 8 0.97 / 0.998. Two free hops
+already change the picture a lot. Sweeps (q3lr protocol, n = 40 / 56, 2 seeds, 72 runs):
+`enc_khop2` (m 6–32), `enc_khop4` (m 2–16), `enc_rwse8` (m 16–96), `enc_rwse16` (positive
+control, m 8–64). Notebook set to these four, 2 shards each (8 workers).
+
 ## 2026-10-13
 
 ### Thesis direction: input encodings; Q7b dropped; enc_edges set up
