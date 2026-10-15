@@ -734,11 +734,14 @@ def scaling(name, th=0.95, max_width=None, also=()):
         for label, key, at in (("fit", "train_pair", "final"), ("generalize", "test_pair", "final")):
             pooled, seedmean = {}, {}
             for n in ns:
+                # only the widths run at this n (grids differ per n; a missing width
+                # would be NaN and block the interpolation across it)
+                ws = [w for w in widths if any(cell(r)[0] == n and r["width"] == w for r in sub)]
                 def curve(ss):
                     return [np.mean([r[at][key] for r in sub if cell(r)[0] == n
-                                     and r["width"] == w and r["seed"] in ss]) for w in widths]
-                pooled[n] = crossing(widths, curve(seeds), th)
-                per = [crossing(widths, curve([s]), th) for s in seeds]
+                                     and r["width"] == w and r["seed"] in ss]) for w in ws]
+                pooled[n] = crossing(ws, curve(seeds), th)
+                per = [crossing(ws, curve([s]), th) for s in seeds]
                 seedmean[n] = float("nan") if any(map(math.isnan, per)) else float(np.mean(per))
                 print(f"  {label:<10} n={n:<4} m*={pooled[n]:6.1f}   seed-mean {seedmean[n]:6.1f}"
                       "   per seed: " + ", ".join("  >max" if math.isnan(v) else f"{v:6.1f}"

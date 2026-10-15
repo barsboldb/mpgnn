@@ -1,0 +1,21 @@
+Device cuda | sweep enc_rwse16 shard 0/1: 16 runs to go (0 on disk)
+  loading data for seed 0, n=40, 128000 train graphs...
+  [1/16] n=40  L=6  N=128000 m=8    H=1   lr=0.001   seed=0  train=0.595 val=0.605 test@bestval=0.585 test@final=0.585  (404.4s)
+  [2/16] n=40  L=6  N=128000 m=16   H=2   lr=0.001   seed=0  train=0.633 val=0.650 test@bestval=0.627 test@final=0.625  (415.5s)
+  [3/16] n=40  L=6  N=128000 m=32   H=4   lr=0.001   seed=0  train=0.842 val=0.838 test@bestval=0.835 test@final=0.838  (427.0s)
+  [4/16] n=40  L=6  N=128000 m=48   H=6   lr=0.001   seed=0  train=0.946 val=0.922 test@bestval=0.925 test@final=0.927  (462.0s)
+  loading data for seed 0, n=56, 128000 train graphs...
+  [5/16] n=56  L=6  N=128000 m=8    H=1   lr=0.001   seed=0  train=0.428 val=0.500 test@bestval=0.500 test@final=0.420  (436.6s)
+  [6/16] n=56  L=6  N=128000 m=16   H=2   lr=0.001   seed=0  train=0.465 val=0.500 test@bestval=0.500 test@final=0.460  (485.6s)
+  [7/16] n=56  L=6  N=128000 m=32   H=4   lr=0.001   seed=0  train=0.537 val=0.525 test@bestval=0.532 test@final=0.535  (555.5s)
+  [8/16] n=56  L=6  N=128000 m=64   H=8   lr=0.001   seed=0  train=0.807 val=0.780 test@bestval=0.770 test@final=0.767  (828.9s)
+  loading data for seed 1, n=40, 128000 train graphs...
+  [9/16] n=40  L=6  N=128000 m=8    H=1   lr=0.001   seed=1  train=0.600 val=0.605 test@bestval=0.600 test@final=0.598  (459.2s)
+  [10/16] n=40  L=6  N=128000 m=16   H=2   lr=0.001   seed=1  train=0.652 val=0.647 test@bestval=0.645 test@final=0.637  (424.4s)
+  [11/16] n=40  L=6  N=128000 m=32   H=4   lr=0.001   seed=1  train=0.799 val=0.775 test@bestval=0.795 test@final=0.795  (423.5s)
+  [12/16] n=40  L=6  N=128000 m=48   H=6   lr=0.001   seed=1  train=0.954 val=0.927 test@bestval=0.948 test@final=0.948  (445.8s)
+  loading data for seed 1, n=56, 128000 train graphs...
+  [13/16] n=56  L=6  N=128000 m=8    H=1   lr=0.001   seed=1  train=0.440 val=0.500 test@bestval=0.500 test@final=0.438  (440.6s)
+  [14/16] n=56  L=6  N=128000 m=16   H=2   lr=0.001   seed=1  train=0.446 val=0.500 test@bestval=0.500 test@final=0.458  (441.6s)
+  [15/16] n=56  L=6  N=128000 m=32   H=4   lr=0.001   seed=1  train=0.513 val=0.500 test@bestval=0.500 test@final=0.490  (494.2s)
+  [16/16] n=56  L=6  N=128000 m=64   H=8   lr=0.001   seed=1  train=0.733 val=0.695 test@bestval=0.682 test@final=0.695  (764.1s)

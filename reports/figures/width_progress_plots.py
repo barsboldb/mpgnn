@@ -270,6 +270,47 @@ def fig_q7c():
     fig.savefig(os.path.join(OUT, "width-q7c-scaling.png"))
 
 
+def fig_encodings():
+    """Critical width vs n per input encoding (q3lr protocol: 128k graphs, depth 6,
+    LR 1e-3, 24k steps; edge tokens at 96k steps). RWSE-16 left out: it leaks."""
+    fig, ax = plt.subplots(figsize=(4.6, 3.1))
+    series = (("adjacency rows", "q3lr", (7, 3)), ("+ RWSE ($j \\leq 8$)", "enc_rwse8", (7, -11)),
+              ("+ 2-hop rows", "enc_khop2", (7, -3)), ("+ 4-hop rows", "enc_khop4", (7, -3)))
+    for i, (label, sw, off) in enumerate(series):
+        runs = load_runs(sw)
+        pts = []
+        for n in (40, 56):
+            per = seed_crossings(runs, n, None, "test_pair", "final")
+            pts.append((n, np.mean(per), min(per), max(per)))
+        x, y, lo, hi = map(np.array, zip(*pts))
+        ax.errorbar(x, y, yerr=[y - lo, hi - y], color=SERIES[i], marker=MARKERS[i],
+                    label=label, markeredgecolor="#fcfcfb", markeredgewidth=1.2,
+                    capsize=2.5, elinewidth=1, zorder=3)
+        b = np.log(y[1] / y[0]) / np.log(x[1] / x[0])
+        ax.annotate(rf"$\propto n^{{{b:.1f}}}$", (x[-1], y[-1]), xytext=off,
+                    textcoords="offset points", color=INK, fontsize=8)
+    # edge tokens (Sanford et al.), 4x the steps: n = 32 crosses, n = 40 only seed 0 (lower bound)
+    edges = load_runs("enc_edges96k")
+    m32 = np.mean(seed_crossings(edges, 32, None, "test_pair", "final"))
+    m40 = np.nanmax(seed_crossings(edges, 40, None, "test_pair", "final"))
+    ax.plot([32], [m32], marker="v", color=INK2, ms=6, ls="none", zorder=3,
+            label=r"edge tokens ($4\times$ steps)")
+    ax.plot([40], [m40], marker="v", mfc="none", mec=INK2, ms=6, zorder=3)
+    ax.annotate("", xy=(40, m40 * 1.45), xytext=(40, m40 * 1.05),
+                arrowprops=dict(arrowstyle="->", color=INK2, lw=1.2))
+    ns = [32, 40, 48, 56]
+    ax.set_xscale("log", base=2); ax.set_yscale("log", base=2)
+    ax.set_xticks(ns); ax.set_xticklabels([str(n) for n in ns])
+    ticks = [2, 4, 8, 16, 32, 64, 128]
+    ax.set_yticks(ticks); ax.set_yticklabels([str(t) for t in ticks])
+    ax.minorticks_off()
+    ax.set_xlim(29, 72); ax.set_ylim(2.5, 140)
+    ax.set_xlabel("graph size n")
+    ax.set_ylabel("critical width m* (pair acc. 0.95)")
+    legend_top(ax, ncol=3)
+    fig.savefig(os.path.join(OUT, "width-encodings.png"))
+
+
 if __name__ == "__main__":
     fig_q1b()
     fig_q1c()
@@ -278,4 +319,5 @@ if __name__ == "__main__":
     fig_q3fine_scaling()
     fig_q7depth()
     fig_q7c()
+    fig_encodings()
     print("wrote", ", ".join(f for f in sorted(os.listdir(OUT)) if f.startswith("width-")))

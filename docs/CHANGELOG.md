@@ -6,6 +6,41 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-10-15
 
+### Walk encodings: free hops collapse the width; RWSE adds nothing
+
+`enc_khop2`, `enc_khop4`, `enc_rwse8`, `enc_rwse16` on Google Colab (Kaggle quota out;
+`colab/width_sweep_colab.ipynb`, 4 workers on 1 GPU, 72 runs, ~7–17 min each). q3lr
+protocol, n = 40 / 56, 2 seeds. Critical width (test pair ≥ 0.95, final epoch, mean of
+per-seed crossings; per seed in brackets):
+
+| input | n = 40 | n = 56 | growth |
+|---|---|---|---|
+| adjacency rows (q3lr) | 30.1 (30.8 / 29.4) | 57.9 (59.2 / 56.7) | n^1.95 |
+| + RWSE, j ≤ 8 | 31.9 (30.3 / 33.5) | 57.9 (55.3 / 60.6) | n^1.77 |
+| + RWSE, j ≤ 16 (leaks) | 23.5 (23.3 / 23.6) | 48.2 (44.4 / 52.1) | n^2.14 |
+| + 2-hop rows | 13.0 (12.5 / 13.5) | 18.3 (19.7 / 16.8) | n^1.00 |
+| + 4-hop rows | 3.6 (3.7 / 3.5) | 4.5 (4.6 / 4.3) | n^0.63 |
+
+- **Hops left to compute set the width.** Two free hops (remaining diameter ~6 instead
+  of ~11) cut the width 2.3× at n = 40 and 3.2× at n = 56 and turn the growth from
+  ~n² to linear — the rate Yehudai et al.'s construction predicts. Four free hops
+  (~3 left) need width ≈ 4 with almost no growth. Since the swap diameter rises with n
+  (8.7 → 11.8 over n = 32–56), much of Q3's ~n² may be path length rather than node
+  count — the question Q7b would have asked, answered here at fixed graphs.
+- **RWSE (j ≤ 8), the standard structural encoding, changes nothing**: same critical
+  width as adjacency rows at both sizes.
+- **The leaky RWSE-16 helps where it leaks**: −22 % at n = 40 (audit 0.90), −17 % at
+  n = 56 (audit 0.72) — a leaked shortcut lowers the measured width, and less so as the
+  leak fades with n.
+- Fit ≈ generalize for every encoding (train ≈ test), as in q3lr at 128k graphs.
+- Two sizes only: slopes are two-point. Widths below 16 use 1 head (head_dim 8).
+
+`width_sweep.py --scaling`: crossings now use only the widths run at each n. Grids that
+differ per n put a NaN between two real widths and blocked the interpolation, giving
+"> max" (seen for rwse16 at n = 56: now 48.2). It could only produce NaN, never a wrong
+value, so earlier critical widths are unchanged (rechecked q3lr, rwse8, khop2/4,
+enc_edges96k). New figure `reports/figures/width-encodings.png`.
+
 ### enc_edges96k: with 4x the steps edge tokens learn, at 2-3x the width of adjacency rows
 
 `enc_edges96k` on Kaggle (16 runs, 16 workers on 2 T4s). 11 runs hit the 420 min cap

@@ -99,6 +99,11 @@
     up to 96 reaches the threshold at any $n$. With 4× the steps they learn, but at
     2.2× the adjacency-row width at $n = 32$ (48 vs 22) and ≥ 2.4× at $n = 40$ — at
     least 5× Sanford et al.'s $sqrt(N)$ for this very encoding.
+  + *The hops left to compute set the width.* Giving each token its 2-hop neighbourhood
+    cuts the critical width 2.3–3.2× and makes it grow *linearly* in $n$ (the rate the
+    constant-depth theory allows); 4 free hops leave width ≈ 4 with almost no growth.
+    The standard random-walk encoding (RWSE) changes nothing, and its common 16-step
+    version leaks connectivity.
 ]
 
 = Question and set-up
@@ -296,6 +301,7 @@ continuity), or *budget* (set by Kaggle's 30 GPU-hours a week). The tags below s
     [10-13], [Supervisor: study input encodings; Q7b dropped], [encoding study (E) set up],
     [10-14], [`enc_edges`: edge tokens, all-pairs labels (40 runs)], [no critical width at any $n$; ≈ 3× the width of adjacency rows],
     [10-15], [`enc_edges96k`: 4× the steps, $n$ = 32 / 40 (16 runs)], [learns: $m^* = 48$ / ≥ 72, 2.2× / ≥ 2.4× adjacency rows],
+    [10-15], [Walk encodings: $k$-hop rows, RWSE (72 runs, Colab)], [2 free hops: $m^* prop n^(1.0)$; RWSE: no change; RWSE-16 leaks],
   ),
   caption: [What was done, in order.],
 )
@@ -957,6 +963,68 @@ the $m = 96$ runs at 48 000–54 000 steps and some others at 84 000–90 000).
   need ≥ 2 sessions per size.
 ]
 
+= Encodings — precomputed walks
+
+Two ways to hand the model part of the walk, each appended to the adjacency row, on
+the q3lr protocol at $n$ = 40 / 56 (2 seeds, 72 runs):
+- *$k$-hop rows* — each token also gets its $k$-hop reachability row
+  $[(A + I)^k > 0]$: $k$ hops for free, leaving connectivity at about diameter $\/ k$
+  on the same graphs. No answer is given away: $k$-hop reachability alone gets 0 % of
+  the graphs exactly right for $k <= 4$ (shortcut audit).
+- *RWSE* — return probabilities $"diag"(P^j)$, $j = 1 … K$, $P = D^(-1) (A + I)$, the
+  structural encoding of GraphGPS-style models. Audit first: gradient boosting on these
+  features alone predicts whether the graph is connected at chance for $K <= 8$, but at
+  0.90 / 0.72 ($n$ = 40 / 56) for $K = 16$ — the usual default — and 0.997 / 0.98 for
+  $K = 32$: long walks settle at deg / vol(component), which gives the split away.
+  $K = 8$ is the real encoding; $K = 16$ runs as a positive control.
+
+#figure(
+  tbl(columns: 4,
+    [input], [$n = 40$], [$n = 56$], [growth],
+    [adjacency rows (Q3)], [30.1], [57.9], [$prop n^(1.95)$],
+    [\+ RWSE, $j <= 8$], [31.9], [57.9], [$prop n^(1.77)$],
+    [\+ RWSE, $j <= 16$ (leaks)], [23.5], [48.2], [$prop n^(2.14)$],
+    [\+ 2-hop rows], [*13.0*], [*18.3*], [$prop n^(1.00)$],
+    [\+ 4-hop rows], [*3.6*], [*4.5*], [$prop n^(0.63)$],
+  ),
+  caption: [Critical width by input encoding (test pair ≥ 0.95, final epoch, mean of
+  per-seed crossings; seeds within ±2 of the mean except RWSE-16 at $n = 56$, ±4).],
+)
+
+#figure(
+  image("figures/width-encodings.png", width: 82%),
+  caption: [Critical width vs $n$ per encoding (log–log; bars: the two seeds). Edge
+  tokens had 4× the steps; at $n = 40$ only a lower bound.],
+)
+
+#finding[
+  - *Free hops collapse the width and its growth.* Two hops cut the critical width
+    2.3× at $n = 40$ and 3.2× at $n = 56$, and the growth falls from $n^(1.95)$ to
+    $n^(1.00)$. Four hops leave ≈ 4 with growth $n^(0.6)$.
+  - *RWSE adds nothing*: with $K = 8$ the critical width matches adjacency rows at both
+    sizes.
+  - *A leaked shortcut lowers the measured width where it leaks*: RWSE-16 saves 22 %
+    at $n = 40$ (audit 0.90) and 17 % at $n = 56$ (0.72).
+  - Fitting and generalizing coincide for every encoding (train ≈ test).
+]
+
+#meaning[
+  The width a transformer needs to learn connectivity tracks the number of hops it must
+  still compute, more than the number of nodes. On `swap` the diameter grows with $n$
+  (8.7 → 11.8 over $n$ = 32–56), so part of Q3's ≈ $n^2$ is path length — the
+  question Q7b would have asked, answered here on the same graphs. With half the hops
+  left, the growth is linear, the rate Yehudai et al.'s constant-depth construction
+  allows. And input encodings divide into those that do part of the search
+  (k-hop rows), those that are only harder to read (edge tokens, projected IDs), and
+  those that add nothing (RWSE) — unless, like RWSE-16, they leak the answer.
+]
+
+#warn[
+  Two sizes, so every growth rate is a two-point slope. At widths below 16 the model
+  has one attention head (head_dim 8), so the 4-hop widths (3–5) are close to the
+  smallest model that can work at all.
+]
+
 = What it all means so far
 
 + *Measuring width is a protocol problem first.* Learning rate and training-set size
@@ -984,6 +1052,9 @@ the $m = 96$ runs at 48 000–54 000 steps and some others at 84 000–90 000).
   whole graph into every token. SGD may be finding that brute-force solution rather than
   the efficient log-depth one. Q6 rules out the *input* width, not this; probing the
   layers for path-doubling structure ($A^(2^ell)$, as in Ye et al.) would tell.
++ *Path length is a large part of it.* Precomputing two hops turns the growth linear,
+  four hops nearly flat (Encodings — precomputed walks); the width tracks the hops left
+  to compute.
 
 #warn[
   - All slopes come from four graph sizes spanning less than a factor of two in $n$,
@@ -991,8 +1062,9 @@ the $m = 96$ runs at 48 000–54 000 steps and some others at 84 000–90 000).
   - Learning-rate tuning covers $n$ = 40 / 56 only; $n$ = 32 / 48 use $3 dot 10^(-3)$.
   - Exact-match gets stricter as $n^2$ grows; pair-accuracy thresholds are reported
     alongside from now on.
-  - The `swap` diameter grows with $log n$, so $n$ and path length still rise together;
-    separating them (Q7b) is left out of the thesis (supervisor, 10-13).
+  - The `swap` diameter grows with $log n$, so $n$ and path length rise together; Q7b
+    is dropped (supervisor, 10-13), but the $k$-hop encodings separate them on the same
+    graphs.
   - One learning rate in the fine grid ($3 dot 10^(-3)$), for budget reasons; it is
     too high at $m = 128$, which is left out of the fit.
 ]
@@ -1003,7 +1075,8 @@ the $m = 96$ runs at 48 000–54 000 steps and some others at 84 000–90 000).
   tbl(columns: (auto, 1fr, auto), align: (left, left, center),
     [*Item*], [*Purpose*], [*Status*],
     [Edge tokens, 4× steps], [`enc_edges96k`: does a critical width appear with time?], [done: 2–2.5× adjacency rows],
-    [Walk encodings], [$k$-hop rows ($k$ = 2, 4: width saved per free hop), RWSE ($j <= 8$; $j <= 16$ leaks, control)], [next],
+    [Walk encodings], [$k$-hop rows ($k$ = 2, 4), RWSE ($j <= 8$; $j <= 16$ leaks)], [done: free hops → linear growth],
+    [Thesis write-up], [department LaTeX template; chapters from this report], [next],
     [Probing], [read what each layer computes: path doubling ($A^(2^ell)$) or a copy of the whole graph? — explains the $n^2$], [then],
     [Q7b diameter], [fix $n$, vary the diameter], [dropped (supervisor)],
     [Q4 Graphormer bias], [shortest-path bias gives connectivity away; needs a task it doesn't leak], [planned],
@@ -1017,7 +1090,7 @@ the $m = 96$ runs at 48 000–54 000 steps and some others at 84 000–90 000).
   *Reproduce.* Every number above comes from #kbd("python width_sweep.py <sweep> --analyze")
   or #kbd("--curves") over #kbd("results/width/<sweep>*.jsonl") (sweeps #kbd("q1"),
   #kbd("q1b"), #kbd("q1c"), #kbd("q3pilot"), #kbd("q3pilot2"), #kbd("q3probe"),
-  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj"), #kbd("q7depth"), #kbd("q7c"), #kbd("enc_edges"), #kbd("enc_edges96k")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
+  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj"), #kbd("q7depth"), #kbd("q7c"), #kbd("enc_edges"), #kbd("enc_edges96k"), #kbd("enc_khop2"), #kbd("enc_khop4"), #kbd("enc_rwse8"), #kbd("enc_rwse16")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
   #kbd("reports/figures/width_progress_plots.py"). The Sanford section: #kbd("python sanford_repro.py <sweep> --analyze")
   over #kbd("results/sanford/") (#kbd("a1k"), #kbd("a100k_lr1e4"), #kbd("bwidth"), #kbd("b2"), #kbd("b2long")) and #kbd("--audit").
 ]
