@@ -195,6 +195,25 @@ SWEEPS["enc_rwse8"] = dict(SWEEPS["q3lr"], input="rwse", walk_k=8, ns=[40, 56],
                            widths_by_n={40: [16, 24, 32, 48], 56: [32, 48, 64, 96]})
 SWEEPS["enc_rwse16"] = dict(SWEEPS["enc_rwse8"], walk_k=16,
                             widths_by_n={40: [8, 16, 32, 48], 56: [8, 16, 32, 64]})
+# More sizes for the encoding comparison (2026-10-18): the slopes above were fitted to two
+# sizes (n = 40 / 56). Add n = 32 / 48 to adjacency rows at LR 1e-3, khop2/4 and rwse8 so
+# every line has four points under one protocol; khop2/4 also get n = 72, cheap at their
+# widths (swap at n = 72 audited: stats->y 0.506, k-hop exact 0 up to k = 6, 0.08 at 8;
+# connected diameter 13.2). Widths bracket the threshold each n's fit predicts.
+# Updated in place, after every sweep derived from these has copied its settings; the
+# runs already on disk are skipped.
+SWEEPS["q3lr"].update(ns=[32, 40, 48, 56], widths_by_n={
+    32: [12, 16, 24, 32, 48], 40: [16, 24, 32, 48], 48: [24, 32, 48, 64, 96],
+    56: [32, 48, 64, 96]})
+SWEEPS["enc_rwse8"].update(ns=[32, 40, 48, 56], widths_by_n={
+    32: [12, 16, 24, 32, 48], 40: [16, 24, 32, 48], 48: [24, 32, 48, 64, 96],
+    56: [32, 48, 64, 96]})
+SWEEPS["enc_khop2"].update(ns=[32, 40, 48, 56, 72], widths_by_n={
+    32: [4, 6, 8, 12, 16], 40: [6, 8, 12, 16, 24], 48: [8, 12, 16, 24, 32],
+    56: [8, 12, 16, 24, 32], 72: [12, 16, 24, 32, 48]})
+SWEEPS["enc_khop4"].update(ns=[32, 40, 48, 56, 72], widths_by_n={
+    32: [2, 4, 6, 8, 12], 40: [2, 4, 6, 8, 12], 48: [2, 4, 6, 8, 12],
+    56: [4, 6, 8, 12, 16], 72: [4, 6, 8, 12, 16]})
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.

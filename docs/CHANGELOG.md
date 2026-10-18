@@ -4,6 +4,32 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-18
+
+### Encoding comparison: more graph sizes (set up, Kaggle)
+
+The encoding slopes of 2026-10-15 were fitted to two sizes (n = 40 / 56). The same sweeps
+get more sizes in place (the runs already on disk are skipped), so `--scaling` fits
+every line over one protocol (128k graphs, 24k steps, depth 6, LR 1e-3, 2 seeds):
+
+| sweep | new n | runs | widths |
+|---|---|---|---|
+| `q3lr` (adjacency rows) | 32, 48 | 20 | 12–48 / 24–96 |
+| `enc_rwse8` | 32, 48 | 20 | same as q3lr |
+| `enc_khop2` | 32, 48, 72 | 30 | 4–16 / 8–32 / 12–48 |
+| `enc_khop4` | 32, 48, 72 | 30 | 2–12 / 2–12 / 4–16 |
+
+- n = 72 only for k-hop rows: their thresholds stay small (khop2 ~24 by the linear fit),
+  while adjacency rows would need m ≈ 110 at ~45 min per run.
+- swap at n = 72 audited first (`audit_width_data.py --gens swap:0.25:6 --ns 56 72`):
+  stats → y 0.506, stats + 4-hop 0.242, k-hop exact-match 0 up to k = 6, 0.08 at k = 8,
+  0.64 at k = 12; connected diameter 13.2 [11–18] (n = 56: 11.7). Clean, and the
+  diameter keeps rising with n.
+- Data build: n = 32 is the slow one (the generator rejects many graphs; ~70 min per
+  128k set on one core locally), n = 48 / 72 a few minutes.
+- `kaggle/width_sweep.ipynb`: SWEEPS = q3lr, enc_rwse8, enc_khop2, enc_khop4; 2 shards
+  each. ~100 runs, ~18 GPU-hours of runs on 8 workers → ~3–4 h wall plus data build.
+
 ## 2026-10-15
 
 ### Walk encodings: free hops collapse the width; RWSE adds nothing
