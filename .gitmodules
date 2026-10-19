@@ -1,4 +1,4 @@
 [submodule "thesis"]
 	path = thesis
 	url = git@github.com:barsboldb/mpgnn-thesis.git
-	branch = main
+	branch = master
