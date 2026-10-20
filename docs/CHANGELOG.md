@@ -6,14 +6,14 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-10-20
 
-### More sizes: results recovered from the notebook log; 2-hop rows grow as n^1.27, not linearly
+### More sizes: 2-hop rows grow as n^1.27, not linearly
 
-The 2026-10-18 Kaggle session timed out at 12 h and saved no output (incident below).
-Its log held the `--curves` output — every run's train / test exact-match and test pair
-accuracy per epoch — for q3lr, enc_rwse8 and enc_khop2. Parsed back into
-`results/width/<sweep>.shard-recovered.jsonl` (70 runs, flagged `recovered`; no val,
-no train pair, so `--scaling` reports "fit" as n/a for them). Check: the 52 runs of the
-same sweeps already in the repo match the parsed final test pair to 5e-4, all 52.
+The 2026-10-18 Kaggle session hit the 12 h limit before its zip cell, but Kaggle kept
+the working directory; downloaded as `results.zip`, its `results/width/*.jsonl` are the
+full records (the repo's files are exact prefixes of them). Copied in: 70 new runs for
+q3lr / enc_rwse8 / enc_khop2, 11 for enc_khop4. (Before the output turned up, the same
+70 runs had been parsed back from the notebook log's `--curves` output; they match the
+real records to the log's 5e-4 rounding, all 70.)
 
 Critical width (test pair ≥ 0.95, final epoch, mean of per-seed crossings; 90 % seed
 bootstrap of the slope):
@@ -39,15 +39,17 @@ bootstrap of the slope):
 - The Kaggle copy ran `SHARDS = 16` → 64 workers, each holding its training set in RAM
   (1.3 GB at n = 72). 38 were killed (-9) by 7.2 h.
 - The catch-up cell then ran the remaining runs in one process with no deadline (the
-  11 h stop lived only in the worker loop) until Kaggle killed the session at 12 h, which
-  discards the output.
+  11 h stop lived only in the worker loop) until Kaggle killed the session at 12 h —
+  before the zip cell. The working directory was kept, so nothing was lost, but the
+  results had to be fetched from the whole output folder.
 - Data build: 4.5 h, of which n = 32 alone took 4.3 h (two 128k sets, 4 CPUs).
 - Fixes in `kaggle/width_sweep.ipynb`: one `DEADLINE` (10 h) bounds both the workers and
   the catch-up (`subprocess.run(timeout=...)`); the results are zipped every 30 min; a
   RAM note at `SHARDS` (keep ≤ ~8 workers).
-- enc_khop4's new runs were lost (its curves had not been printed). Rerun without n = 32
-  (threshold at the floor, m* ~3; the n = 32 data costs 4 h): n = 48 / 72, 20 runs,
-  `SWEEPS = ["enc_khop4"]`, `SHARDS = 4`, ~1 h.
+- enc_khop4 is incomplete: seed 0 at n = 32 / 48, one run at n = 72. Rerun drops n = 32
+  (threshold at the floor, m* ~3; the n = 32 data costs 4 h): 14 runs at n = 48 / 72,
+  `SWEEPS = ["enc_khop4"]`, `SHARDS = 4`, ~1 h. `--scaling` now tolerates runs without
+  `train_pair` (prints n/a).
 
 ## 2026-10-18
 

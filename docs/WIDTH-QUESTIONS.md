@@ -124,7 +124,7 @@ depth 6, LR 1e-3, 2 seeds, n = 32–56).
 | fixed random-projection IDs (96 wide) | q6proj | done: ∝ n^2.0, ~20 % above |
 | edge-list tokens (Sanford), all-pairs read-out | `enc_edges` | done: no critical width at 24k steps for any n (best: n = 32, m = 48, one seed, exact 0.76); ~3× the width of adjacency rows for equal pair accuracy |
 | edge-list tokens, 4× steps (96k), n = 32 / 40 | `enc_edges96k` | done: m* (pair 0.95) 48.2 at n = 32, ≥ 72 at n = 40 — 2.2× / ≥ 2.4× adjacency rows; seeds split (one stalls on a partial solution) |
-| adjacency + k-hop reachability rows (k = 2, 4) — k hops for free, diameter / k left | `enc_khop2`, `enc_khop4` | done: k = 2: 9.2 / 13.0 / 16.7 / 18.3 / 26.6 at n = 32–72, ∝ n^1.27 (90 % 1.04–1.50; the earlier two-point n^1.0 was the flat 40→56 stretch); k = 4: 3.6 / 4.5 at n = 40 / 56 (n = 48 / 72 rerunning) — free hops cut width and growth |
+| adjacency + k-hop reachability rows (k = 2, 4) — k hops for free, diameter / k left | `enc_khop2`, `enc_khop4` | done: k = 2: 9.2 / 13.0 / 16.7 / 18.3 / 26.6 at n = 32–72, ∝ n^1.27 (90 % 1.04–1.50; the earlier two-point n^1.0 was the flat 40→56 stretch); k = 4: 3.6 / 4.5 at n = 40 / 56 (n = 48 / 72: one seed so far, rerunning) — free hops cut width and growth |
 | adjacency + RWSE, return probabilities diag(Pʲ), j ≤ 8 | `enc_rwse8` | done: 23.2 / 31.9 / 45.2 / 57.9 at n = 32–56, ∝ n^1.65 — same as adjacency rows; audited clean (`audit_walk_features.py`) |
 | adjacency + RWSE j ≤ 16 (GraphGPS default) | `enc_rwse16` | done (positive control; leaks 0.90 / 0.72): 23.5 / 48.2, lower where it leaks more |
 | node-ID variants (learned / random / one-hot) | — | optional |
