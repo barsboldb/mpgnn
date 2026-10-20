@@ -33,3 +33,6 @@ bdh-research-emergency/
 # so the bibliography stays version-controlled and the set is re-fetchable from its links.
 papers/*.pdf
 kaggle/working/
+
+# Trained weights saved by width_sweep.py sweeps with save_models (regenerate by training)
+results/width/models/

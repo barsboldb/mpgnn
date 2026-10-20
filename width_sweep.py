@@ -216,6 +216,12 @@ SWEEPS["enc_khop2"].update(ns=[32, 40, 48, 56, 72], widths_by_n={
 SWEEPS["enc_khop4"].update(ns=[40, 48, 56, 72], widths_by_n={
     40: [2, 4, 6, 8, 12], 48: [2, 4, 6, 8, 12], 56: [4, 6, 8, 12, 16],
     72: [4, 6, 8, 12, 16]})
+# Probing (2026-10-20): what does each layer compute? q3lr at n = 40 / 56 on widths that
+# bracket each threshold (m* 30.1 / 57.9), saving the final weights for probe_layers.py
+# (results/width/models/probe/, not in git). Same seeds and data as q3lr, so the runs
+# also re-measure q3lr's numbers at those widths.
+SWEEPS["probe"] = dict(SWEEPS["q3lr"], ns=[40, 56], save_models="probe",
+                       widths_by_n={40: [16, 24, 32, 48], 56: [32, 48, 64, 96]})
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
@@ -608,6 +614,11 @@ def train_one(cfg, width, lr, seed, splits):
                 break   # per-run cap: keep what was learned so far, flagged below
 
     best = max(history, key=lambda h: h["val"])
+    if cfg.get("save_models"):   # final weights, for probe_layers.py
+        mdir = os.path.join(OUT_DIR, "models", cfg["save_models"])
+        os.makedirs(mdir, exist_ok=True)
+        torch.save(model.state_dict(), os.path.join(
+            mdir, f"n{cfg['n']}_L{cfg['depth']}_m{width}_lr{lr:g}_s{seed}.pt"))
     return {"width": width, "lr": lr, "seed": seed, "heads": heads, "train_size": N,
             "params": model.num_parameters(), "seconds": round(time.time() - t0, 1),
             "final": history[-1], "best_val": best, "history": history,

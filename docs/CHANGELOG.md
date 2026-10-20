@@ -6,6 +6,28 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-10-20
 
+### Probing set up: what does each layer know about paths?
+
+- `width_sweep.py`: sweeps can set `save_models` to save each run's final weights to
+  `results/width/models/<name>/` (gitignored). New sweep `probe`: q3lr at n = 40
+  (m = 16, 24, 32, 48) and n = 56 (m = 32, 48, 64, 96), 2 seeds — widths bracketing each
+  threshold (30.1 / 57.9), so failing and succeeding models are both probed.
+- `probe_layers.py`: residual stream after the read-in and every block (layer-normed),
+  on fresh swap graphs (500 train / 300 test, seeds 9001 / 9002). Two linear probes per
+  layer and k ∈ {1, 2, 3, 4, 6, 8, ∞}, scored by held-out ROC-AUC:
+  - pair: bilinear h_iᵀ W h_j (the model's own read-out form) for d(i, j) ≤ k;
+  - set: linear h_i → Rⁿ for node i's whole k-hop set (does the node store its set?).
+  Every probe is also fitted on the untrained twin (same init seed) as the baseline.
+- Local check on a model that failed to learn (n = 40, m = 48, 12k graphs, pair 0.68):
+  layer 0 decodes k = 1–2 perfectly by the pair probe in both trained and untrained
+  networks (a_i · a_j = 2-hop counts — the probe's own power), the set probe recovers
+  k = 1 (m ≥ n), and beyond that trained = untrained (AUC 0.70 at k = 3, 0.62 at ∞). So
+  the baseline is necessary and the probe adds no structure of its own.
+- MPS is ~18× slower than the CPU for these small fits (26 s vs 1.5 s); the script uses
+  CUDA or the CPU. On Kaggle it runs in the notebook after training (new cell, bounded
+  by the deadline). Notebook: `SWEEPS = ["probe"]`, `SHARDS = 8`.
+
+
 ### khop4 complete: the growth exponent falls with every free hop
 
 `enc_khop4` rerun on Kaggle (14 runs, n = 48 / 72, `SHARDS = 4`, ~1 h, no errors). Critical
