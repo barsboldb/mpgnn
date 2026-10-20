@@ -58,7 +58,7 @@
   #v(-0.3em)
   #text(11pt, fill: luma(80))[Progress report — what was done, what came out, and what it means]
   #v(-0.2em)
-  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-15 ·
+  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-20 ·
   raw log: #kbd("docs/CHANGELOG.md") · questions: #kbd("docs/WIDTH-QUESTIONS.md")]
 ]
 
@@ -77,10 +77,10 @@
   + *On the clean task, width decides whether learning starts at all.* At $n = 64$ only
     $m >= 64$ leave the trivial predictor; at $n = 128$ nothing up to $m = 128$ does.
   + *The width needed to learn connectivity grows superlinearly in $n$ — about
-    $n^(1.9)$ over $n = 32$–$56$ — even with ample data.* With 32 000 graphs, fitting and
+    $n^(1.7)$ over $n = 32$–$56$ — even with ample data.* With 32 000 graphs, fitting and
     generalizing come apart ($n^(1.55)$ vs $n^(2.27)$); with 128 000 graphs they coincide,
-    and the shared critical width grows as $n^(1.94)$ at one learning rate, $n^(1.85)$
-    with the rate tuned where tested (seed-bootstrap 90 % range 1.68–2.03). Doubling the
+    and the shared critical width grows as $n^(1.94)$ at learning rate $3 dot 10^(-3)$ and
+    $n^(1.74)$ at $10^(-3)$ (all four sizes; seed-bootstrap 90 % range 1.59–1.90). Doubling the
     training steps does not lower it, and neither does a fixed-width input encoding (Q6).
     Theory says this depth needs far less width just to *represent* connectivity.
   + *Depth saves little width at small $n$, but much more as $n$ grows.* At $n = 40$, two layers learn
@@ -99,9 +99,9 @@
     up to 96 reaches the threshold at any $n$. With 4× the steps they learn, but at
     2.2× the adjacency-row width at $n = 32$ (48 vs 22) and ≥ 2.4× at $n = 40$ — at
     least 5× Sanford et al.'s $sqrt(N)$ for this very encoding.
-  + *The hops left to compute set the width.* Giving each token its 2-hop neighbourhood
-    cuts the critical width 2.3–3.2× and makes it grow *linearly* in $n$ (the rate the
-    constant-depth theory allows); 4 free hops leave width ≈ 4 with almost no growth.
+  + *The hops left to compute set the width — and its growth.* Giving each token its
+    2-hop neighbourhood cuts the critical width 2.3–3.2× and the growth from $n^(1.74)$
+    to $n^(1.27)$ (over $n$ = 32–72); 4 free hops leave width 4–7 growing as $n^(1.03)$.
     The standard random-walk encoding (RWSE) changes nothing, and its common 16-step
     version leaks connectivity.
 ]
@@ -301,7 +301,8 @@ continuity), or *budget* (set by Kaggle's 30 GPU-hours a week). The tags below s
     [10-13], [Supervisor: study input encodings; Q7b dropped], [encoding study (E) set up],
     [10-14], [`enc_edges`: edge tokens, all-pairs labels (40 runs)], [no critical width at any $n$; ≈ 3× the width of adjacency rows],
     [10-15], [`enc_edges96k`: 4× the steps, $n$ = 32 / 40 (16 runs)], [learns: $m^* = 48$ / ≥ 72, 2.2× / ≥ 2.4× adjacency rows],
-    [10-15], [Walk encodings: $k$-hop rows, RWSE (72 runs, Colab)], [2 free hops: $m^* prop n^(1.0)$; RWSE: no change; RWSE-16 leaks],
+    [10-15], [Walk encodings: $k$-hop rows, RWSE (72 runs, Colab)], [2 free hops: width ÷ 2.3–3.2; RWSE: no change; RWSE-16 leaks],
+    [10-20], [More sizes: $n$ = 32 / 48 (+ 72 for $k$-hop), LR $10^(-3)$ (95 runs)], [growth $n^(1.74)$ → $n^(1.27)$ → $n^(1.03)$ with 0 / 2 / 4 free hops],
   ),
   caption: [What was done, in order.],
 )
@@ -667,9 +668,10 @@ per width and seed on final validation exact-match, as in Q1.
 #meaning[
   The superlinear growth survives every confound we have tested: the learning rate
   (Q1 and this check), the amount of data (data check) and the training budget (step
-  check). Over $n = 32$–$56$ the width a transformer needs to *learn* connectivity grows
-  roughly as $n^(1.9)$. $n$ = 32 / 48 have not been re-run at $10^(-3)$; $n = 48$ would
-  likely come down a little too.
+  check). *Update 10-20:* with $n$ = 32 / 48 re-run at $10^(-3)$ as well, the critical
+  width is 21.9 / 30.1 / 42.3 / 57.9 at $n$ = 32 / 40 / 48 / 56 — $n = 48$ came down from
+  51.1, $n = 32$ did not move — and grows as *$n^(1.74)$* (90 % 1.59–1.90) at one rate
+  throughout.
 ]
 
 = Q6 — is the growth just the input encoding?
@@ -966,7 +968,8 @@ the $m = 96$ runs at 48 000–54 000 steps and some others at 84 000–90 000).
 = Encodings — precomputed walks
 
 Two ways to hand the model part of the walk, each appended to the adjacency row, on
-the q3lr protocol at $n$ = 40 / 56 (2 seeds, 72 runs):
+the q3lr protocol (128k graphs, 24k steps, LR $10^(-3)$, 2 seeds) at $n$ = 32–56, with
+$n = 72$ added for $k$-hop rows, whose widths stay small (147 runs):
 - *$k$-hop rows* — each token also gets its $k$-hop reachability row
   $[(A + I)^k > 0]$: $k$ hops for free, leaving connectivity at about diameter $\/ k$
   on the same graphs. No answer is given away: $k$-hop reachability alone gets 0 % of
@@ -979,16 +982,17 @@ the q3lr protocol at $n$ = 40 / 56 (2 seeds, 72 runs):
   $K = 8$ is the real encoding; $K = 16$ runs as a positive control.
 
 #figure(
-  tbl(columns: 4,
-    [input], [$n = 40$], [$n = 56$], [growth],
-    [adjacency rows (Q3)], [30.1], [57.9], [$prop n^(1.95)$],
-    [\+ RWSE, $j <= 8$], [31.9], [57.9], [$prop n^(1.77)$],
-    [\+ RWSE, $j <= 16$ (leaks)], [23.5], [48.2], [$prop n^(2.14)$],
-    [\+ 2-hop rows], [*13.0*], [*18.3*], [$prop n^(1.00)$],
-    [\+ 4-hop rows], [*3.6*], [*4.5*], [$prop n^(0.63)$],
+  tbl(columns: 7,
+    [input], [$n = 32$], [$40$], [$48$], [$56$], [$72$], [growth (90 %)],
+    [adjacency rows (Q3)], [21.9], [30.1], [42.3], [57.9], [–], [$n^(1.74)$ (1.59–1.90)],
+    [\+ RWSE, $j <= 8$], [23.3], [31.9], [45.2], [57.9], [–], [$n^(1.65)$ (1.46–1.84)],
+    [\+ RWSE, $j <= 16$ (leaks)], [–], [23.5], [–], [48.2], [–], [–],
+    [\+ 2-hop rows], [*9.2*], [*13.0*], [*16.7*], [*18.3*], [*26.7*], [$n^(1.27)$ (1.05–1.51)],
+    [\+ 4-hop rows], [3.5#super[†]], [*3.6*], [*3.7*], [*4.5*], [*6.5*], [$n^(1.03)$ (0.79–1.25)],
   ),
   caption: [Critical width by input encoding (test pair ≥ 0.95, final epoch, mean of
-  per-seed crossings; seeds within ±2 of the mean except RWSE-16 at $n = 56$, ±4).],
+  per-seed crossings); growth: least-squares slope over the sizes shown, with a 90 %
+  seed bootstrap. † one seed only (the $n = 32$ data costs 4 h to build); not in the fit.],
 )
 
 #figure(
@@ -998,31 +1002,37 @@ the q3lr protocol at $n$ = 40 / 56 (2 seeds, 72 runs):
 )
 
 #finding[
-  - *Free hops collapse the width and its growth.* Two hops cut the critical width
-    2.3× at $n = 40$ and 3.2× at $n = 56$, and the growth falls from $n^(1.95)$ to
-    $n^(1.00)$. Four hops leave ≈ 4 with growth $n^(0.6)$.
-  - *RWSE adds nothing*: with $K = 8$ the critical width matches adjacency rows at both
-    sizes.
+  - *Free hops cut the width and its growth.* Two hops cut the critical width 2.3–3.2×
+    and the growth from $n^(1.74)$ to $n^(1.27)$; four hops leave width 4–7 growing as
+    $n^(1.03)$. The exponent falls with every hop handed over, and the bootstrap ranges
+    of adjacency and 2-hop rows do not overlap.
+  - *Not linear.* The two-point estimate of 10-15 ($n^(1.00)$ for 2-hop rows) came from the
+    flat stretch between $n = 48$ and 56; over five sizes the slope is 1.27, its range
+    only just reaching 1.
+  - *RWSE adds nothing*: with $K = 8$ the critical width matches adjacency rows at every
+    size.
   - *A leaked shortcut lowers the measured width where it leaks*: RWSE-16 saves 22 %
     at $n = 40$ (audit 0.90) and 17 % at $n = 56$ (0.72).
-  - Fitting and generalizing coincide for every encoding (train ≈ test).
+  - Fitting and generalizing coincide for every encoding (within ≈ 2).
 ]
 
 #meaning[
   The width a transformer needs to learn connectivity tracks the number of hops it must
   still compute, more than the number of nodes. On `swap` the diameter grows with $n$
-  (8.7 → 11.8 over $n$ = 32–56), so part of Q3's ≈ $n^2$ is path length — the
-  question Q7b would have asked, answered here on the same graphs. With half the hops
-  left, the growth is linear, the rate Yehudai et al.'s constant-depth construction
-  allows. And input encodings divide into those that do part of the search
-  (k-hop rows), those that are only harder to read (edge tokens, projected IDs), and
-  those that add nothing (RWSE) — unless, like RWSE-16, they leak the answer.
+  (8.6 → 13.2 over $n$ = 32–72), so part of Q3's superlinear growth is path length — the
+  question Q7b would have asked, answered here on the same graphs. Even with half the
+  hops given away the growth stays above linear (the rate Yehudai et al.'s constant-depth
+  construction allows); with three quarters given away it is about linear. Input
+  encodings divide into those that do part of the search (k-hop rows), those that are
+  only harder to read (edge tokens, projected IDs), and those that add nothing (RWSE) —
+  unless, like RWSE-16, they leak the answer.
 ]
 
 #warn[
-  Two sizes, so every growth rate is a two-point slope. At widths below 16 the model
-  has one attention head (head_dim 8), so the 4-hop widths (3–5) are close to the
-  smallest model that can work at all.
+  Four or five sizes spanning ≈ 2× in $n$, 2 seeds; local slopes between neighbours vary
+  (2-hop rows: 1.6 / 1.4 / 0.6 / 1.5). Below width 16 the model has one attention head
+  (head size 8), so the 4-hop widths (3–7) sit near the smallest model that works at all,
+  on a coarse grid (2, 4, 6, 8 …).
 ]
 
 = What it all means so far
@@ -1041,7 +1051,7 @@ the q3lr protocol at $n$ = 40 / 56 (2 seeds, 72 runs):
 + *Representation is not learning.* Theory says width ≈ $n$ at constant depth
   (Yehudai et al.), or width just above $sqrt(N)$ at depth $log N$ (Sanford et al.), is
   *enough to represent* connectivity. In practice the width needed to *learn* it grows
-  roughly as $n^(1.9)$ over $n = 32$–$56$ — with 128 000 graphs, with twice the training
+  roughly as $n^(1.7)$ over $n = 32$–$56$ — with 128 000 graphs, with twice the training
   steps, with the learning rate tuned, and with a fixed-width input encoding — and the
   data has to grow too; at $n = 128$ nothing up to $m = 128$ learns. At depth 2, where the
   linear-width construction lives, it grows faster still (≈ $n^3$), and with Sanford et
@@ -1052,14 +1062,15 @@ the q3lr protocol at $n$ = 40 / 56 (2 seeds, 72 runs):
   whole graph into every token. SGD may be finding that brute-force solution rather than
   the efficient log-depth one. Q6 rules out the *input* width, not this; probing the
   layers for path-doubling structure ($A^(2^ell)$, as in Ye et al.) would tell.
-+ *Path length is a large part of it.* Precomputing two hops turns the growth linear,
-  four hops nearly flat (Encodings — precomputed walks); the width tracks the hops left
-  to compute.
++ *Path length is a large part of it.* Precomputing two hops lowers the growth from
+  $n^(1.74)$ to $n^(1.27)$, four hops to $n^(1.03)$ (Encodings — precomputed walks); the
+  width tracks the hops left to compute.
 
 #warn[
   - All slopes come from four graph sizes spanning less than a factor of two in $n$,
     with 2–3 seeds; local slopes between neighbouring sizes range from ≈ 1.2 to ≈ 2.9.
-  - Learning-rate tuning covers $n$ = 40 / 56 only; $n$ = 32 / 48 use $3 dot 10^(-3)$.
+  - The learning rate is $10^(-3)$ at all four sizes since 10-20; it was tuned (against
+    $3 dot 10^(-3)$) at $n$ = 40 / 56 only.
   - Exact-match gets stricter as $n^2$ grows; pair-accuracy thresholds are reported
     alongside from now on.
   - The `swap` diameter grows with $log n$, so $n$ and path length rise together; Q7b
@@ -1075,7 +1086,7 @@ the q3lr protocol at $n$ = 40 / 56 (2 seeds, 72 runs):
   tbl(columns: (auto, 1fr, auto), align: (left, left, center),
     [*Item*], [*Purpose*], [*Status*],
     [Edge tokens, 4× steps], [`enc_edges96k`: does a critical width appear with time?], [done: 2–2.5× adjacency rows],
-    [Walk encodings], [$k$-hop rows ($k$ = 2, 4), RWSE ($j <= 8$; $j <= 16$ leaks)], [done: free hops → linear growth],
+    [Walk encodings], [$k$-hop rows ($k$ = 2, 4), RWSE ($j <= 8$; $j <= 16$ leaks)], [done: growth $n^(1.74)$ → $n^(1.27)$ → $n^(1.03)$ with 0 / 2 / 4 free hops],
     [Thesis write-up], [department LaTeX template; chapters from this report], [next],
     [Probing], [read what each layer computes: path doubling ($A^(2^ell)$) or a copy of the whole graph? — explains the $n^2$], [then],
     [Q7b diameter], [fix $n$, vary the diameter], [dropped (supervisor)],

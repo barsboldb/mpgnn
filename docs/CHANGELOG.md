@@ -6,6 +6,27 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-10-20
 
+### khop4 complete: the growth exponent falls with every free hop
+
+`enc_khop4` rerun on Kaggle (14 runs, n = 48 / 72, `SHARDS = 4`, ~1 h, no errors). Critical
+width (test pair ≥ 0.95, final epoch, mean of per-seed crossings), with all encodings:
+
+| input | n = 32 | 40 | 48 | 56 | 72 | growth (90 % seed bootstrap) |
+|---|---|---|---|---|---|---|
+| adjacency rows | 21.9 | 30.1 | 42.3 | 57.9 | – | n^1.74 (1.59–1.90) |
+| + RWSE, j ≤ 8 | 23.3 | 31.9 | 45.2 | 57.9 | – | n^1.65 (1.46–1.84) |
+| + 2-hop rows | 9.2 | 13.0 | 16.7 | 18.3 | 26.7 | n^1.27 (1.05–1.51) |
+| + 4-hop rows | 3.5 (seed 0) | 3.6 | 3.7 | 4.5 | 6.5 | n^1.03 (0.79–1.25) |
+
+- 0 / 2 / 4 free hops: exponent 1.74 → 1.27 → 1.03. Handing over hops cuts both the
+  level and the growth; only with 4 of the ~10–13 hops given is the growth about linear.
+- The 4-hop widths (3–7) sit at the one-head floor on a coarse grid (2, 4, 6, 8 …);
+  the n^1.03 is the least firm of the four.
+- `reports/figures/width-encodings.png` now plots every size where both seeds cross, with
+  least-squares slopes; `reports/width-progress.typ` § Encodings — precomputed walks,
+  summary, timeline and conclusions updated (2-hop rows no longer called linear).
+
+
 ### More sizes: 2-hop rows grow as n^1.27, not linearly
 
 The 2026-10-18 Kaggle session hit the 12 h limit before its zip cell, but Kaggle kept
