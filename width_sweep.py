@@ -211,9 +211,11 @@ SWEEPS["enc_rwse8"].update(ns=[32, 40, 48, 56], widths_by_n={
 SWEEPS["enc_khop2"].update(ns=[32, 40, 48, 56, 72], widths_by_n={
     32: [4, 6, 8, 12, 16], 40: [6, 8, 12, 16, 24], 48: [8, 12, 16, 24, 32],
     56: [8, 12, 16, 24, 32], 72: [12, 16, 24, 32, 48]})
-SWEEPS["enc_khop4"].update(ns=[32, 40, 48, 56, 72], widths_by_n={
-    32: [2, 4, 6, 8, 12], 40: [2, 4, 6, 8, 12], 48: [2, 4, 6, 8, 12],
-    56: [4, 6, 8, 12, 16], 72: [4, 6, 8, 12, 16]})
+# khop4 without n = 32 (2026-10-20): its threshold there sits at the floor (m* ~3) and the
+# n = 32 data took 4.3 h to build on Kaggle's CPUs.
+SWEEPS["enc_khop4"].update(ns=[40, 48, 56, 72], widths_by_n={
+    40: [2, 4, 6, 8, 12], 48: [2, 4, 6, 8, 12], 56: [4, 6, 8, 12, 16],
+    72: [4, 6, 8, 12, 16]})
 # Trimmed Q3 (the probe set the budget): 32 000 graphs, 12 000 steps (the probe was at
 # 0.95-0.98 halfway), depth ceil(log2 n) only, the narrow end of the width range where
 # m* lives, 2 LRs x 2 seeds. Depth 2 (can width replace depth?) moves to Q7.
@@ -757,8 +759,14 @@ def scaling(name, th=0.95, max_width=None, also=()):
                 # would be NaN and block the interpolation across it)
                 ws = [w for w in widths if any(cell(r)[0] == n and r["width"] == w for r in sub)]
                 def curve(ss):
-                    return [np.mean([r[at][key] for r in sub if cell(r)[0] == n
-                                     and r["width"] == w and r["seed"] in ss]) for w in ws]
+                    # .get: runs recovered from a notebook log have no train_pair
+                    return [np.mean([r[at].get(key, float("nan")) for r in sub
+                                     if cell(r)[0] == n and r["width"] == w and r["seed"] in ss])
+                            for w in ws]
+                if np.isnan(curve(seeds)).all():
+                    print(f"  {label:<10} n={n:<4} n/a (no {key} in these runs)")
+                    pooled[n] = seedmean[n] = float("nan")
+                    continue
                 pooled[n] = crossing(ws, curve(seeds), th)
                 per = [crossing(ws, curve([s]), th) for s in seeds]
                 seedmean[n] = float("nan") if any(map(math.isnan, per)) else float(np.mean(per))

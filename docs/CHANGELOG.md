@@ -4,6 +4,51 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-20
+
+### More sizes: results recovered from the notebook log; 2-hop rows grow as n^1.27, not linearly
+
+The 2026-10-18 Kaggle session timed out at 12 h and saved no output (incident below).
+Its log held the `--curves` output — every run's train / test exact-match and test pair
+accuracy per epoch — for q3lr, enc_rwse8 and enc_khop2. Parsed back into
+`results/width/<sweep>.shard-recovered.jsonl` (70 runs, flagged `recovered`; no val,
+no train pair, so `--scaling` reports "fit" as n/a for them). Check: the 52 runs of the
+same sweeps already in the repo match the parsed final test pair to 5e-4, all 52.
+
+Critical width (test pair ≥ 0.95, final epoch, mean of per-seed crossings; 90 % seed
+bootstrap of the slope):
+
+| input | n = 32 | 40 | 48 | 56 | 72 | growth |
+|---|---|---|---|---|---|---|
+| adjacency rows, LR 1e-3 | 21.9 | 30.1 | 42.3 | 57.9 | – | n^1.74 (1.59–1.89) |
+| + RWSE, j ≤ 8 | 23.2 | 31.9 | 45.2 | 57.9 | – | n^1.65 (1.46–1.84) |
+| + 2-hop rows | 9.2 | 13.0 | 16.7 | 18.3 | 26.6 | n^1.27 (1.04–1.50) |
+
+- **2-hop rows are not linear.** The two-point n^1.00 of 2026-10-15 was the flat
+  40 → 56 stretch; with five sizes the growth is n^1.27, and the bootstrap interval only
+  just reaches 1. Still clearly below adjacency rows (no overlap of the intervals), and
+  the gap widens with n: adjacency / 2-hop = 2.4, 2.3, 2.5, 3.2 at n = 32–56.
+- **Adjacency rows at one rate: n^1.74.** With LR 1e-3 at all four sizes (before: 3e-3 at
+  32 / 48) the slope is 1.74, down from 1.85 (mixed rates) and 1.94 (3e-3). n = 48 drops
+  51.1 → 42.3 at the lower rate; n = 32 is unchanged (21.9).
+- **RWSE (j ≤ 8) matches adjacency rows at every size** (within the seed spread).
+- n = 72 for 2-hop rows: m* 26.6 (seeds 25.5 / 27.7); 1.46× n = 56 for a 1.29× larger n.
+
+### Incident: 64 workers, out of memory, and an unbounded catch-up
+
+- The Kaggle copy ran `SHARDS = 16` → 64 workers, each holding its training set in RAM
+  (1.3 GB at n = 72). 38 were killed (-9) by 7.2 h.
+- The catch-up cell then ran the remaining runs in one process with no deadline (the
+  11 h stop lived only in the worker loop) until Kaggle killed the session at 12 h, which
+  discards the output.
+- Data build: 4.5 h, of which n = 32 alone took 4.3 h (two 128k sets, 4 CPUs).
+- Fixes in `kaggle/width_sweep.ipynb`: one `DEADLINE` (10 h) bounds both the workers and
+  the catch-up (`subprocess.run(timeout=...)`); the results are zipped every 30 min; a
+  RAM note at `SHARDS` (keep ≤ ~8 workers).
+- enc_khop4's new runs were lost (its curves had not been printed). Rerun without n = 32
+  (threshold at the floor, m* ~3; the n = 32 data costs 4 h): n = 48 / 72, 20 runs,
+  `SWEEPS = ["enc_khop4"]`, `SHARDS = 4`, ~1 h.
+
 ## 2026-10-18
 
 ### Encoding comparison: more graph sizes (set up, Kaggle)
