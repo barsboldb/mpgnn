@@ -197,6 +197,71 @@ def fig_q3fine_scaling():
     fig.savefig(os.path.join(OUT, "width-q3fine-scaling.png"))
 
 
+def fig_q3lr_curves():
+    """Final test pair accuracy vs width at the final protocol (q3lr: 128k graphs,
+    depth 6, LR 1e-3, 24k steps), one curve per n — the thesis' Chapter 3 figure."""
+    runs = load_runs("q3lr")
+    fig, ax = plt.subplots(figsize=(4.6, 2.9))
+    for i, n in enumerate((32, 40, 48, 56)):
+        d = {}
+        for r in runs:
+            if cell(r)[0] == n:
+                d.setdefault(r["width"], []).append(r["final"]["test_pair"])
+        line(ax, dict(sorted(d.items())), i, f"n = {n}")
+    ax.axhline(0.95, color=INK2, lw=1, ls=(0, (3, 3)), zorder=1)
+    ax.text(12.4, 0.955, "threshold 0.95", color=INK2, fontsize=7.5)
+    width_axis(ax, [12, 16, 24, 32, 48, 64, 96])
+    ax.set_xlim(11, 105)
+    ax.set_ylabel("test pair accuracy")
+    ax.set_ylim(0.76, 1.005)
+    legend_top(ax)
+    fig.savefig(os.path.join(OUT, "width-q3lr-curves.png"))
+
+
+def fig_q3_scaling():
+    """Critical width vs n: fit / generalize at 32k graphs (q3fine, LR 3e-3) against
+    the final protocol at 128k graphs (q3lr, LR 1e-3), where the two coincide."""
+    fine = [r for r in load_runs("q3fine") if r["width"] <= 96]   # 128: LR too hot
+    final = load_runs("q3lr")
+    fig, ax = plt.subplots(figsize=(4.6, 3.0))
+    series = (
+        ("generalize, 32k graphs", fine, [32, 40, 48, 56], "test_pair", (-46, 7)),
+        ("fit, 32k graphs", fine, [32, 40, 48, 56], "train_pair", (7, -3)),
+        ("learn, 128k graphs", final, [32, 40, 48, 56], "test_pair", (7, -6)),
+    )
+    for i, (label, runs, ns, key, off) in enumerate(series):
+        pts = []
+        for n in ns:
+            per = seed_crossings(runs, n, None, key, "final")
+            if not any(np.isnan(per)):
+                pts.append((n, np.mean(per), min(per), max(per)))
+        x, y, lo, hi = map(np.array, zip(*pts))
+        ax.errorbar(x, y, yerr=[y - lo, hi - y], color=SERIES[i], marker=MARKERS[i],
+                    label=label, markeredgecolor="#fcfcfb", markeredgewidth=1.2,
+                    capsize=2.5, elinewidth=1, zorder=3)
+        b = np.polyfit(np.log(x), np.log(y), 1)[0]
+        ax.annotate(rf"$\propto n^{{{b:.2f}}}$", (x[-1], y[-1]), xytext=off,
+                    textcoords="offset points", color=INK, fontsize=8)
+    ax.annotate("", xy=(56, 125), xytext=(56, 96),    # 32k, n = 56: no seed at m <= 96
+                arrowprops=dict(arrowstyle="->", color=SERIES[0], lw=1.5))
+    ax.plot([56], [96], marker="o", mfc="none", mec=SERIES[0], ms=6, zorder=3)
+    ax.text(57.5, 104, "> 96", color=INK2, fontsize=7.5)
+    ref = np.array([30, 62])
+    ax.plot(ref, 18.6 * ref / 32, color=INK2, lw=1, ls=(0, (3, 3)), zorder=1)
+    ax.text(62.5, 34.5, r"$\propto n$", color=INK2, fontsize=8)
+    ns = [32, 40, 48, 56]
+    ax.set_xscale("log", base=2); ax.set_yscale("log", base=2)
+    ax.set_xticks(ns); ax.set_xticklabels([str(n) for n in ns])
+    ax.set_yticks([16, 24, 32, 48, 64, 96, 128])
+    ax.set_yticklabels(["16", "24", "32", "48", "64", "96", "128"])
+    ax.minorticks_off()
+    ax.set_xlim(29, 70)
+    ax.set_xlabel("graph size n")
+    ax.set_ylabel("critical width m* (pair acc. 0.95)")
+    legend_top(ax, ncol=2)
+    fig.savefig(os.path.join(OUT, "width-q3-scaling.png"))
+
+
 def fig_q7depth():
     runs = load_runs("q7depth")
     depths = [2, 3, 4, 6, 8]
@@ -319,6 +384,8 @@ if __name__ == "__main__":
     fig_q3trim()
     fig_q3fine_curves()
     fig_q3fine_scaling()
+    fig_q3lr_curves()
+    fig_q3_scaling()
     fig_q7depth()
     fig_q7c()
     fig_encodings()
