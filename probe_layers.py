@@ -134,15 +134,9 @@ def probe_model(path, n_train=500, n_test=300, data_cache={}):
     return res
 
 
-def reach(row, ks, th):
-    """Largest k whose AUC reaches th, scanning up from k = 1 (0 if none)."""
-    best = 0
-    for k, a in zip(ks, row):
-        if a >= th:
-            best = k
-        else:
-            break
-    return best
+def first_layer(table, j, th):
+    """First layer whose AUC for the j-th k reaches th ('-' if none)."""
+    return next((str(l) for l, row in enumerate(table) if row[j] >= th), "-")
 
 
 def summary(th=0.95):
@@ -151,22 +145,22 @@ def summary(th=0.95):
         print(f"no results in {OUT_DIR}")
         return
     rs = sorted((json.load(open(f)) for f in files), key=lambda r: (r["n"], r["width"], r["seed"]))
+    ks = rs[0]["ks"]
     for kind in ("pair", "set"):
-        print(f"\n{kind} probe: largest k with AUC >= {th} after layer 0 .. L "
-              "(trained / untrained); 'inf' = connected")
+        # Not "largest k decodable": trained models trade local detail for global reach in
+        # the late layers (k = 1 AUC falls while k = inf rises), so read each k on its own.
+        print(f"\n{kind} probe: first layer with AUC >= {th} for each k (trained / untrained)")
+        print(f"  {'':34s}" + "".join(f"{'k=' + str(k):>8s}" for k in ks))
         for r in rs:
-            ks = [float("inf") if k == "inf" else k for k in r["ks"]]
-            row = []
-            for l in range(r["depth"] + 1):
-                t = reach(r["probes"][f"trained/{kind}"][l], ks, th)
-                u = reach(r["probes"][f"untrained/{kind}"][l], ks, th)
-                row.append(f"{_k(t)}/{_k(u)}")
-            print(f"  n={r['n']:<3d} m={r['width']:<3d} s={r['seed']}  model pair acc "
-                  f"{r['readout_pair_acc']:.3f}  " + "  ".join(f"{x:>7s}" for x in row))
-
-
-def _k(k):
-    return "inf" if k == float("inf") else str(int(k))
+            t, u = r["probes"][f"trained/{kind}"], r["probes"][f"untrained/{kind}"]
+            cells = [f"{first_layer(t, j, th)}/{first_layer(u, j, th)}" for j in range(len(ks))]
+            print(f"  n={r['n']:<3d} m={r['width']:<3d} s={r['seed']}  pair acc {r['readout_pair_acc']:.3f}"
+                  + "".join(f"{c:>8s}" for c in cells))
+        print(f"\n{kind} probe AUC after the last layer, trained (untrained)")
+        for r in rs:
+            t, u = r["probes"][f"trained/{kind}"][-1], r["probes"][f"untrained/{kind}"][-1]
+            print(f"  n={r['n']:<3d} m={r['width']:<3d} s={r['seed']}  "
+                  + "  ".join(f"{a:.2f}({b:.2f})" for a, b in zip(t, u)))
 
 
 if __name__ == "__main__":

@@ -4,6 +4,32 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-10-21
+
+### Probing results: connectivity builds up gradually; nodes do not store their reachable sets
+
+- Kaggle trained the 16 `probe` models (pair acc matches q3lr: m* ≈ 32 at n = 40, ≈ 64
+  at n = 56), but the user's notebook copy lacked the probe cell, so `probe_layers.py`
+  ran locally on the CPU (3 threads, ~2 h). Results: `results/width/probe/*.json`.
+- `probe_layers.py --summary` now gives, per k, the first layer whose AUC reaches 0.95.
+  The old "largest k decodable, scanning up from k = 1" read 0 exactly where connectivity
+  became perfect, because trained models lose 1-hop detail in late layers.
+- Pair probe, k = ∞ (connected), seed mean, layers 0 → 6:
+  n = 40, m = 48: 0.62 0.76 0.83 0.91 0.97 0.99 1.00; m = 16: 0.57 … 0.81.
+  n = 56, m = 96: 0.58 0.67 0.73 0.79 0.87 0.95 1.00; m = 32: 0.56 … 0.84.
+  Untrained twins stay at 0.51–0.62. The signal rises steadily over all layers, with no
+  single jump; narrow models rise more slowly and end lower, not stalling at one layer.
+- Exact distances are not kept: pair-probe AUC for k = 3 rises at layer 1 (≈ 0.86–0.92)
+  and stays flat; k = 1 falls from ≈ 1.00 to 0.85–0.95 by the last layer. The model does
+  not build a k-hop hierarchy (no doubling of the reach per layer, nor +1 hop) — it builds
+  a "same component" representation.
+- Set probe: from one node's vector, its connected set is decodable at only AUC 0.60–0.89
+  after the last layer (best 0.89 at n = 40, m = 48), and 1-hop falls below the untrained
+  twin. Under linear read-out, nodes do not store their reachable sets; the answer comes
+  from comparing two nodes' vectors (pair probe 0.99–1.00 for models above m*).
+- Narrow read-in loses neighbour detail: at n = 40, m = 16 even layer 0 decodes 1-hop at
+  only 0.91 (m < n).
+
 ## 2026-10-20
 
 ### Probing set up: what does each layer know about paths?
