@@ -39,6 +39,8 @@
 #show terms: set par(justify: false)
 #show link: it => text(fill: c-algo, it)
 #show figure.caption: set text(9pt)
+#show figure: set block(breakable: true)   // long tables (the timeline) flow onto the next page
+#show table: set par(justify: false)
 
 #let callout(title, body, col: c-algo, sym: "") = block(
   width: 100%, fill: col.lighten(91%), stroke: (left: 2.5pt + col),
