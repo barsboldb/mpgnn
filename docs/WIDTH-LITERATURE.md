@@ -58,7 +58,7 @@ Width claims (precise):
 
 ### 1.2 Yehudai, Sanford, Bechler-Speicher, Fischer, Gilad-Bachrach, Globerson (2025)
 *Depth-Width Tradeoffs in Algorithmic Reasoning of Graph Tasks with Transformers.*
-ICML 2025 (per arXiv v3 header). [arXiv:2503.01805](https://arxiv.org/abs/2503.01805) —
+NeurIPS 2025 (v3 header; published title *Depth-Width Tradeoffs for Transformers on Graph Tasks*). [arXiv:2503.01805](https://arxiv.org/abs/2503.01805) —
 **verified**.
 
 Width claims (precise; tokenization = **adjacency rows**, `n` tokens of dim `n`,

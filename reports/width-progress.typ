@@ -762,7 +762,8 @@ steps, rate $10^(-3)$, depth $L$ ∈ {2, 3, 4, 6, 8}, widths around each thresho
 
 #meaning[
   With adjacency-row tokens, width ≈ $n$ makes constant depth sufficient — the regime
-  Yehudai et al. (2025) prove for their tokenization ("linear width, constant depth");
+  Yehudai et al. (2025) study for their tokenization ("linear width, constant depth" —
+  proved for 1-vs-2 cycles; for general connectivity only an $O(n log^3 n)$ sketch);
   we measure the constant: ≈ $1.1 n$ at depth 2. At fixed $n$ depth matters little, yet at
   depth 6 the critical width grows ≈ $n^2$ across sizes. Q7c asks how the depth-2
   critical width grows with $n$.
@@ -810,8 +811,8 @@ supply $n = 40$.
 ]
 
 #meaning[
-  The constant-depth, linear-width solution exists for this tokenization (Yehudai et al.
-  2025), but training does not find it as $n$ grows: two layers need ever more width than
+  A constant-depth, linear-width solution exists for 1-vs-2 cycles with this tokenization
+  (Yehudai et al. 2025; general connectivity: an $O(n log^3 n)$ sketch), but training does not find it as $n$ grows: two layers need ever more width than
   six. So Q7a's "depth trades only mildly" holds only at $n = 40$; the width that depth
   saves grows with $n$, from ≈ 1.3× at $n = 32$ to more than 3× at $n = 56$. This fits the
   log-depth constructions (Sanford et al. 2024a): with too few layers, width has to
