@@ -30,6 +30,8 @@ anyone can re-fetch the set from the links below.
 - **Reading now:** `airale-2025-simple-path-structural-encoding` (started 2026-08-26)
 - **Read, notes written:** `ye-2026-transformers-graph-connectivity`
 - **Read, notes written:** `sanford-2024-transformer-reasoning-graph-algorithms`
+- **Read, notes written:** Merrill & Sabharwal 2023 (arXiv 2207.00729) and 2025 (arXiv 2503.03961)
+  (2026-10-22; `reports/merrill-sabharwal-notes.typ`; PDFs not stored here)
 - **Read, notes written:** `yehudai-2025-depth-width-tradeoffs-graph-tasks` (2026-10-22;
   `reports/yehudai-2025-notes.typ`, with a check of every thesis claim about it)
 
