@@ -378,6 +378,33 @@ def fig_encodings():
     fig.savefig(os.path.join(OUT, "width-encodings.png"))
 
 
+def fig_probe():
+    """Pair-probe AUC for "connected" (k = inf) after each layer, per width, from
+    results/width/probe/*.json (probe_layers.py); seed means. Grey: untrained twins."""
+    import glob, json
+    rs = [json.load(open(f)) for f in glob.glob(os.path.join("results", "width", "probe", "*.json"))]
+    fig, axes = plt.subplots(1, 2, figsize=(6.4, 2.7), sharey=True)
+    for ax, n, mstar in zip(axes, (40, 56), (30.1, 57.9)):
+        ws = sorted({r["width"] for r in rs if r["n"] == n})
+        unt = []
+        for i, w in enumerate(ws):
+            g = [r for r in rs if r["n"] == n and r["width"] == w]
+            t = np.mean([[row[-1] for row in r["probes"]["trained/pair"]] for r in g], 0)
+            unt += [[row[-1] for row in r["probes"]["untrained/pair"]] for r in g]
+            tag = "above" if w > mstar else "below"
+            ax.plot(range(len(t)), t, color=SERIES[i], marker=MARKERS[i], label=f"m = {w} ({tag} m*)",
+                    markeredgecolor="#fcfcfb", markeredgewidth=1.2, zorder=3)
+        ax.plot(range(len(unt[0])), np.mean(unt, 0), color=INK2, lw=1.2, ls=(0, (3, 3)),
+                label="untrained", zorder=2)
+        ax.set_title(f"n = {n}  (m* = {mstar})", fontsize=9)
+        ax.set_xlabel("layer (0 = after read-in)")
+        ax.set_xticks(range(7))
+        ax.set_ylim(0.48, 1.02)
+        ax.legend(frameon=False, fontsize=7, loc="lower right")
+    axes[0].set_ylabel("probe AUC: connected?")
+    fig.savefig(os.path.join(OUT, "width-probe-layers.png"))
+
+
 if __name__ == "__main__":
     fig_q1b()
     fig_q1c()
@@ -389,4 +416,5 @@ if __name__ == "__main__":
     fig_q7depth()
     fig_q7c()
     fig_encodings()
+    fig_probe()
     print("wrote", ", ".join(f for f in sorted(os.listdir(OUT)) if f.startswith("width-")))

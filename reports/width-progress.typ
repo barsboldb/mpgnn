@@ -58,7 +58,7 @@
   #v(-0.3em)
   #text(11pt, fill: luma(80))[Progress report — what was done, what came out, and what it means]
   #v(-0.2em)
-  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-20 ·
+  #text(9pt, fill: luma(110))[Weeks 1–5 of the department calendar · 2026-09-24 → 2026-10-21 ·
   raw log: #kbd("docs/CHANGELOG.md") · questions: #kbd("docs/WIDTH-QUESTIONS.md")]
 ]
 
@@ -104,6 +104,12 @@
     to $n^(1.27)$ (over $n$ = 32–72); 4 free hops leave width 4–7 growing as $n^(1.03)$.
     The standard random-walk encoding (RWSE) changes nothing, and its common 16-step
     version leaks connectivity.
+  + *Inside the model, "connected" is built up a little in every layer — not by
+    doubling the reach, and not stored per node.* Linear probes on the residual stream
+    find no distance hierarchy (3-hop information appears at layer 1 and stays flat;
+    1-hop detail fades), and a node's own vector does not hold its reachable set (AUC
+    ≤ 0.89). The answer is read from *pairs* of vectors (AUC 0.99–1.00). Models well below
+    the critical width climb at the same pace for a layer or two, then fall behind.
 ]
 
 = Question and set-up
@@ -303,6 +309,7 @@ continuity), or *budget* (set by Kaggle's 30 GPU-hours a week). The tags below s
     [10-15], [`enc_edges96k`: 4× the steps, $n$ = 32 / 40 (16 runs)], [learns: $m^* = 48$ / ≥ 72, 2.2× / ≥ 2.4× adjacency rows],
     [10-15], [Walk encodings: $k$-hop rows, RWSE (72 runs, Colab)], [2 free hops: width ÷ 2.3–3.2; RWSE: no change; RWSE-16 leaks],
     [10-20], [More sizes: $n$ = 32 / 48 (+ 72 for $k$-hop), LR $10^(-3)$ (95 runs)], [growth $n^(1.74)$ → $n^(1.27)$ → $n^(1.03)$ with 0 / 2 / 4 free hops],
+    [10-21], [Probing: 16 saved models, $n$ = 40 / 56, linear probes per layer], [connectivity builds up over all layers; no hop hierarchy; not stored per node],
   ),
   caption: [What was done, in order.],
 )
@@ -1035,6 +1042,79 @@ $n = 72$ added for $k$-hop rows, whose widths stay small (147 runs):
   on a coarse grid (2, 4, 6, 8 …).
 ]
 
+= Probing — what does each layer compute?
+
+The scaling results say *how much* width connectivity needs, not *why*. Two
+mechanisms would explain a width growing with $n$: (a) *path doubling* — each layer
+squares the reach ($A -> A^2 -> A^4 ...$), so after layer $ell$ a node knows its
+$2^ell$-hop neighbourhood; (b) *storing the reachable set* — each node's vector holds
+the $n$ bits "which nodes I reach", which needs width growing with $n$. A narrow model
+should then stall at some layer.
+
+*Set-up.* The `probe` sweep retrains the final protocol (128 000 graphs, depth 6, rate
+$10^(-3)$, 24 000 steps) at $n = 40$ ($m$ = 16, 24, 32, 48) and $n = 56$ ($m$ = 32, 48,
+64, 96), 2 seeds, and saves the weights — widths on both sides of each threshold
+(30.1 / 57.9). On 500 fresh `swap` graphs (300 held out) we read the residual stream after
+the read-in (layer 0) and after every block, layer-normed, and fit two linear probes
+per layer for "distance $d(i, j) <= k$", $k in {1, 2, 3, 4, 6, 8, oo}$ ($oo$ =
+connected), scored by held-out ROC-AUC:
+- *pair probe* $h_i^top W h_j$ — the form of the model's own read-out;
+- *set probe* $h_i -> RR^n$ — node $i$'s whole $k$-hop set from its own vector.
+Every probe is also fitted on the *untrained* network (same initial weights): a
+bilinear form on adjacency rows already computes 2-hop counts, so only what the
+trained model adds counts (#kbd("probe_layers.py")).
+
+#figure(
+  image("figures/width-probe-layers.png", width: 100%),
+  caption: [Pair-probe AUC for "connected" after each layer (mean of 2 seeds); dashed:
+  untrained networks. The model's own pair accuracy: $n = 40$: 0.79 / 0.92 / 0.96 / 0.99,
+  $n = 56$: 0.82 / 0.93 / 0.97 / 0.98 for the four widths.],
+)
+
+#figure(
+  tbl(columns: 8,
+    [pair probe, $n = 40$, $m = 48$], [L0], [L1], [L2], [L3], [L4], [L5], [L6],
+    [$k = 1$], [1.00], [0.96], [0.96], [0.96], [0.95], [0.94], [0.92],
+    [$k = 3$], [0.78], [0.92], [0.93], [0.94], [0.94], [0.93], [0.92],
+    [$k = oo$ (connected)], [0.62], [0.76], [0.83], [0.91], [0.97], [0.99], [*1.00*],
+    [untrained, $k = oo$], [0.62], [0.60], [0.58], [0.57], [0.57], [0.57], [0.56],
+  ),
+  caption: [Pair-probe AUC by layer and distance (mean of 2 seeds).],
+)
+
+#finding[
+  - *"Connected" builds up gradually.* The connected signal rises by a similar step at
+    every layer and reaches ≥ 0.95 only at layer 4–6, at both sizes. There is no single
+    layer where it appears.
+  - *No hop hierarchy.* 3-hop information jumps at layer 1 (0.73–0.79 → 0.86–0.92) and
+    then stays flat; 1-hop detail *falls* (1.00 → 0.85–0.95 at the last layer). Neither
+    path doubling ($2^ell$ hops) nor one hop per layer shows up in what a linear probe
+    can read.
+  - *Nodes do not hold their reachable set.* From one node's vector, its connected
+    set decodes at AUC 0.60–0.89 after the last layer, and 1-hop at 0.67–0.89 — *below*
+    the untrained network's 0.88–1.00. Comparing two nodes' vectors gives 0.99–1.00.
+  - *Width.* Models far below the critical width ($n = 40$, $m = 16$; $n = 56$, $m = 32$)
+    keep pace for a layer or two, then gain less per layer and end at 0.81 / 0.84.
+    Models just below it ($m$ = 24 / 48) look like the wide ones on this probe (0.97) —
+    the gap between them and $m^*$ is in the last few percent the probe does not resolve.
+  - Narrow read-ins lose neighbour detail: at $n = 40$, $m = 16$ even layer 0 decodes
+    1-hop at only 0.91.
+]
+
+#meaning[
+  The model does not keep a table of distances and does not store, per node, the list
+  of nodes it reaches. It seems to give each node a signature of its component that two
+  nodes can compare — refined a little in every layer. Width sets how much each layer
+  refines: with six layers, a model far below the critical width runs out of layers.
+  This argues against hypothesis (b) as the source of the $n^2$; the cost of the
+  signature has to be found another way.
+]
+
+#warn[
+  Linear probes show what is *easily readable*, not what the model uses; a nonlinear
+  probe could find more. Two sizes, 2 seeds each.
+]
+
 = What it all means so far
 
 + *Measuring width is a protocol problem first.* Learning rate and training-set size
@@ -1060,8 +1140,9 @@ $n = 72$ added for $k$-hop rows, whose widths stay small (147 runs):
 + *A hypothesis for the $n^2$.* $n^2$ is the number of bits in the adjacency matrix, and
   Yehudai et al. note that quadratic width suffices for *any* graph task by copying the
   whole graph into every token. SGD may be finding that brute-force solution rather than
-  the efficient log-depth one. Q6 rules out the *input* width, not this; probing the
-  layers for path-doubling structure ($A^(2^ell)$, as in Ye et al.) would tell.
+  the efficient log-depth one. Q6 rules out the *input* width, not this. Probing
+  (10-21) finds no path doubling and no per-node reachable set: the model builds a
+  component signature gradually over the layers.
 + *Path length is a large part of it.* Precomputing two hops lowers the growth from
   $n^(1.74)$ to $n^(1.27)$, four hops to $n^(1.03)$ (Encodings — precomputed walks); the
   width tracks the hops left to compute.
@@ -1087,8 +1168,8 @@ $n = 72$ added for $k$-hop rows, whose widths stay small (147 runs):
     [*Item*], [*Purpose*], [*Status*],
     [Edge tokens, 4× steps], [`enc_edges96k`: does a critical width appear with time?], [done: 2–2.5× adjacency rows],
     [Walk encodings], [$k$-hop rows ($k$ = 2, 4), RWSE ($j <= 8$; $j <= 16$ leaks)], [done: growth $n^(1.74)$ → $n^(1.27)$ → $n^(1.03)$ with 0 / 2 / 4 free hops],
-    [Thesis write-up], [department LaTeX template; chapters from this report], [next],
-    [Probing], [read what each layer computes: path doubling ($A^(2^ell)$) or a copy of the whole graph? — explains the $n^2$], [then],
+    [Thesis write-up], [department LaTeX template; chapters from this report], [ch. 1–3 done; ch. 4 next],
+    [Probing], [read what each layer computes: path doubling ($A^(2^ell)$) or a copy of the whole graph?], [done: gradual, pairwise; no doubling],
     [Q7b diameter], [fix $n$, vary the diameter], [dropped (supervisor)],
     [Q4 Graphormer bias], [shortest-path bias gives connectivity away; needs a task it doesn't leak], [planned],
     [Q2 task hierarchy], [retrieval < connectivity < shortest path, each with its own audit], [planned],
@@ -1101,7 +1182,7 @@ $n = 72$ added for $k$-hop rows, whose widths stay small (147 runs):
   *Reproduce.* Every number above comes from #kbd("python width_sweep.py <sweep> --analyze")
   or #kbd("--curves") over #kbd("results/width/<sweep>*.jsonl") (sweeps #kbd("q1"),
   #kbd("q1b"), #kbd("q1c"), #kbd("q3pilot"), #kbd("q3pilot2"), #kbd("q3probe"),
-  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj"), #kbd("q7depth"), #kbd("q7c"), #kbd("enc_edges"), #kbd("enc_edges96k"), #kbd("enc_khop2"), #kbd("enc_khop4"), #kbd("enc_rwse8"), #kbd("enc_rwse16")) and #kbd("--scaling") for critical widths; the audit from #kbd("python audit_width_data.py"); figures from
+  #kbd("q3trim"), #kbd("q3fine"), #kbd("q3data"), #kbd("q3big"), #kbd("q3steps"), #kbd("q3lr"), #kbd("q6proj"), #kbd("q7depth"), #kbd("q7c"), #kbd("enc_edges"), #kbd("enc_edges96k"), #kbd("enc_khop2"), #kbd("enc_khop4"), #kbd("enc_rwse8"), #kbd("enc_rwse16"), #kbd("probe")) and #kbd("--scaling") for critical widths; probes from #kbd("python probe_layers.py --summary"); the audit from #kbd("python audit_width_data.py"); figures from
   #kbd("reports/figures/width_progress_plots.py"). The Sanford section: #kbd("python sanford_repro.py <sweep> --analyze")
   over #kbd("results/sanford/") (#kbd("a1k"), #kbd("a100k_lr1e4"), #kbd("bwidth"), #kbd("b2"), #kbd("b2long")) and #kbd("--audit").
 ]
