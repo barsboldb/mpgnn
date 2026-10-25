@@ -228,6 +228,15 @@ SWEEPS["probe"] = dict(SWEEPS["q3lr"], ns=[40, 56], save_models="probe",
 SWEEPS["q3trim"] = dict(SWEEPS["q3"], depths=["log"], widths=[8, 16, 32, 64, 128],
                         lrs=[1e-3, 3e-3], seeds=[0, 1], train_sizes=[32000], train=32000,
                         steps=12000, fixed_lr=1e-3)
+# Third seed (2026-10-25): the main result (adjacency rows, n^1.74) and the 2-hop rows
+# (n^1.27) rest on 2 seeds, so their bootstrap has only 2^4 / 2^5 combinations. Seed 2 on
+# the widths that bracket each threshold (final test pair accuracy 0.95, seeds 0/1);
+# runs on disk are skipped, so only seed 2 runs. Updated in place after every derived sweep.
+SWEEPS["q3lr"].update(seeds=[0, 1, 2], widths_by_n={
+    32: [16, 24, 32], 40: [24, 32, 48], 48: [32, 48, 64], 56: [48, 64, 96]})
+SWEEPS["enc_khop2"].update(seeds=[0, 1, 2], widths_by_n={
+    32: [6, 8, 12], 40: [8, 12, 16], 48: [12, 16, 24], 56: [12, 16, 24],
+    72: [16, 24, 32, 48]})
 
 
 def set_seed(seed):
@@ -625,6 +634,18 @@ def train_one(cfg, width, lr, seed, splits):
             **({"truncated": True} if history[-1]["epoch"] < epochs else {})}
 
 
+def pending(cfg, done):
+    """(width, lr, seed, train size, n, depth) of every run of cfg not in done."""
+    sizes = cfg.get("train_sizes", [cfg["train"]])
+    ns, depths = cfg.get("ns", [cfg.get("n")]), cfg.get("depths", [cfg.get("depth")])
+    # optional widths per n or per depth (around each threshold); per-n wins
+    by_n, by_depth = cfg.get("widths_by_n", {}), cfg.get("widths_by_depth", {})
+    return [(w, lr, s, size, n, d) for s, n, d, size in
+            itertools.product(cfg["seeds"], ns, depths, sizes)
+            for w, lr in itertools.product(by_n.get(n, by_depth.get(d, cfg["widths"])), cfg["lrs"])
+            if (w, lr, s, size, n, resolve_depth(d, n)) not in done]
+
+
 def run_sweep(name, smoke=False, shard=(0, 1)):
     cfg = dict(SWEEPS[name])
     if smoke:
@@ -642,15 +663,7 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
     suffix = f".shard{shard[0]}of{shard[1]}" if shard[1] > 1 else ""
     path = os.path.join(OUT_DIR, f"{name}{suffix}.jsonl")
     done = {run_key(r) for r in load_runs(name)}
-    sizes = cfg.get("train_sizes", [cfg["train"]])
-    ns, depths = cfg.get("ns", [cfg.get("n")]), cfg.get("depths", [cfg.get("depth")])
-    # optional widths per n or per depth (around each threshold); per-n wins
-    by_n, by_depth = cfg.get("widths_by_n", {}), cfg.get("widths_by_depth", {})
-    todo = [(w, lr, s, size, n, d) for s, n, d, size in
-            itertools.product(cfg["seeds"], ns, depths, sizes)
-            for w, lr in itertools.product(by_n.get(n, by_depth.get(d, cfg["widths"])), cfg["lrs"])
-            if (w, lr, s, size, n, resolve_depth(d, n)) not in done]
-    todo = todo[shard[0]::shard[1]]
+    todo = pending(cfg, done)[shard[0]::shard[1]]
     print(f"Device {DEVICE} | sweep {name} shard {shard[0]}/{shard[1]}: "
           f"{len(todo)} runs to go ({len(done)} on disk)")
 
@@ -685,9 +698,13 @@ def prepare(name, workers=None):
     if "gen" not in cfg:
         print(f"{name}: no cached data to prepare")
         return
-    jobs = {(n, size, s): (point(cfg, n, cfg.get("depths", [2])[0], size), s)
-            for s in cfg["seeds"] for n in cfg.get("ns", [cfg.get("n")])
-            for size in cfg.get("train_sizes", [cfg["train"]])}
+    # only the datasets of runs still to do (a resumed sweep need not rebuild finished seeds)
+    done = {run_key(r) for r in load_runs(name)}
+    jobs = {(n, size, s): (point(cfg, n, d, size), s)
+            for _, _, s, size, n, d in pending(cfg, done)}
+    if not jobs:
+        print(f"{name}: nothing left to run")
+        return
     workers = workers or min(len(jobs), os.cpu_count() or 1)
     print(f"{name}: preparing {len(jobs)} datasets with {workers} processes -> {CACHE_DIR}")
     t0 = time.time()
