@@ -4,6 +4,33 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-11-02
+
+### Third seed for the main result and the 2-hop rows: exponents unchanged
+
+Seed 2 ran on Kaggle (28 runs, `q3lr` 12 + `enc_khop2` 16, at the widths that bracket each
+threshold; `*.shard{0-3}of4.jsonl`, logs tagged `seed2`). Critical width (test pair ≥ 0.95,
+final epoch, mean of per-seed crossings), seeds 0 / 1 / 2:
+
+| input | n = 32 | 40 | 48 | 56 | 72 | growth (90 % seed bootstrap) |
+|---|---|---|---|---|---|---|
+| adjacency rows | 22.4 | 33.1 | 44.7 | 59.6 | – | n^1.74 (1.53–1.97, 81 combinations) |
+| + 2-hop rows | 9.5 | 12.7 | 16.9 | 18.5 | 27.1 | n^1.27 (1.10–1.51, 243 combinations) |
+
+- Both exponents are the same as with 2 seeds (1.74, 1.27). The bootstrap intervals widen a
+  little (were 1.59–1.90 and 1.05–1.51) because seed 2 is the most spread: adjacency n = 40
+  crosses at m = 39.1 against 30.8 / 29.4 for seeds 0 / 1; all other per-seed crossings
+  lie within ±3 of the earlier pair. The two intervals still do not overlap, and the 2-hop
+  interval stays above 1.
+- Per-seed crossings (generalize): adjacency 20.7 / 23.1 / 23.4, 30.8 / 29.4 / 39.1,
+  41.2 / 43.6 / 49.4, 59.2 / 56.7 / 63.1; 2-hop 10.4 / 8.0 / 10.1, 12.5 / 13.5 / 12.0,
+  16.7 / 16.7 / 17.4, 19.7 / 16.8 / 19.0, 25.6 / 27.7 / 28.1.
+- The bootstrap (one seed per n, every combination, 5th–95th percentile of the log-log slope)
+  is not in `width_sweep.py`; computed by hand from the `--scaling` per-seed values.
+- Thesis Ch. 3 and the encoding chapter still quote the 2-seed interval 1.59–1.90; to update.
+
+---
+
 ## 2026-10-21
 
 ### Probing results: connectivity builds up gradually; nodes do not store their reachable sets
