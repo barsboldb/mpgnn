@@ -347,7 +347,7 @@ def fig_encodings():
         pts = []
         for n in sorted({r["config"]["n"] for r in runs}):
             per = seed_crossings(runs, n, None, "test_pair", "final")
-            if len(per) == 2 and not np.isnan(per).any():   # both seeds cross
+            if len(per) >= 2 and not np.isnan(per).any():   # every seed crosses
                 pts.append((n, np.mean(per), min(per), max(per)))
         x, y, lo, hi = map(np.array, zip(*pts))
         ax.errorbar(x, y, yerr=[y - lo, hi - y], color=SERIES[i], marker=MARKERS[i],
