@@ -237,6 +237,18 @@ SWEEPS["q3lr"].update(seeds=[0, 1, 2], widths_by_n={
 SWEEPS["enc_khop2"].update(seeds=[0, 1, 2], widths_by_n={
     32: [6, 8, 12], 40: [8, 12, 16], 48: [12, 16, 24], 56: [12, 16, 24],
     72: [16, 24, 32, 48]})
+# Auxiliary k-hop loss (2026-11-02): can width fall without changing the input? khop2/4
+# cut m* (n^1.74 -> n^1.27 -> n^1.03) by giving hops in the input; the probes found no
+# hop-by-hop hierarchy across layers. Here the input stays adjacency rows and block L is
+# asked (training only) to predict the 2^L-hop reachability (aux_dbl: L = 1, 2, 3 -> 2, 4, 8
+# hops, the doubling of the log-depth construction) or L hops (aux_lin: L = 2, 4 -> 2, 4).
+# q3lr protocol at n = 40 / 56, widths from the khop2 line (13 / 18) up to adjacency
+# (30 / 58); 2 seeds. If m* lands on the khop2 line the width cost is a training cost;
+# if it stays on the adjacency line the saving came from the input's information.
+SWEEPS["aux_dbl"] = dict(SWEEPS["q3lr"], aux={1: 2, 2: 4, 3: 8}, aux_weight=0.3,
+                         ns=[40, 56], seeds=[0, 1],
+                         widths_by_n={40: [12, 16, 24, 32, 48], 56: [16, 24, 32, 48, 64, 96]})
+SWEEPS["aux_lin"] = dict(SWEEPS["aux_dbl"], aux={2: 2, 4: 4})
 
 
 def set_seed(seed):
@@ -573,7 +585,76 @@ class WalkInput(nn.Module):
         return self.inner.num_parameters()
 
 
+class AuxHopModel(nn.Module):
+    """Auxiliary k-hop supervision (2026-11-02). The baseline model and adjacency-row input,
+    plus a bilinear head on the output of block L predicting the k-hop reachability matrix
+    [(A + I)^k > 0] for every (L, k) in `aux` — e.g. {1: 2, 2: 4, 3: 8}, the doubling of the
+    log-depth construction. The heads are trained only (aux_weight x BCE each) and dropped
+    at test time, so the input and the test-time model equal the baseline. Does guiding the
+    computation hop by hop lower the width the way giving hops in the input (khop) does?"""
+
+    def __init__(self, n, width, depth, heads, aux):
+        super().__init__()
+        self.inner = ConnectivityTransformer(n, width, depth, heads)
+        self.aux = {int(L): int(k) for L, k in aux.items()}
+        assert all(1 <= L <= depth for L in self.aux), f"aux layers {aux} vs depth {depth}"
+        self.heads = nn.ModuleDict({str(L): nn.ModuleDict({"norm": nn.LayerNorm(width),
+                                                            "W": nn.Linear(width, width, bias=False)})
+                                    for L in self.aux})
+
+    def forward(self, Aaug, with_aux=False):
+        m = self.inner
+        h, outs = m.readin(Aaug), {}
+        for L, blk in enumerate(m.blocks, 1):
+            h = blk(h, None, None)
+            if with_aux and L in self.aux:
+                hd = self.heads[str(L)]
+                z = hd["norm"](h)
+                lo = torch.bmm(hd["W"](z), z.transpose(1, 2))
+                outs[L] = 0.5 * (lo + lo.transpose(1, 2))
+        h = m.norm(h)
+        logits = torch.bmm(m.W(h), h.transpose(1, 2))
+        logits = 0.5 * (logits + logits.transpose(1, 2))
+        return (logits, outs) if with_aux else logits
+
+    @staticmethod
+    def hop_targets(Aaug, ks):
+        """{k: [(A + I)^k > 0]} for the k in ks, by repeated 0/1 products (as WalkInput)."""
+        out, M, k = {}, Aaug, 1
+        for kk in sorted(set(ks)):
+            while k < kk:
+                M = (M @ Aaug).clamp_(max=1.0); k += 1
+            out[kk] = M
+        return out
+
+    def aux_loss(self, Aaug, outs):
+        T = self.hop_targets(Aaug, self.aux.values())
+        return sum(F.binary_cross_entropy_with_logits(outs[L], T[k]) for L, k in self.aux.items())
+
+    def num_parameters(self):   # test-time model: the heads are training-only
+        return self.inner.num_parameters()
+
+
+@torch.no_grad()
+def aux_metrics(model, A, bs=128):
+    """Pair accuracy of each auxiliary head against its k-hop target, {"L<L>_k<k>": acc}."""
+    model.eval()
+    n, off = A.size(1), None
+    acc = {L: 0.0 for L in model.aux}
+    for i in range(0, A.size(0), bs):
+        Ab = A[i:i+bs].to(DEVICE).float()
+        if off is None:
+            off = ~torch.eye(n, dtype=torch.bool, device=DEVICE)
+        _, outs = model(Ab, with_aux=True)
+        T = model.hop_targets(Ab, model.aux.values())
+        for L, k in model.aux.items():
+            acc[L] += ((outs[L] > 0) == (T[k] > 0.5))[:, off].float().mean(dim=1).sum().item()
+    return {f"L{L}_k{k}": acc[L] / A.size(0) for L, k in model.aux.items()}
+
+
 def build_model(cfg, width, heads, seed):
+    if cfg.get("aux"):
+        return AuxHopModel(cfg["n"], width, cfg["depth"], heads, cfg["aux"])
     if cfg.get("input", "adj") == "idproj":
         return ProjectedInput(cfg["n"], cfg["id_dim"], width, cfg["depth"], heads, seed)
     if cfg.get("input") in ("khop", "rwse"):
@@ -605,8 +686,13 @@ def train_one(cfg, width, lr, seed, splits):
         tot = 0.0
         for i in range(0, N, bs):
             idx = perm[i:i+bs]
-            loss = F.binary_cross_entropy_with_logits(model(Atr_d[idx].float()),
-                                                      Rtr_d[idx].float())
+            Ab = Atr_d[idx].float()
+            if cfg.get("aux"):
+                logits, outs = model(Ab, with_aux=True)
+                loss = (F.binary_cross_entropy_with_logits(logits, Rtr_d[idx].float())
+                        + cfg.get("aux_weight", 0.3) * model.aux_loss(Ab, outs))
+            else:
+                loss = F.binary_cross_entropy_with_logits(model(Ab), Rtr_d[idx].float())
             opt.zero_grad(); loss.backward(); opt.step()
             if sched is not None:
                 sched.step()
@@ -618,7 +704,8 @@ def train_one(cfg, width, lr, seed, splits):
             history.append({"epoch": epoch, "loss": tot / N,
                             "train": train, "train_pair": train_pair,
                             **dict(zip(("val", "val_pair"), metrics(model, Ava, Rva, bs))),
-                            "test": test, "test_pair": test_pair})
+                            "test": test, "test_pair": test_pair,
+                            **({"aux": aux_metrics(model, Ate[:1000], bs)} if cfg.get("aux") else {})})
             if time.time() - t0 > 60 * cfg.get("max_minutes", float("inf")):
                 break   # per-run cap: keep what was learned so far, flagged below
 
