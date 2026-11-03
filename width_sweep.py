@@ -397,17 +397,19 @@ def raw_graphs(gen, num, n, seed, chord_frac=0.5, dmin=6):
         yield A, int(g.y)
 
 
-def relabelled(gen, num, n, seed, chord_frac=0.5, dmin=6):
+def relabelled(gen, num, n, seed, chord_frac=0.5, dmin=6, dtype=np.float32):
     """Graphs with node labels shuffled per graph, so component membership can't be
-    read off node indices. Returns (A + I, R) tensors."""
+    read off node indices. Returns (A + I, R) tensors. dtype=np.uint8 stores each graph
+    as 0/1 bytes while building (same values; 4x less peak memory, 2026-11-03: n = 96
+    at 128k graphs peaked near 20 GB per process in float32)."""
     rng = np.random.default_rng(seed + 1)
     As, Rs = [], []
     for A, _ in raw_graphs(gen, num, n, seed, chord_frac, dmin):
         perm = rng.permutation(n)
         A = A[np.ix_(perm, perm)]
-        As.append(A + np.eye(n, dtype=np.float32))
-        Rs.append(reachability(A))
-    return torch.tensor(np.array(As)), torch.tensor(np.array(Rs))
+        As.append((A + np.eye(n, dtype=np.float32)).astype(dtype))
+        Rs.append(reachability(A).astype(dtype))
+    return torch.from_numpy(np.stack(As)), torch.from_numpy(np.stack(Rs))
 
 
 @torch.no_grad()
@@ -494,7 +496,7 @@ def make_splits(cfg, seed):
         tag = f"{g}_n{n}_cf{kw['chord_frac']}_d{kw['dmin']}"
         # 0/1 matrices stored as uint8 (4x smaller); batches are cast to float on use.
         return tuple(cached(f"{tag}_N{num}_s{sd}_u8", lambda num=num, sd=sd:
-                            tuple(t.to(torch.uint8) for t in relabelled(g, num, n, sd, **kw)))
+                            tuple(t.to(torch.uint8) for t in relabelled(g, num, n, sd, dtype=np.uint8, **kw)))
                      for num, sd in ((cfg["train"], seed), (cfg["val"], seed + 5555),
                                      (cfg["test"], seed + 9999)))
     rng = np.random.default_rng(seed)
