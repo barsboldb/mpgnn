@@ -266,6 +266,20 @@ SWEEPS["q3n72"] = dict(SWEEPS["q3lr"], ns=[72], seeds=[0, 1], widths_by_n={72: [
 SWEEPS["q3n96"] = dict(SWEEPS["q3lr"], ns=[96], seeds=[0, 1],
                        widths_by_n={96: [96, 128, 192, 256]})
 SWEEPS["q3n72steps"] = dict(SWEEPS["q3n72"], steps=48000, widths_by_n={72: [96]})
+# Edge-bias pilot, round 2 (2026-11-04). Round 1 (n = 32, 16k graphs, 3000 steps): edge bias
+# on adjacency rows lifted m = 32 from 0.764 to 0.931; random-ID tokens stayed at always-yes
+# for every width with the bias starting at 0. Same budget here (first 16k of the cached
+# 128k set, one seed): random IDs with the bias starting at 2 / 4, at 4x the steps, and
+# adjacency rows starting at 2. If no random-ID variant leaves always-yes, the full sweep
+# keeps adjacency tokens only.
+_ebp = dict(SWEEPS["q3lr"], ns=[32], seeds=[0], train=16000, train_sizes=[16000],
+            train_from=128000, steps=3000, edge_bias=True, tokens="rid", id_dim=64)
+SWEEPS["ebp_rid_b2"] = dict(_ebp, bias_init=2.0, widths_by_n={32: [16, 32, 64]})
+SWEEPS["ebp_rid_b4"] = dict(_ebp, bias_init=4.0, widths_by_n={32: [16, 32, 64]})
+SWEEPS["ebp_rid_long"] = dict(_ebp, steps=12000, widths_by_n={32: [32, 64]})
+SWEEPS["ebp_rid_b2_long"] = dict(_ebp, bias_init=2.0, steps=12000, widths_by_n={32: [32, 64]})
+SWEEPS["ebp_adj_b2"] = dict(_ebp, tokens="adj", bias_init=2.0, widths_by_n={32: [8, 16, 32]})
+SWEEPS["ebp_adj"] = dict(_ebp, tokens="adj", widths_by_n={32: [8, 16, 32]})
 
 
 def set_seed(seed):
@@ -502,10 +516,13 @@ def make_splits(cfg, seed):
         kw = dict(chord_frac=cfg.get("chord_frac", 0.5), dmin=cfg.get("dmin", 6))
         tag = f"{g}_n{n}_cf{kw['chord_frac']}_d{kw['dmin']}"
         # 0/1 matrices stored as uint8 (4x smaller); batches are cast to float on use.
-        return tuple(cached(f"{tag}_N{num}_s{sd}_u8", lambda num=num, sd=sd:
-                            tuple(t.to(torch.uint8) for t in relabelled(g, num, n, sd, dtype=np.uint8, **kw)))
-                     for num, sd in ((cfg["train"], seed), (cfg["val"], seed + 5555),
-                                     (cfg["test"], seed + 9999)))
+        # train_from: build (or reuse) that larger cached set and train on its first `train`
+        # graphs (small-budget pilots at n = 32, where fresh swap graphs are slow to draw).
+        tr, va, te = (cached(f"{tag}_N{num}_s{sd}_u8", lambda num=num, sd=sd:
+                             tuple(t.to(torch.uint8) for t in relabelled(g, num, n, sd, dtype=np.uint8, **kw)))
+                      for num, sd in ((cfg.get("train_from", cfg["train"]), seed),
+                                      (cfg["val"], seed + 5555), (cfg["test"], seed + 9999)))
+        return tuple(t[:cfg["train"]] for t in tr), va, te
     rng = np.random.default_rng(seed)
     kw = dict(n=cfg["n"], p=0.12, cap=10**6, dist=cfg["dist"])
     tr = make_set(cfg["train"], rng=rng, seed=seed, **kw)
@@ -805,6 +822,7 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
         cfg.update(widths=cfg["widths"][:2], lrs=cfg["lrs"][:2], seeds=cfg["seeds"][:1],
                    epochs=2, train=256, val=64, test=64)
         cfg.pop("steps", None)
+        cfg.pop("train_from", None)
         for key in ("widths_by_n", "widths_by_depth"):
             if key in cfg:
                 cfg[key] = {k: ws[:2] for k, ws in cfg[key].items()}
