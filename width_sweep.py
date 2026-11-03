@@ -249,6 +249,16 @@ SWEEPS["aux_dbl"] = dict(SWEEPS["q3lr"], aux={1: 2, 2: 4, 3: 8}, aux_weight=0.3,
                          ns=[40, 56], seeds=[0, 1],
                          widths_by_n={40: [12, 16, 24, 32, 48], 56: [16, 24, 32, 48, 64, 96]})
 SWEEPS["aux_lin"] = dict(SWEEPS["aux_dbl"], aux={2: 2, 4: 4})
+# Larger graphs (2026-11-03, Colab Pro): the n = 32-56 span is 1.75x; n = 72 / 96 stretch it
+# to 3x. Adjacency rows, q3lr protocol (128k graphs, 24k steps, LR 1e-3, depth 6), widths
+# around the n^1.74 prediction (m* ~ 92 at n = 72, ~ 150 at n = 96), 2 seeds. q3n72steps:
+# 2x the steps at one width, to check that 24k steps still suffice at this size (as q3steps
+# did at n = 40 / 56); if m* falls with steps, the n = 72 / 96 values are step-limited bounds.
+# Data: 128k swap graphs at n = 96 ~ 2.4 GB uint8 per worker; build them on a CPU runtime.
+SWEEPS["q3n72"] = dict(SWEEPS["q3lr"], ns=[72], seeds=[0, 1], widths_by_n={72: [64, 96, 128]})
+SWEEPS["q3n96"] = dict(SWEEPS["q3lr"], ns=[96], seeds=[0, 1],
+                       widths_by_n={96: [96, 128, 192, 256]})
+SWEEPS["q3n72steps"] = dict(SWEEPS["q3n72"], steps=48000, widths_by_n={72: [96]})
 
 
 def set_seed(seed):
