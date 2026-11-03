@@ -4,6 +4,39 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-11-03
+
+### Auxiliary k-hop loss: width falls by 11–22 %, far short of the 2-hop rows
+
+`aux_dbl` on Kaggle (22 runs, 8 workers, ~2 h; `results/width/aux_dbl.shard*of8.jsonl`).
+Adjacency-row input and the baseline model; during training block L also predicts the
+2^L-hop reachability (L = 1, 2, 3 → 2, 4, 8 hops) through a bilinear head, weight 0.3 each.
+Heads dropped at test time. Critical width (test pair ≥ 0.95, final epoch, seeds 0 / 1):
+
+| input / training | n = 40 | n = 56 | growth (2 points) |
+|---|---|---|---|
+| adjacency rows (q3lr, seeds 0 / 1 only) | 30.1 | 57.9 | n^1.94 |
+| adjacency rows + aux k-hop loss | 26.8 (25.8 / 27.8) | 45.1 (44.2 / 46.0) | n^1.55 |
+| adjacency + 2-hop rows (enc_khop2) | 12.7 | 18.5 | n^1.11 |
+
+- Guiding the layers to compute hops in order lowers m* by 11 % at n = 40 and 22 % at
+  n = 56, with the whole pair-accuracy curve shifted: at n = 56, m = 48 reaches 0.967
+  against 0.913 without the loss. The saving is a quarter of what the 2-hop rows give,
+  so most of the khop effect comes from the information in the input, not from the
+  organisation of the computation. The slope over the two sizes (1.55 vs 1.94 for the
+  same two baseline points) hints at a smaller exponent, but two sizes cannot fix it.
+- The hierarchy is only partly learned. Final pair accuracy of the heads at the widest
+  models (m = 48 at n = 40, m = 96 at n = 56): 2-hop 0.98 / 1.00, 4-hop 0.91 / 0.90,
+  8-hop 0.97 / 0.91; majority-class rates for the targets are ≈ 0.87 / 0.65 / 0.70
+  (2 / 4 / 8 hops), so every head is above trivial, but the 4-hop head stays at ≈ 0.9
+  even where connectivity itself is at 0.995. Narrow models learn the heads worse
+  (n = 56, m = 32: 0.94 / 0.80 / 0.73) and the main task not at all (0.86).
+- Open: the head weight (0.3) and the layer→hop assignment (`aux_lin`: L = 2, 4 → 2, 4
+  hops) were not varied; a heavier weight or heads on every layer could move m* further.
+  The aux heads cost nothing at test time, so this is a pure training-time lever.
+
+---
+
 ## 2026-11-02
 
 ### Third seed for the main result and the 2-hop rows: exponents unchanged
