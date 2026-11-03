@@ -537,7 +537,7 @@ class ProjectedInput(nn.Module):
 class EdgeBiasModel(nn.Module):
     """Encoding study, structure in attention (2026-11-03). Every attention layer gets the
     edges as an additive score bias: score(i, j) += b[layer, head] * (A + I)_ij, with one
-    learned scalar per layer and head (initialised 0, so training starts at the baseline).
+    learned scalar per layer and head (initialised to bias_init; 0 starts at the baseline).
     Only direct edges: no distances, so nothing beyond the adjacency rows is given away
     (Graphormer's shortest-path bias would leak connectivity). Tokens are either
       "adj": the usual (A + I) row, n wide — does easy edge-following lower the width?
@@ -547,7 +547,7 @@ class EdgeBiasModel(nn.Module):
              forces the width up?
     Same blocks, final norm and bilinear all-pairs read-out as ConnectivityTransformer."""
 
-    def __init__(self, n, width, depth, heads, tokens="adj", id_dim=64, seed=0):
+    def __init__(self, n, width, depth, heads, tokens="adj", id_dim=64, seed=0, bias_init=0.0):
         super().__init__()
         self.tokens, self.heads = tokens, heads
         if tokens == "rid":
@@ -555,7 +555,9 @@ class EdgeBiasModel(nn.Module):
             ids = (torch.randint(0, 2, (n, id_dim), generator=g).float() * 2 - 1) / math.sqrt(id_dim)
             self.register_buffer("ids", ids)
         self.inner = ConnectivityTransformer(id_dim if tokens == "rid" else n, width, depth, heads)
-        self.edge_bias = nn.Parameter(torch.zeros(depth, heads))
+        # bias_init > 0 starts attention on the edges; with "rid" tokens a zero start leaves the
+        # model no structure at all (pilot 2026-11-03: stuck at always-yes for every width)
+        self.edge_bias = nn.Parameter(torch.full((depth, heads), float(bias_init)))
 
     def forward(self, Aaug):
         m, (B, n) = self.inner, Aaug.shape[:2]
@@ -716,7 +718,7 @@ def aux_metrics(model, A, bs=128):
 def build_model(cfg, width, heads, seed):
     if cfg.get("edge_bias"):
         return EdgeBiasModel(cfg["n"], width, cfg["depth"], heads, cfg.get("tokens", "adj"),
-                             cfg.get("id_dim", 64), seed)
+                             cfg.get("id_dim", 64), seed, cfg.get("bias_init", 0.0))
     if cfg.get("aux"):
         return AuxHopModel(cfg["n"], width, cfg["depth"], heads, cfg["aux"])
     if cfg.get("input", "adj") == "idproj":
