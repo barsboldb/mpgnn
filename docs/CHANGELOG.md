@@ -6,6 +6,29 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-03
 
+### Edges as attention bias: pilot (n = 32, short budget)
+
+`EdgeBiasModel`: every attention layer adds b[layer, head] · (A + I)_ij to the scores (one
+learned scalar per layer and head, start `bias_init`); tokens are adjacency rows ("adj") or
+a fixed 64-wide random ID per node position ("rid"). Pilot on a Colab T4: n = 32, the first
+16 000 graphs of the cached seed-0 set, 3000 steps, LR 1e-3, one seed. Final test pair
+accuracy (always-yes 0.745):
+
+| variant | m = 8 | 16 | 32 | 64 |
+|---|---|---|---|---|
+| adjacency rows (baseline) | – | 0.747 | 0.764 | – |
+| adjacency rows + edge bias, start 0 | 0.828 | 0.865 | 0.931 | – |
+| random IDs + edge bias, start 0 | – | 0.745 | 0.745 | 0.745 |
+
+- With adjacency rows the bias speeds learning a lot: the baseline barely leaves always-yes
+  at this budget, the biased model reaches 0.93 at m = 32.
+- Random IDs did not learn at any width. Likely cause: with a zero start the model sees no
+  structure at all. A second round (start 2 and 4 at m = 32 / 64; start 0 at 4x steps;
+  adjacency rows with start 2) was stopped before any run finished.
+- Next: rerun that second round, then the full sweep (n = 32–56, 2 seeds, q3lr protocol).
+- Local pilots at n = 32 are slow to set up: generating swap graphs at n = 32 redraws most
+  graphs (dmin = 6 rarely fits small blobs). Use the prefix of the cached 128k set instead.
+
 ### Auxiliary k-hop loss: width falls by 11–22 %, far short of the 2-hop rows
 
 `aux_dbl` on Kaggle (22 runs, 8 workers, ~2 h; `results/width/aux_dbl.shard*of8.jsonl`).
