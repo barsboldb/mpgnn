@@ -249,6 +249,13 @@ SWEEPS["aux_dbl"] = dict(SWEEPS["q3lr"], aux={1: 2, 2: 4, 3: 8}, aux_weight=0.3,
                          ns=[40, 56], seeds=[0, 1],
                          widths_by_n={40: [12, 16, 24, 32, 48], 56: [16, 24, 32, 48, 64, 96]})
 SWEEPS["aux_lin"] = dict(SWEEPS["aux_dbl"], aux={2: 2, 4: 4})
+# aux_dbl at four sizes (2026-11-03): at n = 40 / 56 it cut m* to 26.8 / 45.1 (adjacency
+# 30.1 / 57.9), a two-point slope of 1.55 against 1.94 for the same baseline points. Add
+# n = 32 / 48 so the exponent is a four-size fit, comparable with adjacency rows (1.74) and
+# 2-hop rows (1.27). Widths bracket the two-point prediction (~19 / ~36); runs on disk are
+# skipped. Updated in place, after aux_lin copied its settings.
+SWEEPS["aux_dbl"].update(ns=[32, 40, 48, 56], widths_by_n={
+    **SWEEPS["aux_dbl"]["widths_by_n"], 32: [12, 16, 24, 32], 48: [24, 32, 48, 64]})
 # Larger graphs (2026-11-03, Colab Pro): the n = 32-56 span is 1.75x; n = 72 / 96 stretch it
 # to 3x. Adjacency rows, q3lr protocol (128k graphs, 24k steps, LR 1e-3, depth 6), widths
 # around the n^1.74 prediction (m* ~ 92 at n = 72, ~ 150 at n = 96), 2 seeds. q3n72steps:
