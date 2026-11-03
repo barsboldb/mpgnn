@@ -534,6 +534,48 @@ class ProjectedInput(nn.Module):
         return self.inner.num_parameters()
 
 
+class EdgeBiasModel(nn.Module):
+    """Encoding study, structure in attention (2026-11-03). Every attention layer gets the
+    edges as an additive score bias: score(i, j) += b[layer, head] * (A + I)_ij, with one
+    learned scalar per layer and head (initialised 0, so training starts at the baseline).
+    Only direct edges: no distances, so nothing beyond the adjacency rows is given away
+    (Graphormer's shortest-path bias would leak connectivity). Tokens are either
+      "adj": the usual (A + I) row, n wide — does easy edge-following lower the width?
+      "rid": a fixed random ID per node position, id_dim wide for every n (±1/sqrt(id_dim),
+             drawn per run seed, never trained; positions are shuffled per graph, so it is
+             only a name) — all structure comes through attention. Is the n-wide row what
+             forces the width up?
+    Same blocks, final norm and bilinear all-pairs read-out as ConnectivityTransformer."""
+
+    def __init__(self, n, width, depth, heads, tokens="adj", id_dim=64, seed=0):
+        super().__init__()
+        self.tokens, self.heads = tokens, heads
+        if tokens == "rid":
+            g = torch.Generator().manual_seed(20_000 + seed)
+            ids = (torch.randint(0, 2, (n, id_dim), generator=g).float() * 2 - 1) / math.sqrt(id_dim)
+            self.register_buffer("ids", ids)
+        self.inner = ConnectivityTransformer(id_dim if tokens == "rid" else n, width, depth, heads)
+        self.edge_bias = nn.Parameter(torch.zeros(depth, heads))
+
+    def forward(self, Aaug):
+        m, (B, n) = self.inner, Aaug.shape[:2]
+        h = m.readin(self.ids.expand(B, -1, -1) if self.tokens == "rid" else Aaug)
+        for L, blk in enumerate(m.blocks):
+            # [B, H, n, n] -> [B * H, n, n], batch b / head h at row b * H + h (MHA's layout)
+            bias = (Aaug.unsqueeze(1) * self.edge_bias[L].view(1, -1, 1, 1)).reshape(
+                B * self.heads, n, n)
+            z = blk.norm1(h)
+            a, _ = blk.attn(z, z, z, attn_mask=bias, need_weights=False)
+            h = h + blk.dropout(a)
+            h = h + blk.dropout(blk.ffn(blk.norm2(h)))
+        h = m.norm(h)
+        logits = torch.bmm(m.W(h), h.transpose(1, 2))
+        return 0.5 * (logits + logits.transpose(1, 2))
+
+    def num_parameters(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+
 class EdgeTokenModel(nn.Module):
     """Encoding study, edge-list input (Sanford et al. 2024a): one token per vertex
     (type + id(v)) and one per edge (type + id(u) + id(v)), ids a learned n-entry table,
@@ -672,6 +714,9 @@ def aux_metrics(model, A, bs=128):
 
 
 def build_model(cfg, width, heads, seed):
+    if cfg.get("edge_bias"):
+        return EdgeBiasModel(cfg["n"], width, cfg["depth"], heads, cfg.get("tokens", "adj"),
+                             cfg.get("id_dim", 64), seed)
     if cfg.get("aux"):
         return AuxHopModel(cfg["n"], width, cfg["depth"], heads, cfg["aux"])
     if cfg.get("input", "adj") == "idproj":
