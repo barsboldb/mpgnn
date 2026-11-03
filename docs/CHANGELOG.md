@@ -4,6 +4,31 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-11-04
+
+### Auxiliary k-hop loss over four sizes: exponent 1.74 -> 1.30
+
+`aux_dbl` extended to n = 32 and 48 on Kaggle (16 runs, 8 workers; same shard files, new
+logs `aux_dbl.b.shard*.log`). Critical width (test pair >= 0.95, final epoch), seeds 0 / 1:
+
+| n | adjacency rows (q3lr, seeds 0 / 1) | + aux k-hop loss | saving |
+|---|---|---|---|
+| 32 | 21.9 (20.7 / 23.1) | 21.5 (20.2 / 22.7) | 2 % |
+| 40 | 30.1 (30.8 / 29.4) | 26.8 (25.8 / 27.8) | 11 % |
+| 48 | 42.4 (41.2 / 43.6) | 33.5 (32.0 / 35.0) | 21 % |
+| 56 | 58.0 (59.2 / 56.7) | 45.1 (44.2 / 46.0) | 22 % |
+| growth | n^1.74 (seed combinations 1.59–1.90) | n^1.30 (1.13–1.45) | |
+
+- The loss changes the exponent, not just the constant: no saving at n = 32, a fifth of
+  the width from n = 48 on. The two bootstrap ranges do not overlap. Fit thresholds
+  (train pair) give the same picture: 1.63 -> 1.20.
+- The 2-hop rows still lead (n^1.27 at a far lower level, 12.7 / 18.5 at n = 40 / 56), but
+  the aux loss reaches a similar exponent with the plain adjacency input and an
+  unchanged test-time model. Organising the computation matters for how width grows with
+  n; the extra input information mainly lowers the level.
+
+---
+
 ## 2026-11-03
 
 ### Edges as attention bias: pilot (n = 32, short budget)
