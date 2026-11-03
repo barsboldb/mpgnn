@@ -27,6 +27,31 @@ logs `aux_dbl.b.shard*.log`). Critical width (test pair >= 0.95, final epoch), s
   unchanged test-time model. Organising the computation matters for how width grows with
   n; the extra input information mainly lowers the level.
 
+### n = 72 (Colab T4): training fit stays on the line, generalization breaks
+
+`q3n72` (adjacency rows, q3lr protocol, seeds 0 / 1, m = 64 / 96 / 128) and `q3n72steps`
+(m = 96 at 48k steps); the first Colab session ended early (laptop slept), the rerun finished
+the rest (`results/width/q3n72*.jsonl`, ~8.1 compute units in all). Final pair accuracy, test
+(train), seeds 0 / 1:
+
+| m | 24k steps | 48k steps |
+|---|---|---|
+| 64 | 0.867 (0.916) / 0.898 (0.925) | – |
+| 96 | 0.947 (0.970) / 0.912 (0.973) | 0.960 (0.990) / 0.914 (0.991) |
+| 128 | 0.941 (0.978) / 0.936 (0.986) | – |
+
+- Fit threshold (train pair >= 0.95): m* = 80.9 (82.7 / 79.1), where the n^1.63 line from
+  n = 32–56 puts it (82.6); pooled fit slope over five sizes 1.65.
+- Generalize threshold: no seed reaches test 0.95 at any width at 24k steps; m = 128 is no
+  better than m = 96. Doubling the steps takes train to 0.99 but test only to 0.960 / 0.914.
+  The gap (train - test 0.04–0.08, against <= 0.02 at n = 56) means the 128k training graphs,
+  not the width, limit n = 72: more width or steps fits the training set further without
+  carrying over. The generalize m* at n = 72 is undefined under this protocol.
+- Every run sits at always-yes (0.764) for the first ~8 of 24 epochs, longer than at n = 56.
+- n = 96 (`q3n96`) is not worth running as is: with the same 128k graphs it would hit the
+  same wall harder. It needs a larger training set first (e.g. 256k at n = 72 to test
+  whether the gap closes).
+
 ---
 
 ## 2026-11-03
