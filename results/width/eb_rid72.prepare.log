@@ -1,0 +1,3 @@
+eb_rid72: preparing 2 datasets with 2 processes -> /content/width_cache
+  ready: n=72 train=128000 seed=0  (455s)
+  ready: n=72 train=128000 seed=1  (457s)

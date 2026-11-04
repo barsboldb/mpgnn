@@ -1,0 +1,3 @@
+q3n72data: preparing 2 datasets with 2 processes -> /content/width_cache
+  ready: n=72 train=256000 seed=1  (880s)
+  ready: n=72 train=256000 seed=0  (886s)

@@ -27,6 +27,37 @@ logs `aux_dbl.b.shard*.log`). Critical width (test pair >= 0.95, final epoch), s
   unchanged test-time model. Organising the computation matters for how width grows with
   n; the extra input information mainly lowers the level.
 
+### n = 72 follow-ups (Colab high-RAM T4): more data closes the gap; random-ID edge bias unstable
+
+Commit 018ddb2, ~1.75 h, 2.8 compute units (`results/width/q3n72data*`, `eb_rid72*`).
+
+`q3n72data`, adjacency rows, m = 96, 256k graphs (24k steps, so 12 epochs instead of 24),
+final pair accuracy test (train), seeds 0 / 1:
+
+| training graphs | seed 0 | seed 1 |
+|---|---|---|
+| 128k (q3n72) | 0.947 (0.970) | 0.912 (0.973) |
+| 256k | **0.956** (0.974) | **0.933** (0.955) |
+
+- Test rises by 0.01 / 0.02 and the train - test gap shrinks to ~0.02, the n <= 56 level.
+  The q3n72 gap was the data, as suspected. Seed 0 now passes 0.95 at m = 96; seed 1 is
+  still short, with train itself at 0.955 (half the epochs), so 256k graphs probably need
+  more steps too. A generalize m* at n = 72 needs 256k graphs and m = 96 / 128 / 192 runs.
+
+`eb_rid72`, random IDs + edge bias (start 4), q3lr protocol (128k graphs), test (train):
+
+| m | seed 0 | seed 1 |
+|---|---|---|
+| 12 | 0.793 (0.787) | 0.846 (0.846) |
+| 16 | 0.910 (0.912) | 0.945 (0.943) |
+| 24 | 0.764 (0.764) | 0.919 (0.932) |
+
+- No run reaches 0.95, and train = test: the limit is optimization, not data.
+- m = 24 seed 0 climbed to 0.861 and then collapsed to always-yes for the rest of training
+  (from ~epoch 9); wider is not reliably better here. LR 1e-3 with a bias that starts at 4
+  may be too aggressive at n = 72. Compare with the Kaggle `eb_rid` sweep (n = 32-56)
+  before drawing a width trend.
+
 ### Edge-bias pilot round 2: a nonzero start solves n = 32 at m = 16 with either token
 
 Kaggle (`ebp_*` sweeps, 16 runs, ~7–10 min each; `results/width/ebp_*.jsonl`). Same budget as
