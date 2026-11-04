@@ -280,6 +280,15 @@ SWEEPS["ebp_rid_long"] = dict(_ebp, steps=12000, widths_by_n={32: [32, 64]})
 SWEEPS["ebp_rid_b2_long"] = dict(_ebp, bias_init=2.0, steps=12000, widths_by_n={32: [32, 64]})
 SWEEPS["ebp_adj_b2"] = dict(_ebp, tokens="adj", bias_init=2.0, widths_by_n={32: [8, 16, 32]})
 SWEEPS["ebp_adj"] = dict(_ebp, tokens="adj", widths_by_n={32: [8, 16, 32]})
+# Edge-bias full sweep (2026-11-04). Round 2 reached >= 0.99 at m = 16 (n = 32) with a nonzero
+# bias start, on 1/8 of the q3lr data and steps. Now the q3lr protocol (128k graphs, 24k
+# steps, LR 1e-3) at n = 32-56, 2 seeds, for m*(n) next to adjacency rows (n^1.74) and 2-hop
+# rows (n^1.27). eb_adj: adjacency rows, bias start 2. eb_rid: 64-wide random IDs, bias start 4
+# (the input then has no edges and no n-wide read-in). m = 8 is one head (head_dim 8).
+SWEEPS["eb_adj"] = dict(SWEEPS["q3lr"], ns=[32, 40, 48, 56], seeds=[0, 1], edge_bias=True,
+                        tokens="adj", bias_init=2.0,
+                        widths_by_n={n: [8, 12, 16, 24] for n in (32, 40, 48, 56)})
+SWEEPS["eb_rid"] = dict(SWEEPS["eb_adj"], tokens="rid", id_dim=64, bias_init=4.0)
 
 
 def set_seed(seed):
