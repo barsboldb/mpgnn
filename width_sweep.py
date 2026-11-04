@@ -289,6 +289,15 @@ SWEEPS["eb_adj"] = dict(SWEEPS["q3lr"], ns=[32, 40, 48, 56], seeds=[0, 1], edge_
                         tokens="adj", bias_init=2.0,
                         widths_by_n={n: [8, 12, 16, 24] for n in (32, 40, 48, 56)})
 SWEEPS["eb_rid"] = dict(SWEEPS["eb_adj"], tokens="rid", id_dim=64, bias_init=4.0)
+# n = 72 follow-ups (2026-11-04, Colab). q3n72: train pair reached 0.97-0.99 but test only
+# 0.91-0.95 at every width and at 2x the steps, so the 128k graphs limit generalization.
+# q3n72data: twice the graphs (256k, 24k steps as before) at m = 96; if the gap closes, the
+# generalize m* at n = 72 is measurable with more data. eb_rid72: random-ID tokens with edge
+# bias at n = 72 (input width 64 for every n), a fifth size for eb_rid.
+# Data: 256k graphs at n = 72 ~ 2.7 GB uint8 per set, ~5 GB peak while built; use a high-RAM VM.
+SWEEPS["q3n72data"] = dict(SWEEPS["q3n72"], train=256000, train_sizes=[256000],
+                           widths_by_n={72: [96]})
+SWEEPS["eb_rid72"] = dict(SWEEPS["eb_rid"], ns=[72], widths_by_n={72: [12, 16, 24]})
 
 
 def set_seed(seed):
