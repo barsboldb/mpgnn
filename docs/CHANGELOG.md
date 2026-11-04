@@ -27,6 +27,31 @@ logs `aux_dbl.b.shard*.log`). Critical width (test pair >= 0.95, final epoch), s
   unchanged test-time model. Organising the computation matters for how width grows with
   n; the extra input information mainly lowers the level.
 
+### Edge-bias pilot round 2: a nonzero start solves n = 32 at m = 16 with either token
+
+Kaggle (`ebp_*` sweeps, 16 runs, ~7–10 min each; `results/width/ebp_*.jsonl`). Same budget as
+round 1: n = 32, first 16k graphs of the cached seed-0 set, 3000 steps (12 000 for `_long`),
+LR 1e-3, seed 0. Final test pair accuracy (always-yes 0.745):
+
+| tokens, bias start | steps | m = 8 | 16 | 32 | 64 |
+|---|---|---|---|---|---|
+| adjacency rows, 0 (round 1 again) | 3000 | 0.828 | 0.865 | 0.931 | – |
+| adjacency rows, 2 | 3000 | 0.871 | **0.999** | 0.997 | – |
+| random IDs, 0 | 12 000 | – | – | 0.935 | 0.947 |
+| random IDs, 2 | 3000 | – | 0.962 | 0.989 | 0.991 |
+| random IDs, 2 | 12 000 | – | – | 0.991 | 0.985 |
+| random IDs, 4 | 3000 | – | **0.998** | 0.988 | 0.993 |
+
+- Round 1 reproduces exactly (0.828 / 0.865 / 0.931), so the setup is unchanged.
+- The zero start was the whole problem for random IDs: at 4x the steps they leave
+  always-yes too (0.935 / 0.947), and a start of 2 or 4 learns within the first ~400 steps.
+- With a start of 2–4 both token types reach >= 0.99 at m = 16 on an eighth of the data and
+  an eighth of the steps of the q3lr baseline, whose m* at n = 32 is 22.4. With random IDs
+  the input carries no edges at all, and the read-in is 64 wide for every n.
+- m = 8 (one head) is too narrow for adjacency rows (0.871); random IDs were not tried there.
+- Next: the full sweep, q3lr protocol, n = 32–56 (and 72, where adjacency rows hit the
+  data limit), adjacency rows with start 2 and random IDs with start 4, widths from 8 up.
+
 ### n = 72 (Colab T4): training fit stays on the line, generalization breaks
 
 `q3n72` (adjacency rows, q3lr protocol, seeds 0 / 1, m = 64 / 96 / 128) and `q3n72steps`
