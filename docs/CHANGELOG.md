@@ -4,6 +4,46 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-11-05
+
+### Edge-bias full sweep: m* at or below 8 up to n = 48, against 45 for adjacency rows
+
+`eb_adj` (adjacency rows, bias start 2) and `eb_rid` (64-wide random IDs, bias start 4),
+q3lr protocol, n = 32-56, m = 8 / 12 / 16 / 24, seeds 0 / 1, Kaggle (64 runs, 8 workers,
+~20 min each; commit 7b73b36; `results/width/eb_{adj,rid}.shard*of4.jsonl`). Final test pair
+accuracy, seed 0 / 1:
+
+| n | eb_adj m = 8 | 12 | 16 | 24 | eb_rid m = 8 | 12 | 16 | 24 |
+|---|---|---|---|---|---|---|---|---|
+| 32 | .996 / .992 | 1.00 / .996 | 1.00 / 1.00 | 1.00 / .999 | .990 / .995 | .994 / .992 | .995 / .995 | .995 / .996 |
+| 40 | .984 / .990 | .993 / .992 | .977 / .998 | .997 / 1.00 | .964 / .972 | .964 / .978 | .986 / .984 | .998 / .989 |
+| 48 | .961 / .983 | .979 / .987 | .995 / .998 | .994 / .998 | .928 / .882 | .936 / .938 | .956 / .993 | .929 / .991 |
+| 56 | .974 / .867 | .956 / .975 | .996 / .986 | .998 / .994 | .814 / .905 | .899 / .865 | .971 / .985 | .957 / .946 |
+
+Critical width (test pair >= 0.95), seeds 0 / 1; "<= 8" = already passed at the smallest width:
+
+| n | adjacency rows (q3lr) | eb_adj | eb_rid |
+|---|---|---|---|
+| 32 | 22.4 | <= 8 / <= 8 | <= 8 / <= 8 |
+| 40 | 33.1 | <= 8 / <= 8 | <= 8 / <= 8 |
+| 48 | 44.7 | <= 8 / <= 8 | 14.7 / 12.8 |
+| 56 | 59.6 | <= 8 / 10.9 | 14.7 / 14.7 |
+| 72 | train fit 81, test none | – | > 24 / > 24 (eb_rid72) |
+
+- Edge bias on adjacency rows removes almost all of the width cost: one head of width 8
+  solves n = 48, and n = 56 needs at most ~11, against 45 / 60 without the bias. The script's
+  slopes (0.25-0.40) are meaningless here: the grid floor of 8 caps most crossings.
+- Random IDs (no edges in the input at all, read-in 64 wide for every n) need <= 8 up to
+  n = 40 and ~14 at n = 48 / 56. Four-size slope 1.25, but two sizes sit on the floor.
+- Wider is not reliably better for eb_rid: m = 24 is below m = 16 at n = 48 seed 0 (0.929
+  vs 0.956) and at n = 56 (0.957 / 0.946 vs 0.971 / 0.985). Train equals test in every run
+  (no overfitting), so this is optimisation, the same failure as the m = 24 collapse in
+  eb_rid72.
+- Next: widths below 8 need head_dim < 8 (m = 4 is zero heads now); n = 72 for eb_adj;
+  a lower LR or bias start for eb_rid at m >= 24 and at n = 72.
+
+---
+
 ## 2026-11-04
 
 ### Auxiliary k-hop loss over four sizes: exponent 1.74 -> 1.30
