@@ -6,6 +6,24 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-05
 
+### Edge bias at n = 96 / 128, partial: n = 96 seed 0 needs m ~28; n = 128 not reached at m = 24
+
+`eb_adj_big` widened (commit eef41f1), Colab high-RAM T4. The VM was lost after ~2 h with 4 of
+10 runs done (~2 compute units); the models archive was never written. Two shards also hit CUDA
+OOM loading n = 128 data while four workers shared the T4. Seed 0 only, final test pair (train):
+
+| m | n = 96 | n = 128 |
+|---|---|---|
+| 16 | 0.925 (0.918) | 0.890 (0.891) |
+| 24 | 0.930 (0.928) | 0.916 (0.915) |
+| 32 | 0.968 (0.972) | - |
+
+- n = 96 m* is now 28.0 / 15.7 (seed 0 / 1): the seeds disagree by almost 2x. n = 128 seed 0 is
+  > 24, and its best-val epoch for m = 16 / 24 is epoch 1 (slow start, as for rid at n = 72).
+- Slope over n = 32-96: 1.15 pooled, 0.95 seed mean, still capped by the m = 8 floor at
+  n <= 48. Pending: n = 96 seed 1 at m = 24 / 32 and n = 128 m = 32 and seed 1 (6 runs), with at
+  most 2 workers at n = 128.
+
 ### Edge bias at n = 72 / 96: m* grows again, slowly (14 at n = 72, ~16+ at n = 96)
 
 `eb_adj_big` (adjacency rows, bias start 2, head_dim 8, q3lr protocol, 128k graphs), Colab

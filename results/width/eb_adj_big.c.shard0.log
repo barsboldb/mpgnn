@@ -1,0 +1,14 @@
+Device cuda | sweep eb_adj_big shard 0/4: 3 runs to go (16 on disk)
+  loading data for seed 0, n=96, 128000 train graphs...
+  [1/3] n=96  L=6  N=128000 m=24   H=3   lr=0.001   seed=0  train=0.526 val=0.540 test@bestval=0.545 test@final=0.535  (2395.4s)
+  loading data for seed 0, n=128, 128000 train graphs...
+Traceback (most recent call last):
+  File "/content/mpgnn/width_sweep.py", line 1103, in <module>
+    run_sweep(a.sweep, smoke=a.smoke, shard=(i, k))
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/content/mpgnn/width_sweep.py", line 884, in run_sweep
+    r = train_one(c, w, lr, s, splits[(s, n, size)])
+  File "/content/mpgnn/width_sweep.py", line 793, in train_one
+    Atr_d, Rtr_d = Atr.to(DEVICE), Rtr.to(DEVICE)
+                                   ~~~~~~^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.95 GiB. GPU 0 has a total capacity of 14.56 GiB of which 1.09 GiB is free. Process 4242 has 4.30 GiB memory in use. Process 4241 has 2.64 GiB memory in use. Including non-PyTorch memory, this process has 2.13 GiB memory in use. Process 4243 has 4.41 GiB memory in use. Of the allocated memory 1.97 GiB is allocated by PyTorch, and 24.42 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)
