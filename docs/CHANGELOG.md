@@ -6,6 +6,28 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-05
 
+### Edge bias below m = 8 (head_dim 2): adjacency m* is flat at ~4-6 for n = 32-56
+
+`eb_adj_hd2` / `eb_rid_hd2` (q3lr protocol, head_dim 2 so m = 2-8 has 1-4 heads, seeds 0 / 1),
+Kaggle 2x T4, commit 5778050, 64 runs. Models (git-ignored) in `results/width/models/eb_*_hd2/`.
+Final test pair, seed 0 / 1:
+
+| n | adj m=2 | adj m=4 | adj m=6 | adj m=8 | rid m=4 | rid m=6 | rid m=8 |
+|---|---|---|---|---|---|---|---|
+| 32 | 0.745 / 0.746 | 0.745 / 0.746 | 0.991 / 1.000 | 1.000 / 1.000 | 0.858 / 0.994 | 0.995 / 0.998 | 0.993 / 0.992 |
+| 40 | 0.750 / 0.750 | 0.750 / 0.750 | 0.966 / 0.993 | 0.994 / 0.995 | 0.859 / 0.838 | 0.986 / 0.865 | 0.931 / 0.975 |
+| 48 | 0.755 / 0.755 | 0.977 / 0.919 | 0.985 / 0.985 | 0.988 / 0.991 | 0.824 / 0.767 | 0.950 / 0.935 | 0.874 / 0.947 |
+| 56 | 0.759 / 0.759 | 0.941 / 0.759 | 0.979 / 0.884 | 0.971 / 0.975 | 0.804 / 0.828 | 0.853 / 0.928 | 0.945 / 0.923 |
+
+- adj: m* 5.6 / 5.7 / 4.1 / 5.9 at n = 32 / 40 / 48 / 56, slope ~0. m = 2 (one 2-wide head)
+  stays at always-yes for every n; the step from failing to ~0.98 is between m = 4 and 6.
+  m = 8 matches head_dim 8 (n = 56: 0.971 / 0.975 against 0.974 / 0.867).
+- rid: m* 4.6 / 7.8 / > 8 / > 8, rising and non-monotone in m (n = 40: 0.986 at m = 6,
+  0.931 at m = 8), the same instability as rid elsewhere.
+- The n = 72 / 96 m* (13-16) were head_dim 8, i.e. 1-2 heads at m = 8-16. Queued
+  `eb_adj_hd2_72` / `eb_adj_hd2_96` (head_dim 2, m = 4-12 / 6-16) on Kaggle ahead of ebx128
+  to see whether m* stays flat once the head count is not the limit.
+
 ### Edge-bias plateau: checkpoint diagnostics, and the ablation / surgery runs set up
 
 Why do eb_adj_big runs at n >= 96 stay on a ~0.9 pair-accuracy plateau? A research report

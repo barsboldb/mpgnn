@@ -306,6 +306,13 @@ SWEEPS["eb_rid72"] = dict(SWEEPS["eb_rid"], ns=[72], widths_by_n={72: [12, 16, 2
 _sub8 = {n: [2, 4, 6, 8] for n in (32, 40, 48, 56)}
 SWEEPS["eb_adj_hd2"] = dict(SWEEPS["eb_adj"], head_dim=2, widths_by_n=_sub8, save_models="eb_adj_hd2")
 SWEEPS["eb_rid_hd2"] = dict(SWEEPS["eb_rid"], head_dim=2, widths_by_n=_sub8, save_models="eb_rid_hd2")
+# eb_adj_hd2 put m* at 4-6 for n = 32-56, flat; the n = 72 / 96 values (13-16) are head_dim 8.
+# Same head_dim 2 at n = 72 / 96: does m* stay flat once heads are not the limit? Two sweeps so
+# the Kaggle queue can run them side by side (2026-11-06).
+SWEEPS["eb_adj_hd2_72"] = dict(SWEEPS["eb_adj_hd2"], ns=[72], widths_by_n={72: [4, 6, 8, 12]},
+                               save_models="eb_adj_hd2")
+SWEEPS["eb_adj_hd2_96"] = dict(SWEEPS["eb_adj_hd2"], ns=[96], widths_by_n={96: [6, 8, 12, 16]},
+                               save_models="eb_adj_hd2")
 # Edge bias at larger n (2026-11-05, Colab high-RAM T4): does m* grow with n at all once edges
 # are in the attention? Plain adjacency rows need m* ~ 60 at n = 56 and are data-limited at
 # n = 72 with 128k graphs. Same protocol and head_dim 8 as eb_adj (m = 4 is one 4-wide head).
