@@ -298,6 +298,19 @@ SWEEPS["eb_rid"] = dict(SWEEPS["eb_adj"], tokens="rid", id_dim=64, bias_init=4.0
 SWEEPS["q3n72data"] = dict(SWEEPS["q3n72"], train=256000, train_sizes=[256000],
                            widths_by_n={72: [96]})
 SWEEPS["eb_rid72"] = dict(SWEEPS["eb_rid"], ns=[72], widths_by_n={72: [12, 16, 24]})
+# Edge bias below the width floor (2026-11-05). eb_adj passed 0.95 at m = 8 (one head) for every
+# n <= 48 and eb_rid for n <= 40, so most crossings sat on the grid floor and no exponent could be
+# fitted. head_dim 2 makes m = 2 / 4 / 6 / 8 into 1 / 2 / 3 / 4 heads. Models are saved to test
+# the mechanism (learned bias size, attention mass on neighbours, component clustering of the
+# final states). m = 8 is repeated at head_dim 2 to check it matches head_dim 8.
+_sub8 = {n: [2, 4, 6, 8] for n in (32, 40, 48, 56)}
+SWEEPS["eb_adj_hd2"] = dict(SWEEPS["eb_adj"], head_dim=2, widths_by_n=_sub8, save_models="eb_adj_hd2")
+SWEEPS["eb_rid_hd2"] = dict(SWEEPS["eb_rid"], head_dim=2, widths_by_n=_sub8, save_models="eb_rid_hd2")
+# Edge bias at larger n (2026-11-05, Colab high-RAM T4): does m* grow with n at all once edges
+# are in the attention? Plain adjacency rows need m* ~ 60 at n = 56 and are data-limited at
+# n = 72 with 128k graphs. Same protocol and head_dim 8 as eb_adj (m = 4 is one 4-wide head).
+SWEEPS["eb_adj_big"] = dict(SWEEPS["eb_adj"], ns=[72, 96],
+                            widths_by_n={72: [4, 8, 12, 16], 96: [4, 8, 12, 16]}, save_models="eb_adj_big")
 
 
 def set_seed(seed):
