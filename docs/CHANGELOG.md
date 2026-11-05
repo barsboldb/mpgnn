@@ -6,23 +6,27 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-05
 
-### Edge bias at n = 96 / 128, partial: n = 96 seed 0 needs m ~28; n = 128 not reached at m = 24
+### Edge bias at n = 96 / 128: past n ~ 96 the limit is escaping a plateau, not width
 
-`eb_adj_big` widened (commit eef41f1), Colab high-RAM T4. The VM was lost after ~2 h with 4 of
-10 runs done (~2 compute units); the models archive was never written. Two shards also hit CUDA
-OOM loading n = 128 data while four workers shared the T4. Seed 0 only, final test pair (train):
+`eb_adj_big` widened (commit eef41f1), Colab high-RAM T4, two launches. The first VM (4 workers)
+was lost after 4 of 10 runs when the laptop dropped off the network; two of its workers had also
+hit CUDA OOM loading n = 128 data. The remaining 6 ran on a second VM with 2 workers (commit
+1d1e440, ~1.5 h; ~4 compute units in all). Models for all n = 96 / 128 runs except the first 4 in
+`results/width/models/eb_adj_big/` (git-ignored). Final test pair (train), seed 0 / 1; `*` marks
+runs whose best validation epoch is 1, i.e. graph accuracy never left its starting value:
 
 | m | n = 96 | n = 128 |
 |---|---|---|
-| 16 | 0.925 (0.918) | 0.890 (0.891) |
-| 24 | 0.930 (0.928) | 0.916 (0.915) |
-| 32 | 0.968 (0.972) | - |
+| 16 | 0.925 (0.918)\* / 0.959 (0.963) | 0.890 (0.891)\* / 0.855 (0.857)\* |
+| 24 | 0.930 (0.928) / 0.948 (0.960) | 0.916 (0.915)\* / 0.964 (0.965) |
+| 32 | 0.968 (0.972) / 0.968 (0.973) | 0.930 (0.932) / 0.929 (0.929)\* |
 
-- n = 96 m* is now 28.0 / 15.7 (seed 0 / 1): the seeds disagree by almost 2x. n = 128 seed 0 is
-  > 24, and its best-val epoch for m = 16 / 24 is epoch 1 (slow start, as for rid at n = 72).
-- Slope over n = 32-96: 1.15 pooled, 0.95 seed mean, still capped by the m = 8 floor at
-  n <= 48. Pending: n = 96 seed 1 at m = 24 / 32 and n = 128 m = 32 and seed 1 (6 runs), with at
-  most 2 workers at n = 128.
+- m* (test pair >= 0.95): n = 96 28.0 / 15.7; n = 128 > 32 / 22.8. Accuracy is not monotone in
+  m: n = 128 seed 1 passes at m = 24 and fails at m = 32, n = 96 seed 1 passes at 16 and misses at
+  24. Runs either escape the 0.85-0.93 plateau or stay on it, and which one happens decides m*.
+- Train equals test throughout, so it is not data. A width threshold at n >= 96 needs either
+  more seeds per cell or a fix for the plateau (longer training, bias start, LR) first.
+- Slope over n = 32-96: 1.12 pooled, 0.95 seed mean, still capped by the m = 8 floor at n <= 48.
 
 ### Edge bias at n = 72 / 96: m* grows again, slowly (14 at n = 72, ~16+ at n = 96)
 
