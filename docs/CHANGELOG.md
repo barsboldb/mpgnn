@@ -6,6 +6,45 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-05
 
+### Edge-bias plateau, answer from n = 96 and checkpoint surgery: depth, not bias or schedule
+
+Colab high-RAM T4, commit af20a01, ~6.5 h, ~10.5 compute units.
+
+Checkpoint surgery (`eb_surgery.py`, 6000 steps from the stalled eb_adj_big checkpoints, fresh
+Adam; `results/width/eb_surgery.shard*of2.jsonl`), final test pair (start in brackets for the
+treatments that change the model):
+
+| checkpoint (start) | ctrl | lr | bias +1.5 | deep +6 blocks | loop x2 |
+|---|---|---|---|---|---|
+| n = 128 m = 16 s1 (0.855) | 0.857 | 0.857 | 0.855 (0.693) | 0.980 | **0.994** (0.703) |
+| n = 128 m = 32 s0 (0.930) | 0.940 | 0.946 | 0.942 (0.858) | 0.983 | **1.000** (0.859) |
+| n = 128 m = 32 s1 (0.929) | 0.932 | 0.951 | 0.932 (0.825) | 0.995 | **1.000** (0.906) |
+| n = 96 m = 16 s0 (0.925) | 0.930 | 0.931 | 0.933 (0.835) | 0.995 | **0.998** (0.773) |
+
+Ablation `ebx96_*` (n = 96, m = 16, seeds 2-5, full q3lr budget), final test pair:
+
+| condition | seed 2 | 3 | 4 | 5 | >= 0.95 |
+|---|---|---|---|---|---|
+| base | 0.905 | 0.918 | 0.929 | 0.963 | 1/4 |
+| logn (b0 = 3.18) | 0.909 | 0.923 | 0.926 | 0.947 | 0/4 |
+| ssmax | 0.857 | 0.934 | 0.965 | 0.923 | 1/4 |
+| clip 1.0 | 0.965 | 0.937 | 0.953 | 0.971 | 3/4 |
+| wsd | 0.958 | 0.950 | 0.966 | 0.969 | 3/4 |
+| logn + clip + wsd | 0.855 | 0.976 | 0.964 | 0.970 | 3/4 |
+| depth 12 | 0.994 | 0.993 | 0.999 | 0.993 | **4/4** |
+| loop x2 (6 blocks, tied) | 0.999 | 0.988 | 0.998 | 0.945 | 3/4 |
+
+- The stall is a depth limit. A stalled checkpoint run through its own 6 blocks twice, with no
+  new parameters, reaches 0.994-1.000 within 6000 steps; adding 6 identity blocks reaches
+  0.980-0.995. More training, a re-warmed LR and a larger edge bias leave it on the plateau.
+- From scratch, depth 12 at m = 16 passes in 4 / 4 seeds at ~0.99+, loop x2 in 3 / 4. The
+  dilution fixes (logn, ssmax) do nothing; clip and WSD help a little (3 / 4, all near 0.95).
+- So the eb_adj m* rise past n ~ 56 at depth 6 (8 -> 14 -> 16-28 -> > 32) measures depth, not
+  width: the width study has to fix depth relative to n (log n, or a depth grid) for this
+  encoding. That fits the diagnostics (stalled models worse at every hop distance, no hard
+  12-hop wall: the depth-6 model propagates too weakly, not too short).
+- ebx128 (Kaggle, queued) is the same ablation at n = 128.
+
 ### Edge bias below m = 8 (head_dim 2): adjacency m* is flat at ~4-6 for n = 32-56
 
 `eb_adj_hd2` / `eb_rid_hd2` (q3lr protocol, head_dim 2 so m = 2-8 has 1-4 heads, seeds 0 / 1),
