@@ -311,6 +311,11 @@ SWEEPS["eb_rid_hd2"] = dict(SWEEPS["eb_rid"], head_dim=2, widths_by_n=_sub8, sav
 # n = 72 with 128k graphs. Same protocol and head_dim 8 as eb_adj (m = 4 is one 4-wide head).
 SWEEPS["eb_adj_big"] = dict(SWEEPS["eb_adj"], ns=[72, 96],
                             widths_by_n={72: [4, 8, 12, 16], 96: [4, 8, 12, 16]}, save_models="eb_adj_big")
+# eb_adj_big gave m* 13.0 / 14.9 at n = 72 and > 16 / 15.7 at n = 96 (train = test, no data
+# limit). Widen n = 96 to pin seed 0 and add n = 128 (128k graphs ~ 4.2 GB uint8 per set) for an
+# n = 32-128 range. Runs on disk are skipped. Updated in place.
+SWEEPS["eb_adj_big"].update(ns=[72, 96, 128], widths_by_n={
+    **SWEEPS["eb_adj_big"]["widths_by_n"], 96: [4, 8, 12, 16, 24, 32], 128: [16, 24, 32]})
 
 
 def set_seed(seed):
