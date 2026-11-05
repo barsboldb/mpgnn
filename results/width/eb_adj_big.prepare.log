@@ -1,0 +1,5 @@
+eb_adj_big: preparing 4 datasets with 4 processes -> /content/width_cache
+  ready: n=72 train=128000 seed=0  (449s)
+  ready: n=72 train=128000 seed=1  (453s)
+  ready: n=96 train=128000 seed=1  (457s)
+  ready: n=96 train=128000 seed=0  (458s)

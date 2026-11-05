@@ -6,6 +6,27 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-05
 
+### Edge bias at n = 72 / 96: m* grows again, slowly (14 at n = 72, ~16+ at n = 96)
+
+`eb_adj_big` (adjacency rows, bias start 2, head_dim 8, q3lr protocol, 128k graphs), Colab
+high-RAM T4, commit 5778050, ~1.6 h, 2.6 compute units. Models (git-ignored) in
+`results/width/models/eb_adj_big/`. Final test pair accuracy (train), seed 0 / 1:
+
+| m | n = 72 | n = 96 |
+|---|---|---|
+| 4 | 0.780 (0.781) / 0.801 (0.798) | 0.808 (0.798) / 0.788 (0.784) |
+| 8 | 0.896 (0.901) / 0.909 (0.917) | 0.831 (0.830) / 0.799 (0.803) |
+| 12 | 0.935 (0.943) / 0.851 (0.867) | 0.827 (0.818) / 0.828 (0.833) |
+| 16 | 0.987 (0.987) / 0.983 (0.987) | 0.925 (0.918) / 0.959 (0.963) |
+
+- m* (test pair >= 0.95): n = 72 13.0 / 14.9; n = 96 > 16 / 15.7. With n = 32-56 (<= 8 up to
+  n = 48, <= 8 / 10.9 at n = 56) the width does grow with n once n passes ~50, but at
+  n = 72 it is 14 against a train-fit 81 for plain adjacency rows.
+- Train equals test at both sizes: the 128k graphs that limit plain adjacency rows at n = 72
+  are enough here. The limit is width (or optimisation), not data.
+- The script's slope over n = 32-72 (0.66-0.73) is still floor-capped; the sub-8 Kaggle sweep
+  (head_dim 2) is needed for a real exponent. n = 96 needs m = 24 / 32 to pin seed 0.
+
 ### Edge-bias full sweep: m* at or below 8 up to n = 48, against 45 for adjacency rows
 
 `eb_adj` (adjacency rows, bias start 2) and `eb_rid` (64-wide random IDs, bias start 4),
