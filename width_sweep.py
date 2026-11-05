@@ -317,6 +317,21 @@ SWEEPS["eb_adj_big"] = dict(SWEEPS["eb_adj"], ns=[72, 96],
 SWEEPS["eb_adj_big"].update(ns=[72, 96, 128], widths_by_n={
     **SWEEPS["eb_adj_big"]["widths_by_n"], 96: [4, 8, 12, 16, 24, 32], 128: [16, 24, 32]})
 
+# Plateau ablation (2026-11-05). eb_adj_big at n >= 96: runs leave a 0.9 pair-accuracy plateau or
+# stay on it, and that decides m* more than width does (n = 128 seed 1: 0.964 at m = 24, 0.929 at
+# m = 32). One change per condition against `base`, four fresh seeds (2-5, so the seed-0/1 runs
+# stay comparable), one cell each: n = 96 m = 16 and n = 128 m = 24, where 2 of 4 seed-0/1
+# runs stalled. Escape rate per condition is the readout. ebx96_* run on Colab, ebx128_* on Kaggle.
+_ebx = dict(SWEEPS["eb_adj"], seeds=[2, 3, 4, 5])
+_EBX = {"base": {}, "logn": dict(bias_logn=True), "ssmax": dict(bias_scale="logn"),
+        "clip": dict(clip=1.0), "wsd": dict(schedule="wsd", decay_frac=0.2),
+        "all": dict(bias_logn=True, clip=1.0, schedule="wsd", decay_frac=0.2),
+        "d12": dict(depths=[12]), "loop2": dict(loops=2)}
+for _n, _m in ((96, 16), (128, 24)):
+    for _k, _v in _EBX.items():
+        SWEEPS[f"ebx{_n}_{_k}"] = dict(_ebx, ns=[_n], widths_by_n={_n: [_m]},
+                                       save_models=f"ebx{_n}_{_k}", **_v)
+
 
 def set_seed(seed):
     random.seed(seed)
@@ -600,9 +615,18 @@ class EdgeBiasModel(nn.Module):
              forces the width up?
     Same blocks, final norm and bilinear all-pairs read-out as ConnectivityTransformer."""
 
-    def __init__(self, n, width, depth, heads, tokens="adj", id_dim=64, seed=0, bias_init=0.0):
+    # Plateau fixes (2026-11-05; at n >= 96 runs escape a 0.9 pair-accuracy plateau or don't):
+    #   bias_logn  start b at bias_init + log((n - 3.5) / 28.5): keeps the initial attention
+    #              mass on N(i) + i (~3.5 entries per row) at its n = 32 value
+    #   bias_scale "logn": score += b * log(n) / log(32) * (A + I) (SSMax-style, on the bias only)
+    #   loops      run the block stack that many times, weights tied (depth without parameters)
+    def __init__(self, n, width, depth, heads, tokens="adj", id_dim=64, seed=0, bias_init=0.0,
+                 bias_logn=False, bias_scale=None, loops=1):
         super().__init__()
-        self.tokens, self.heads = tokens, heads
+        self.tokens, self.heads, self.loops = tokens, heads, loops
+        self.scale = math.log(n) / math.log(32) if bias_scale == "logn" else 1.0
+        if bias_logn:
+            bias_init += math.log((n - 3.5) / 28.5)
         if tokens == "rid":
             g = torch.Generator().manual_seed(20_000 + seed)
             ids = (torch.randint(0, 2, (n, id_dim), generator=g).float() * 2 - 1) / math.sqrt(id_dim)
@@ -615,9 +639,9 @@ class EdgeBiasModel(nn.Module):
     def forward(self, Aaug):
         m, (B, n) = self.inner, Aaug.shape[:2]
         h = m.readin(self.ids.expand(B, -1, -1) if self.tokens == "rid" else Aaug)
-        for L, blk in enumerate(m.blocks):
+        for L, blk in [lb for _ in range(self.loops) for lb in enumerate(m.blocks)]:
             # [B, H, n, n] -> [B * H, n, n], batch b / head h at row b * H + h (MHA's layout)
-            bias = (Aaug.unsqueeze(1) * self.edge_bias[L].view(1, -1, 1, 1)).reshape(
+            bias = (Aaug.unsqueeze(1) * (self.scale * self.edge_bias[L]).view(1, -1, 1, 1)).reshape(
                 B * self.heads, n, n)
             z = blk.norm1(h)
             a, _ = blk.attn(z, z, z, attn_mask=bias, need_weights=False)
@@ -771,7 +795,8 @@ def aux_metrics(model, A, bs=128):
 def build_model(cfg, width, heads, seed):
     if cfg.get("edge_bias"):
         return EdgeBiasModel(cfg["n"], width, cfg["depth"], heads, cfg.get("tokens", "adj"),
-                             cfg.get("id_dim", 64), seed, cfg.get("bias_init", 0.0))
+                             cfg.get("id_dim", 64), seed, cfg.get("bias_init", 0.0),
+                             cfg.get("bias_logn", False), cfg.get("bias_scale"), cfg.get("loops", 1))
     if cfg.get("aux"):
         return AuxHopModel(cfg["n"], width, cfg["depth"], heads, cfg["aux"])
     if cfg.get("input", "adj") == "idproj":
@@ -798,6 +823,12 @@ def train_one(cfg, width, lr, seed, splits):
         warm = max(1, int(cfg.get("warmup_frac", 0.0) * total))
         sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda t: (t + 1) / warm if t < warm
             else 0.5 * (1 + math.cos(math.pi * (t - warm) / max(1, total - warm))))
+    elif cfg.get("schedule") == "wsd":   # warmup, stable at peak, linear decay over the last decay_frac
+        total = epochs * math.ceil(N / bs)
+        warm = max(1, int(cfg.get("warmup_frac", 0.0) * total))
+        dec = max(1, int(cfg.get("decay_frac", 0.2) * total))
+        sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda t: (t + 1) / warm if t < warm
+            else min(1.0, (total - t) / dec))
     history, t0 = [], time.time()
     for epoch in range(1, epochs + 1):
         model.train()
@@ -812,7 +843,10 @@ def train_one(cfg, width, lr, seed, splits):
                         + cfg.get("aux_weight", 0.3) * model.aux_loss(Ab, outs))
             else:
                 loss = F.binary_cross_entropy_with_logits(model(Ab), Rtr_d[idx].float())
-            opt.zero_grad(); loss.backward(); opt.step()
+            opt.zero_grad(); loss.backward()
+            if cfg.get("clip"):
+                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg["clip"])
+            opt.step()
             if sched is not None:
                 sched.step()
             tot += loss.item() * idx.size(0)

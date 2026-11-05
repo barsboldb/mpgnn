@@ -6,6 +6,40 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-05
 
+### Edge-bias plateau: checkpoint diagnostics, and the ablation / surgery runs set up
+
+Why do eb_adj_big runs at n >= 96 stay on a ~0.9 pair-accuracy plateau? A research report
+(Claude Research, 2026-11-05) proposed H1 bias dilution (fixed b * (A + I) puts less softmax
+mass on neighbours as n grows), H3 cosine schedule running out, H5 6 one-hop layers reaching
+~12 hops. Checked first, without a GPU:
+
+- Distances in the data (`swap`, 400 graphs per n): connected pairs median 6 / 7 / 7 hops and
+  90th percentile 10 / 11 / 12 at n = 72 / 96 / 128; pairs beyond 12 hops 0.6 / 3.4 / 9.0 % of
+  connected-graph pairs. There is no jump between n = 72 and 96, so a 12-hop wall alone cannot
+  explain the plateau.
+- `eb_diagnose.py` on all 22 saved eb_adj_big models (`results/width/eb_diag/*.json`):
+  - b is learned up from 2 to ~3.3-4 in layers 1-2 at every n, but that puts 31-49 % of the
+    attention on N(i) + i at n = 128 against 55-63 % at n = 72: dilution is real and the
+    model does not raise b far enough to undo it.
+  - Middle layers often drop b to ~0 or below (content or global attention), in stalled and
+    escaped runs alike.
+  - Pair error rises with hop distance in every model (n = 128 m = 24 s1, escaped: 0.4 / 1.5 /
+    6 / 11 % at 1-4 / 5-8 / 9-12 / 13+ hops); stalled models are 2-3x worse at every distance,
+    not only beyond 12. The clearest marker of a stalled run is the error on disconnected pairs
+    (12-32 % against 6 %), with final-layer component separation ~0.7 against ~0.9-1.0.
+
+Set up (commit below):
+- `width_sweep.py`: EdgeBiasModel `bias_logn` (b starts at bias_init + log((n - 3.5) / 28.5),
+  3.18 at n = 96, 3.47 at n = 128), `bias_scale="logn"` (bias times log n / log 32), `loops`
+  (weight-tied repeat of the blocks); training `clip` (grad-norm) and `schedule="wsd"` (warmup,
+  constant, linear decay over the last `decay_frac`).
+- `ebx{96,128}_{base,logn,ssmax,clip,wsd,all,d12,loop2}`: one change each against base, seeds
+  2-5, n = 96 m = 16 and n = 128 m = 24. Escape rate per condition is the readout. ebx128 on
+  Kaggle (notebook: queue with at most 4 workers, 2 per T4), ebx96 on Colab.
+- `eb_surgery.py`: resume the stalled n = 128 m = 16 s1, m = 32 s0 / s1 and n = 96 m = 16 s0
+  checkpoints for 6000 steps with ctrl (LR 1e-4) / bias (+1.5) / lr (re-warm to 1e-3) / deep
+  (+6 identity blocks) / loop (blocks twice). Colab.
+
 ### Edge bias at n = 96 / 128: past n ~ 96 the limit is escaping a plateau, not width
 
 `eb_adj_big` widened (commit eef41f1), Colab high-RAM T4, two launches. The first VM (4 workers)
