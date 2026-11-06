@@ -919,7 +919,11 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
     suffix = f".shard{shard[0]}of{shard[1]}" if shard[1] > 1 else ""
     path = os.path.join(OUT_DIR, f"{name}{suffix}.jsonl")
     done = {run_key(r) for r in load_runs(name)}
-    todo = pending(cfg, done)[shard[0]::shard[1]]
+    # shard the full run list, then drop finished runs: slicing only the pending runs gave a shard
+    # that started after another had saved a run a shifted slice (ebd12, 2026-11-06: 3 runs twice,
+    # 6 never)
+    todo = [t for t in pending(cfg, set())[shard[0]::shard[1]]
+            if (*t[:5], resolve_depth(t[5], t[4])) not in done]
     print(f"Device {DEVICE} | sweep {name} shard {shard[0]}/{shard[1]}: "
           f"{len(todo)} runs to go ({len(done)} on disk)")
 
