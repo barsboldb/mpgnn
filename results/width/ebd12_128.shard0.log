@@ -1,0 +1,7 @@
+Device cuda | sweep ebd12_128 shard 0/2: 4 runs to go (0 on disk)
+  loading data for seed 0, n=128, 128000 train graphs...
+  [1/4] n=128 L=12 N=128000 m=8    H=1   lr=0.001   seed=0  train=0.702 val=0.708 test@bestval=0.652 test@final=0.662  (2226.9s)
+  [2/4] n=128 L=12 N=128000 m=16   H=2   lr=0.001   seed=0  train=0.856 val=0.865 test@bestval=0.850 test@final=0.850  (3431.7s)
+  loading data for seed 1, n=128, 128000 train graphs...
+  [3/4] n=128 L=12 N=128000 m=8    H=1   lr=0.001   seed=1  train=0.718 val=0.755 test@bestval=0.708 test@final=0.675  (2264.3s)
+  [4/4] n=128 L=12 N=128000 m=16   H=2   lr=0.001   seed=1  train=0.729 val=0.752 test@bestval=0.728 test@final=0.723  (3463.2s)

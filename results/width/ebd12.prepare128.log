@@ -1,0 +1,3 @@
+ebd12_128: preparing 2 datasets with 2 processes -> /content/width_cache
+  ready: n=128 train=128000 seed=0  (534s)
+  ready: n=128 train=128000 seed=1  (536s)

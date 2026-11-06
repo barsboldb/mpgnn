@@ -4,6 +4,37 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-11-07
+
+### Edge bias at depth 12, n = 72-128: m* drops to <= 8 / ~8 / ~14.5, but runs stay erratic
+
+Colab high-RAM T4, commits 176c6c5 (24 runs) and 9b4364f (6 fill-in runs), ~7.5 h,
+~9.8 compute units. Sweeps `ebd12_72/96/128`: eb_adj protocol (adjacency tokens, head_dim 8,
+bias_init 2), depth 12, seeds 0 / 1. Final test pair:
+
+| n | seed | m = 8 | 12 | 16 | 24 | m* (depth 12) | m* (depth 6, eb_adj_big) |
+|---|---|---|---|---|---|---|---|
+| 72 | 0 | 0.990 | 0.960 | 0.997 | 0.999 | <= 8 | 13.0 |
+| 72 | 1 | 0.995 | 0.995 | 0.986 | 0.994 | <= 8 | 14.9 |
+| 96 | 0 | 0.949 | 0.959 | 0.926 | 0.993 | 8.3 | 28.0 |
+| 96 | 1 | 0.988 | 0.815 | 0.990 | 0.992 | <= 8 | 15.7 |
+| 128 | 0 | 0.869 | 0.868 | 0.976 | 0.941 | 14.9 | > 32 |
+| 128 | 1 | 0.946 | 0.921 | 0.966 | 0.994 | 14.4 | 22.8 |
+
+- Depth was the limit: at the same widths, 12 layers pass where 6 stalled; m* at n = 128 falls
+  from 23 / > 32 to ~14.5.
+- Still not flat: n = 128 needs m ~ 15 where n = 72 / 96 pass at 8 (maybe 12 layers are again
+  short at n = 128, or head_dim 8 at m = 8 / 12 means one head).
+- Erratic in width: n = 96 seed 1 passes at 8 and 16 but gives 0.815 at 12; n = 96 m = 16 seed 0
+  reached 0.987 at epoch 14 and ended at 0.926; n = 128 seed 0 is worse at 24 than at 16. First
+  crossings under-describe this; pass rates over more seeds would be the better readout.
+- Not deterministic on GPU: n = 72 m = 8 seed 1 ran twice (shard bug below), 0.995 and 0.938.
+  The jsonl keeps the first; the .pt on disk is the second run's.
+
+Bug: shards sliced the *pending* runs, so a shard started after another had saved a run took a
+shifted slice (xargs queue: 3 runs twice, 6 never). Fixed in 9b4364f (slice the full list, then
+skip finished runs); duplicates dropped from `ebd12_72.shard1of2.jsonl`.
+
 ## 2026-11-05
 
 ### Edge-bias plateau, answer from n = 96 and checkpoint surgery: depth, not bias or schedule
