@@ -339,6 +339,14 @@ for _n, _m in ((96, 16), (128, 24)):
         SWEEPS[f"ebx{_n}_{_k}"] = dict(_ebx, ns=[_n], widths_by_n={_n: [_m]},
                                        save_models=f"ebx{_n}_{_k}", **_v)
 
+# Depth 12 width sweep (2026-11-06, Colab). The ablation put the n >= 96 plateau on depth (ebx96_d12
+# 4 / 4 >= 0.993 at m = 16). Does edge-bias m* stay flat in n once depth is not the limit? Same
+# protocol as eb_adj_big but depth 12. One sweep per n so n = 128 (4.2 GB on the GPU per worker)
+# never runs on more than 2 workers at once.
+for _n in (72, 96, 128):
+    SWEEPS[f"ebd12_{_n}"] = dict(SWEEPS["eb_adj"], ns=[_n], depths=[12],
+                                 widths_by_n={_n: [8, 12, 16, 24]}, save_models="ebd12")
+
 
 def set_seed(seed):
     random.seed(seed)
