@@ -953,7 +953,12 @@ def prepare(name, workers=None):
     if not jobs:
         print(f"{name}: nothing left to run")
         return
-    workers = workers or min(len(jobs), os.cpu_count() or 1)
+    # cap by RAM: a uint8 set of `size` graphs holds A and R (2 n^2 bytes per graph) and its
+    # build peaks at ~2x that. 4 n = 128 seeds at once on Kaggle (30 GB) got a Pool worker
+    # killed and Pool waited on it forever (2026-11-06, no output for 11 h).
+    peak = max(4 * size * n * n for n, size, _ in jobs)
+    ram = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    workers = workers or max(1, min(len(jobs), os.cpu_count() or 1, int(0.7 * ram // peak)))
     print(f"{name}: preparing {len(jobs)} datasets with {workers} processes -> {CACHE_DIR}")
     t0 = time.time()
     with Pool(workers) as pool:
