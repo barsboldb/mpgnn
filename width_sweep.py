@@ -352,6 +352,11 @@ for _n in (72, 96, 128):
 SWEEPS["ebd16_128"] = dict(SWEEPS["eb_adj"], ns=[128], depths=[16], seeds=[0, 1, 2, 3],
                            widths_by_n={128: [8, 12, 16]}, save_models="ebd16")
 SWEEPS["ebd12_128x"] = dict(SWEEPS["ebd12_128"], seeds=[2, 3], widths_by_n={128: [8, 12, 16]})
+# ebd12 passed at its smallest width (8) at n = 72 / 96. Head_dim 2 reaches m = 4 / 6, as eb_adj_hd2
+# did at n = 32-56 (m* ~ 6): where is m* at depth 12? Colab.
+for _n in (72, 96):
+    SWEEPS[f"ebd12hd2_{_n}"] = dict(SWEEPS["eb_adj"], ns=[_n], depths=[12], head_dim=2,
+                                    widths_by_n={_n: [4, 6, 8]}, save_models="ebd12hd2")
 
 
 def set_seed(seed):
