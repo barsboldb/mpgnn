@@ -1,0 +1,11 @@
+Device cuda | sweep eb_adj_hd2_96 shard 0/1: 8 runs to go (0 on disk)
+  loading data for seed 0, n=96, 128000 train graphs...
+  [1/8] n=96  L=6  N=128000 m=6    H=3   lr=0.001   seed=0  train=0.401 val=0.500 test@bestval=0.500 test@final=0.412  (1301.5s)
+  [2/8] n=96  L=6  N=128000 m=8    H=4   lr=0.001   seed=0  train=0.534 val=0.502 test@bestval=0.562 test@final=0.532  (1185.2s)
+  [3/8] n=96  L=6  N=128000 m=12   H=6   lr=0.001   seed=0  train=0.480 val=0.500 test@bestval=0.500 test@final=0.555  (1616.9s)
+  [4/8] n=96  L=6  N=128000 m=16   H=8   lr=0.001   seed=0  train=0.537 val=0.527 test@bestval=0.535 test@final=0.530  (2049.6s)
+  loading data for seed 1, n=96, 128000 train graphs...
+  [5/8] n=96  L=6  N=128000 m=6    H=3   lr=0.001   seed=1  train=0.439 val=0.500 test@bestval=0.500 test@final=0.355  (1301.9s)
+  [6/8] n=96  L=6  N=128000 m=8    H=4   lr=0.001   seed=1  train=0.444 val=0.500 test@bestval=0.500 test@final=0.450  (1184.6s)
+  [7/8] n=96  L=6  N=128000 m=12   H=6   lr=0.001   seed=1  train=0.464 val=0.500 test@bestval=0.500 test@final=0.465  (1618.3s)
+  [8/8] n=96  L=6  N=128000 m=16   H=8   lr=0.001   seed=1  train=0.692 val=0.713 test@bestval=0.635 test@final=0.670  (2051.0s)

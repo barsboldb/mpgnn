@@ -6,6 +6,38 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-07
 
+### Kaggle: n = 128 ablation and head_dim 2 at n = 72 / 96, both say depth again
+
+Kaggle T4 x2, commit c9566a5 (after the prepare hang fix), 48 runs. `ebx128_*`: n = 128, m = 24,
+seeds 2-5, one change each (as `ebx96_*`). Final test pair:
+
+| condition | seed 2 | 3 | 4 | 5 | >= 0.95 |
+|---|---|---|---|---|---|
+| base | 0.877 | 0.902 | 0.914 | 0.873 | 0/4 |
+| logn | 0.771 | 0.837 | 0.830 | 0.935 | 0/4 |
+| ssmax | 0.913 | 0.907 | 0.909 | 0.911 | 0/4 |
+| clip | 0.959 | 0.953 | 0.945 | 0.908 | 2/4 |
+| wsd | 0.828 | 0.930 | 0.948 | 0.901 | 0/4 |
+| all | 0.817 | 0.918 | 0.879 | 0.958 | 1/4 |
+| d12 | 0.884 | 0.979 | 0.970 | 0.991 | 3/4 |
+| loop2 | **0.990** | **0.988** | **0.980** | **0.998** | **4/4** |
+
+At n = 128 the base never escapes (0/4, n = 96: 1/4); bias and schedule changes do not help,
+clipping half helps, 12 layers or the 6 blocks run twice do. Looping (no new parameters) is the
+most reliable, as in the surgery.
+
+`eb_adj_hd2_72` / `_96` (head_dim 2, depth 6), final test pair:
+
+| n | seed | m = 4 | 6 | 8 | 12 | 16 | m* |
+|---|---|---|---|---|---|---|---|
+| 72 | 0 | 0.916 | 0.892 | 0.933 | 0.952 | - | 11.5 |
+| 72 | 1 | 0.900 | 0.928 | 0.949 | 0.946 | - | > 12 |
+| 96 | 0 | - | 0.856 | 0.926 | 0.926 | 0.932 | > 16 |
+| 96 | 1 | - | 0.849 | 0.865 | 0.911 | 0.959 | 15.2 |
+
+More heads do not keep m* at ~6 past n = 56: at depth 6 head_dim 2 gives the same rise as head_dim
+8 (13 / 15 at n = 72, 28 / 16 at n = 96). The rise is the depth limit, not the head count.
+
 ### Edge bias at depth 12, n = 72-128: m* drops to <= 8 / ~8 / ~14.5, but runs stay erratic
 
 Colab high-RAM T4, commits 176c6c5 (24 runs) and 9b4364f (6 fill-in runs), ~7.5 h,
