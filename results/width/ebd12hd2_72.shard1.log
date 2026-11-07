@@ -1,0 +1,7 @@
+/usr/local/lib/python3.13/dist-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+Device cuda | sweep ebd12hd2_72 shard 1/3: 2 runs to go (0 on disk)
+  loading data for seed 0, n=72, 128000 train graphs...
+  [1/2] n=72  L=12 N=128000 m=6    H=3   lr=0.001   seed=0  train=0.556 val=0.752 test@bestval=0.757 test@final=0.590  (3091.3s)
+  loading data for seed 1, n=72, 128000 train graphs...
+  [2/2] n=72  L=12 N=128000 m=6    H=3   lr=0.001   seed=1  train=0.489 val=0.733 test@bestval=0.750 test@final=0.522  (2086.3s)

@@ -6,6 +6,23 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-07
 
+### Edge bias at depth 12, head_dim 2: m* ~ 7 at n = 72 and 96
+
+Colab high-RAM T4, commit fd2d069, ~3 h, ~5.4 compute units. `ebd12hd2_72` / `_96`: eb_adj
+protocol, depth 12, head_dim 2, m = 4 / 6 / 8 (2-4 heads), seeds 0 / 1. Final test pair (max over
+training in brackets where higher):
+
+| n | seed | m = 4 | 6 | 8 | m* |
+|---|---|---|---|---|---|
+| 72 | 0 | 0.764 | 0.893 | 0.999 | 7.0 |
+| 72 | 1 | 0.764 | 0.905 | 1.000 | 6.9 |
+| 96 | 0 | 0.915 (0.978) | 0.996 | 0.975 (0.992) | 4.8 |
+| 96 | 1 | 0.768 | 0.862 | 0.994 (0.999) | 7.3 |
+
+With depth no longer the limit, m* is ~ 7 at n = 72 and 96 against 4.1-5.9 at n = 32-56 (depth 6,
+same head_dim): close to flat, a slight rise at most. m = 4 stays at always-yes at n = 72 (one
+2-wide head pair is too narrow) but n = 96 seed 0 reaches 0.978 there before falling back.
+
 ### Kaggle: n = 128 ablation and head_dim 2 at n = 72 / 96, both say depth again
 
 Kaggle T4 x2, commit c9566a5 (after the prepare hang fix), 48 runs. `ebx128_*`: n = 128, m = 24,
