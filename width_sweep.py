@@ -346,6 +346,12 @@ for _n, _m in ((96, 16), (128, 24)):
 for _n in (72, 96, 128):
     SWEEPS[f"ebd12_{_n}"] = dict(SWEEPS["eb_adj"], ns=[_n], depths=[12],
                                  widths_by_n={_n: [8, 12, 16, 24]}, save_models="ebd12")
+# ebd12 gave m* <= 8 / ~8 at n = 72 / 96 but ~14.5 at n = 128. Is 12 layers short again there?
+# Depth 16 at n = 128, seeds 0-3, plus depth 12 seeds 2-3 so both depths have 4 seeds at m = 8-16;
+# readout is the fraction of seeds passing per width (single runs are erratic). Kaggle.
+SWEEPS["ebd16_128"] = dict(SWEEPS["eb_adj"], ns=[128], depths=[16], seeds=[0, 1, 2, 3],
+                           widths_by_n={128: [8, 12, 16]}, save_models="ebd16")
+SWEEPS["ebd12_128x"] = dict(SWEEPS["ebd12_128"], seeds=[2, 3], widths_by_n={128: [8, 12, 16]})
 
 
 def set_seed(seed):
