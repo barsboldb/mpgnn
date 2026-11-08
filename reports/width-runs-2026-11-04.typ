@@ -1,5 +1,5 @@
 // Run report, 2026-11-03 → 2026-11-07: auxiliary k-hop loss, n = 72, edge-bias attention,
-// edge-bias plateau (depth), edge bias at depth 12. Figures: reports/figures/width_runs_1104_plot.py,
+// edge-bias plateau (depth), edge bias at depth 12 and 16. Figures: reports/figures/width_runs_1104_plot.py,
 // width_runs_1106_plot.py. Raw results: results/width/.
 
 #set page(paper: "a4", margin: (x: 2.2cm, y: 2.2cm), numbering: "1")
@@ -11,7 +11,7 @@
 
 #align(center)[
   #text(14pt, weight: "bold")[Run report: auxiliary loss, n = 72, edge-bias attention, depth] \
-  Analyzing the Effect of Network Width on Graph Transformers · 4–7 November 2026
+  Analyzing the Effect of Network Width on Graph Transformers · 4–8 November 2026
 ]
 
 = Summary in plain words
@@ -35,11 +35,12 @@ width grows as the graphs get bigger. Section 2 explains every term used below.
   parameters) unsticks every one of them; a 12-layer model trained from scratch never gets
   stuck. Changing the attention bias or the learning-rate schedule barely helps. The same
   holds at 128 nodes, and using more, narrower heads does not remove the stall either.
-+ *With 12 layers the needed width falls back down.* 8 numbers per node are enough at 72 and
-  96 nodes, and about 15 at 128 (against 23 to more than 32 with 6 layers). It still grows
-  somewhat at 128, and single runs are erratic: a run can pass at one width and fail at the
-  next. So for this encoding the width has to be measured with a depth that grows with the
-  graph size, and over more seeds.
++ *With 12 layers the needed width falls back down.* About 7 numbers per node are enough at
+  72 and 96 nodes, close to the 4–6 needed at 32–56 nodes. At 128 nodes it is about 11–15
+  with 12 or 16 layers (against 23 to more than 32 with 6), so 16 layers do not bring it
+  back to 7. Single runs are erratic: a run can pass at one width and fail at the next, and
+  deeper models sometimes collapse late in training. So for this encoding the width has to
+  be measured with a depth that grows with the graph size, over more seeds.
 
 #v(0.5em)
 #block(stroke: 0.4pt, inset: 8pt, width: 100%)[
@@ -47,7 +48,9 @@ width grows as the graphs get bigger. Section 2 explains every term used below.
   $n = 32$–56. $n = 72$: train-fit $m^* = 81$; test never reaches 0.95 with 128k graphs,
   256k graphs bring the train–test gap from 0.04–0.08 to 0.02. Edge bias on adjacency rows:
   $m^* = 5.6$, 5.7, 4.1, 5.9 at $n = 32$–56 (head dimension 2), 13–15 at $n = 72$, 16–28 at
-  $n = 96$, above 22 at $n = 128$ (depth 6); at depth 12 $lt.eq 8$, about 8 and 14.7. Plateau
+  $n = 96$, above 22 at $n = 128$ (depth 6); at depth 12 with head dimension 2, 7.0 / 6.9 at
+  $n = 72$ and 4.8 / 7.3 at $n = 96$; at $n = 128$ (head dimension 8, 4 seeds) about 14.5 at
+  depth 12 and 11 at depth 16, with one seed passing at $m = 8$ at each depth. Plateau
   study, seeds passing 0.95 out of 4: at $n = 96$, $m = 16$ depth 6 1, depth 12 4, layers run
   twice 3; at $n = 128$, $m = 24$ depth 6 0, depth 12 3, layers run twice 4.
 ]
@@ -161,6 +164,8 @@ connected) is 0.745 at $n = 32$ and 0.764 at $n = 72$.
   [`eb_surgery`, `ebx96_*`], [Colab T4, high RAM], [20 + 32], [`af20a01`],
   [`ebx128_*`, `eb_adj_hd2_72` / `_96`], [Kaggle, 2×T4], [32 + 16], [`c9566a5`],
   [`ebd12_*` (depth 12, $n = 72$–128)], [Colab T4, high RAM, 2 sessions], [24], [`176c6c5`, `9b4364f`],
+  [`ebd12hd2_*` (depth 12, head dim. 2)], [Colab T4, high RAM], [12], [`fd2d069`],
+  [`ebd16_128`, `ebd12_128x`], [Kaggle, 2×T4], [12 + 6], [`7c49f5c`],
 )
 
 = Auxiliary k-hop loss
@@ -402,7 +407,8 @@ dimension 8. The rise past $n = 56$ does not come from too few heads.
 #figure(image("figures/width-runs-1106-edgebias.png", width: 100%),
   caption: [(a) $m^*$ against $n$ for edge bias on adjacency rows. Depth 6: head dimension
     2 for $n lt.eq 56$, 8 for $n gt.eq 72$; grey dots are per-seed crossings. Green: depth 12
-    (@depth12), open triangles where the smallest width tried already passes. (b) The
+    (@depth12), open triangles where the smallest width tried already passes; purple: depth 12
+    with head dimension 2; red star: depth 16 at $n = 128$. (b) The
     plateau ablation of @ablation: final test pair accuracy per seed, one change per
     column, blue $n = 96$, red $n = 128$.])
 
@@ -569,6 +575,54 @@ accuracy:
   type: 0.995 and 0.938. Whether a run leaves the plateau is partly chance, so the readout
   should be the fraction of seeds passing at each width, not one crossing per seed.
 
+== Below width 8: head dimension 2 at depth 12
+
+_In plain words:_ with 12 layers the smallest width tried (8) already passed at 72 and 96 nodes.
+Two numbers per head allow widths 4 and 6, as in Section 6.4.
+
+`ebd12hd2_72` / `_96`: as above, head dimension 2, $m = 4$, 6, 8. Final test pair accuracy:
+
+#tbl(columns: 6,
+  table.header([$n$], [seed], [$m = 4$], [6], [8], [$m^*$]),
+  [72], [0], [.764], [.893], [.999], [7.0],
+  [72], [1], [.764], [.905], [1.000], [6.9],
+  [96], [0], [.915], [.996], [.975], [4.8],
+  [96], [1], [.768], [.862], [.994], [7.3],
+)
+
+$m^*$ is about 7 at $n = 72$ and 96, against 4.1–5.9 at $n = 32$–56 with six layers (purple
+in Figure 2a). Once depth is not the limit, the width this encoding needs barely grows from 32
+to 96 nodes.
+
+== Is twelve layers short at n = 128?
+
+_In plain words:_ at 128 nodes the twelve-layer models still needed about twice the width.
+If twelve layers are again too few there, sixteen should bring the width back down.
+
+`ebd16_128`: depth 16, seeds 0–3; `ebd12_128x` adds seeds 2–3 at depth 12 so both depths have
+four seeds at $m = 8$, 12, 16 (head dimension 8). Final test pair accuracy, the maximum during
+training in brackets where it was more than 0.01 higher:
+
+#tbl(columns: 7,
+  table.header([depth], [$m$], [seed 0], [1], [2], [3], [≥ 0.95]),
+  [12], [8], [.869], [.946], [.958], [.876], [1 / 4],
+  [12], [12], [.868], [.921], [.927], [.908], [0 / 4],
+  [12], [16], [.976], [.966], [.965], [.964], [*4 / 4*],
+  [16], [8], [.840], [.869], [.994], [.848], [1 / 4],
+  [16], [12], [.972], [.771], [.831], [.983], [2 / 4],
+  [16], [16], [.999], [.999], [.869 (.938)], [.901 (.985)], [2 / 4],
+)
+
+- $m^*$ per seed: depth 12 14.9 / 14.4 / $lt.eq 8$ / 14.9; depth 16 11.2 / 15.0 / $lt.eq 8$ /
+  10.9. Sixteen layers help a little at $m = 12$, not at $m = 16$; neither depth brings
+  $n = 128$ down to the $approx 7$ of $n = 72$ / 96 (red star in Figure 2a).
+- The deeper models are less stable. Two depth-16 runs at $m = 16$ reached 0.94 and 0.985 and
+  then fell back. Late collapses now cost as much as the plateau did at depth 6.
+- So at $n = 128$ either the width really grows, or training at this depth is unreliable
+  enough to hide it. Gradient clipping (2 / 4 in the $n = 128$ ablation) is the obvious
+  control before reading this as width growth. Head dimension 8 against 2 is a second
+  difference from the $n = 72$ / 96 points.
+
 = Operations
 
 - *Lost Colab session (2026-11-03).* The first `q3n72` runtime died about 30 min after the
@@ -594,15 +648,13 @@ accuracy:
 - *Shard bug (2026-11-06).* Shards split the runs still pending, so a shard started after
   another had saved a run took a shifted slice: in `ebd12`, 3 runs ran twice and 6 never. Shards
   now take a fixed slice of the full list; the 6 runs were filled in on a second VM.
-- *Compute.* Colab Pro: 91.45 → 53.11 units over nine sessions (T4 ≈ 1.15 units/h, high RAM
+- *Compute.* Colab Pro: 91.45 → 47.71 units over ten sessions (T4 ≈ 1.15 units/h, high RAM
   ≈ 1.6). Kaggle: each sweep within one session.
 
 = Open items
 
-+ Edge bias at a depth that grows with $n$, with 4+ seeds per width and the pass fraction as
-  the readout: depth 12 vs 16 at $n = 128$ (is 12 short there?), head dimension 2 at depth 12
-  to find $m^*$ below 8 at $n = 72$ / 96, and possibly gradient clipping against the
-  late collapses.
++ $n = 128$ at depth 12–16 with gradient clipping and head dimension 2, 4 seeds, pass fraction
+  as the readout: is the rise to $m^* approx 11$–15 real width growth or unstable training?
 + Weight-tied looping as the cheaper way to add depth: it matched or beat depth 12 in both
   ablations with no extra parameters.
 + $n = 72$ protocol: 256k graphs with more steps, $m = 96$–192, to get a test $m^*$.

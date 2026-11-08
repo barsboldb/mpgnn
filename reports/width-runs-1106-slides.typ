@@ -9,7 +9,7 @@
     title: [Analyzing the Effect of Network Width on Graph Transformers],
     subtitle: [Auxiliary loss, n = 72, edges in the attention, and a depth limit],
     author: [Barsbold Bayarerdene],
-    date: [7 November 2026],
+    date: [8 November 2026],
   ),
 )
 
@@ -60,7 +60,7 @@ attention — which turned out to be limited by *depth*, not width.]
 #v(0.4em)
 - $n = 72$, baseline: fits training data at the predicted width (81), #warn[limited by data] on test.
 - Edge bias past $n approx 96$: training stalls — #bad[a depth limit]. With 12 layers $m^*$ falls
-  to #good[≤ 8 / ≈ 8 / ≈ 15] at $n = 72$ / 96 / 128.
+  to #good[≈ 7] at $n = 72$ / 96, #warn[≈ 11–15] at 128 (12 or 16 layers).
 
 = Auxiliary loss and n = 72
 
@@ -250,23 +250,44 @@ or as $m^*(n, L)$ on a small depth grid.]
 #grid(columns: (1fr, 1.05fr), column-gutter: 1em, align: horizon,
   [
     #tbl(columns: 4, align: center,
-      table.header([$n$], [depth 6], [depth 12], [passing runs]),
-      [72], [13 / 15], [#good[≤ 8 / ≤ 8]], [8 / 8],
-      [96], [28 / 16], [#good[8.3 / ≤ 8]], [5 / 8],
-      [128], [> 32 / 23], [#warn[14.9 / 14.4]], [3 / 8],
+      table.header([$n$], [depth 6], [depth 12], [head dim.]),
+      [32–56], [#good[4–6]], [–], [2],
+      [72], [13 / 15], [#good[7.0 / 6.9]], [2],
+      [96], [28 / 16], [#good[4.8 / 7.3]], [2],
+      [128], [> 32 / 23], [#warn[≈ 14.5]], [8],
     )
-    #rc[$m^*$ seed 0 / 1, widths 8–24, head dim. 8. Passing: runs ≥ 0.95 over all widths.]
-    - #good[Depth was most of the rise.]
-    - #warn[Not flat yet] at 128: 12 layers short again, or one 8-wide head at $m lt.eq 12$?
-    - #bad[Erratic:] $n = 96$ s1 passes at 8 and 16, 0.815 at 12. Same run twice: .995 / .938.
+    #rc[$m^*$, seed 0 / 1 (n = 128: 4 seeds, one passes at $m = 8$).]
+    - #good[Depth was most of the rise:] $m^* approx 7$ up to $n = 96$.
+    - #warn[$n = 128$ still ≈ 2× wider.]
+    - #bad[Erratic:] pass at one width, fail at the next; same run twice: .995 / .938.
   ],
   fig("figures/width-runs-1107-mstar.png"),
 )
 
+== n = 128: is 12 layers short again?
+
+#grid(columns: (1.15fr, 1fr), column-gutter: 1.2em, align: horizon,
+  [
+    Seeds reaching 0.95, out of 4 (head dim. 8):
+    #tbl(columns: 4, align: center,
+      table.header([depth], [$m = 8$], [12], [16]),
+      [12], [1 / 4], [#bad[0 / 4]], [#good[4 / 4]],
+      [16], [1 / 4], [2 / 4], [#warn[2 / 4]],
+    )
+    $m^*$: depth 12 ≈ 14.5, depth 16 ≈ 11 (median).
+  ],
+  [
+    - 16 layers do #bad[not] bring $n = 128$ back to ≈ 7.
+    - Deeper = less stable: two depth-16 runs reached .94 / .985 and #bad[fell back].
+    - Real width growth, or unstable training hiding it? Next control: gradient clipping,
+      head dim. 2.
+  ],
+)
+
 == Next
 
-- Width at a depth that grows with $n$, *4+ seeds*, readout = fraction passing per width:
-  depth 12 vs 16 at $n = 128$; head dim. 2 at depth 12 for $m^* < 8$.
+- $n = 128$ at depth 12–16 with *gradient clipping* and head dim. 2, 4 seeds, readout =
+  fraction passing per width: real width growth or unstable training?
 - Looping (blocks run twice) as cheap depth: best in both ablations, no new parameters.
 - Random IDs: test depth 12 / looping — the instability may be the same limit.
 - $n = 72$ baseline: 256k graphs, more steps, $m = 96$–192 for a test $m^*$.
