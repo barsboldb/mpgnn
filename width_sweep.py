@@ -357,6 +357,18 @@ SWEEPS["ebd12_128x"] = dict(SWEEPS["ebd12_128"], seeds=[2, 3], widths_by_n={128:
 for _n in (72, 96):
     SWEEPS[f"ebd12hd2_{_n}"] = dict(SWEEPS["eb_adj"], ns=[_n], depths=[12], head_dim=2,
                                     widths_by_n={_n: [4, 6, 8]}, save_models="ebd12hd2")
+# One depth for the width study (2026-11-08). Depth is a fixed setting, not a variable: 6 layers
+# were too few for n >= 72 at any width, so every m* curve is redone at depth 12, head_dim 2
+# (several heads at m < 8). Edge bias at n = 128 (4 seeds, readout = fraction passing per width;
+# ~2x the head_dim 8 run time at 3-8 heads, so Kaggle with 4 workers) and n = 32-56; the
+# adjacency-rows baseline (q3lr, n^1.74 at depth 6) at depth 12, widths at and below its
+# depth-6 thresholds. The small-n sweeps are light enough for Colab.
+SWEEPS["ebd12hd2_128"] = dict(SWEEPS["eb_adj"], ns=[128], depths=[12], head_dim=2, seeds=[0, 1, 2, 3],
+                              widths_by_n={128: [6, 8, 12, 16]}, save_models="ebd12hd2")
+SWEEPS["ebd12hd2_s"] = dict(SWEEPS["eb_adj"], depths=[12], head_dim=2, save_models="ebd12hd2",
+                            widths_by_n={n: [2, 4, 6] for n in (32, 40, 48, 56)})
+SWEEPS["q3lr_d12"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=2, seeds=[0, 1], widths_by_n={
+    32: [12, 16, 24], 40: [16, 24, 32], 48: [24, 32, 48], 56: [32, 48, 64]})
 
 
 def set_seed(seed):
