@@ -4,6 +4,33 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-11-08
+
+### n = 128: depth 16 does not bring m* down to ~7; runs stay erratic
+
+Kaggle T4 x2, commit 7c49f5c, 18 runs. `ebd16_128` (depth 16, seeds 0-3) and `ebd12_128x`
+(depth 12, seeds 2-3, joining ebd12_128 seeds 0-1); eb_adj protocol, head_dim 8. Final test pair
+(max over training in brackets where > 0.01 higher):
+
+| depth | m | seed 0 | 1 | 2 | 3 | >= 0.95 |
+|---|---|---|---|---|---|---|
+| 12 | 8 | 0.869 | 0.946 | 0.958 | 0.876 | 1/4 |
+| 12 | 12 | 0.868 | 0.921 | 0.927 | 0.908 | 0/4 |
+| 12 | 16 | 0.976 | 0.966 | 0.965 | 0.964 | 4/4 |
+| 16 | 8 | 0.840 | 0.869 | 0.994 | 0.848 | 1/4 |
+| 16 | 12 | 0.972 | 0.771 | 0.831 | 0.983 | 2/4 |
+| 16 | 16 | 0.999 | 0.999 | 0.869 (0.938) | 0.901 (0.985) | 2/4 |
+
+m* per seed: depth 12 14.9 / 14.4 / <= 8 / 14.9; depth 16 11.2 / 15.0 / <= 8 / 10.9.
+
+- 16 layers help a little at m = 12 (2/4 against 0/4) but not at m = 16, where two depth-16 runs
+  fell back from 0.94-0.985. m* at n = 128 is ~11-15 at both depths, not the ~7 of n = 72 / 96
+  (ebd12hd2). Depth 12 is not obviously short at n = 128.
+- Depth 12 at m = 16 is the one reliable cell (4/4, all 0.964-0.976, just above the line).
+- Deeper models are less stable: late collapses (n = 96 m = 16 depth 12 seed 0, two n = 128
+  depth 16 runs) now cost as much as the plateau did. Gradient clipping or a schedule fix is
+  the obvious next control before reading m* at n = 128 as real width growth.
+
 ## 2026-11-07
 
 ### Edge bias at depth 12, head_dim 2: m* ~ 7 at n = 72 and 96
