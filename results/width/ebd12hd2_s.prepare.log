@@ -1,0 +1,11 @@
+/usr/local/lib/python3.13/dist-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ebd12hd2_s: preparing 8 datasets with 8 processes -> /content/width_cache
+  ready: n=56 train=128000 seed=0  (938s)
+  ready: n=56 train=128000 seed=1  (939s)
+  ready: n=48 train=128000 seed=1  (1302s)
+  ready: n=48 train=128000 seed=0  (1308s)
+  ready: n=40 train=128000 seed=1  (2427s)
+  ready: n=40 train=128000 seed=0  (2442s)
+  ready: n=32 train=128000 seed=0  (14620s)
+  ready: n=32 train=128000 seed=1  (14678s)

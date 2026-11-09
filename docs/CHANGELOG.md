@@ -4,6 +4,45 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-11-09
+
+### One depth (12, head_dim 2): edge bias m* ~ 4-6 at n = 32-56; adjacency-rows baseline fails at head_dim 2
+
+Colab, commit 1175bbc. Depth is now a fixed setting (12) for every m* curve; head_dim 2 so that
+m < 8 still has several heads.
+
+`ebd12hd2_s` (T4, 24 runs, complete). Edge bias, final test pair, seeds 0 / 1:
+
+| n | m = 2 | m = 4 | m = 6 |
+|---|---|---|---|
+| 32 | 0.745 / 0.746 | 0.989 / 0.746 | 1.000 / 1.000 |
+| 40 | 0.750 / 0.750 | 1.000 / 0.750 | 1.000 / 0.999 |
+| 48 | 0.755 / 0.755 | 0.755 / 0.993 | 0.997 / 0.998 |
+| 56 | 0.759 / 0.759 | 0.759 / 0.759 | 0.993 / 0.990 |
+
+Runs either solve the task or stay at the trivial pair accuracy (~0.75, predict "connected" only
+where the label is), nothing in between. m = 6 passes for every n and seed; m = 4 passes for 1 of
+2 seeds at n = 32-48 and none at n = 56; m = 2 never. So m* sits between 4 and 6 at n = 32-56,
+the same as at depth 6 (eb_adj_hd2, 4-6) and close to ~7 at n = 72 / 96 (ebd12hd2).
+
+`q3lr_d12` (L4, 13 of 24 runs; the VM was lost at 21:43). Adjacency rows without edge bias,
+same depth and head_dim:
+
+| n | m | depth 12, head_dim 2 | depth 6, head_dim 8 (q3lr) |
+|---|---|---|---|
+| 32 | 16 | 0.825 / 0.820 | 0.893 / 0.848 / 0.861 |
+| 32 | 24 | 0.911 | 0.983 / 0.960 / 0.956 |
+| 40 | 32 | 0.849 | 0.955 / 0.962 / 0.913 |
+| 48 | 48 | 0.831 | 0.963 / 0.959 / 0.946 |
+| 56 | 48 | 0.792 | 0.905 / 0.933 / 0.901 |
+
+No run reaches 0.95; every cell is below the depth-6 head_dim 8 result. Likely head_dim 2: without
+edge bias, attention has to find neighbours by query-key dot products, and 2-dimensional heads
+are too small for that, while with edge bias the bias does the routing. The baseline therefore
+cannot share head_dim 2; it needs its own head_dim (8, as before) at depth 12.
+
+Colab balance 47.71 -> 17.41 (the L4 alone ~2.3 units / h).
+
 ## 2026-11-08
 
 ### n = 128: depth 16 does not bring m* down to ~7; runs stay erratic
