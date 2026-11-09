@@ -20,8 +20,8 @@ m < 8 still has several heads.
 | 48 | 0.755 / 0.755 | 0.755 / 0.993 | 0.997 / 0.998 |
 | 56 | 0.759 / 0.759 | 0.759 / 0.759 | 0.993 / 0.990 |
 
-Runs either solve the task or stay at the trivial pair accuracy (~0.75, predict "connected" only
-where the label is), nothing in between. m = 6 passes for every n and seed; m = 4 passes for 1 of
+Runs either solve the task or stay at the trivial pair accuracy (~0.75, the share of pairs that
+are connected), nothing in between. m = 6 passes for every n and seed; m = 4 passes for 1 of
 2 seeds at n = 32-48 and none at n = 56; m = 2 never. So m* sits between 4 and 6 at n = 32-56,
 the same as at depth 6 (eb_adj_hd2, 4-6) and close to ~7 at n = 72 / 96 (ebd12hd2).
 
