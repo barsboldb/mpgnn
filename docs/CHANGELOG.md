@@ -4,6 +4,32 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-11-10
+
+### n = 128 at depth 12, head_dim 2: m* ~ 6-8.5, so edge-bias m* stays flat from n = 32 to 128
+
+Kaggle T4 x2, commit 1175bbc, `ebd12hd2_128`, 16 runs. Final test pair (max over training in
+brackets where higher):
+
+| m | seed 0 | 1 | 2 | 3 | >= 0.95 |
+|---|---|---|---|---|---|
+| 6 | 0.971 | 0.944 | 0.959 (0.966) | 0.990 | 3/4 |
+| 8 | 0.889 | 0.943 | 0.922 | 0.994 (0.998) | 2/4 |
+| 12 | 0.990 | 0.996 | 0.999 | 0.987 | 4/4 |
+| 16 | 0.993 (0.996) | 0.980 (0.990) | 0.997 | 0.996 (0.997) | 4/4 |
+
+`--scaling`, test pair: m* <= 6 / 8.5 / <= 6 / <= 6 (seed mean 6.6). Seed 0 is not monotone (passes
+at 6, fails at 8). Every run at m >= 12 is >= 0.98 and none falls back late, unlike head_dim 8
+at the same depth (ebd12_128: 0/4 at m = 12, m* ~ 14.5).
+
+Edge bias at depth 12, head_dim 2, across n: m* 4-6 (n = 32-56), ~7 (72 / 96), ~6-8.5 (128).
+No growth with n over a 4x range of n.
+
+This corrects the 2026-11-08 reading that head_dim does not change m* (based on n = 72 / 96,
+where both were <= 8): at n = 128, head_dim 2 (3-8 heads) gives m* ~ 7 against ~14.5 for head_dim 8
+(1-2 heads). The number of heads matters once n is large. The thesis has to state head_dim as a
+fixed setting and show this comparison.
+
 ## 2026-11-09
 
 ### One depth (12, head_dim 2): edge bias m* ~ 4-6 at n = 32-56; adjacency-rows baseline fails at head_dim 2
