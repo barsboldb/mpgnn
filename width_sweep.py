@@ -369,6 +369,11 @@ SWEEPS["ebd12hd2_s"] = dict(SWEEPS["eb_adj"], depths=[12], head_dim=2, save_mode
                             widths_by_n={n: [2, 4, 6] for n in (32, 40, 48, 56)})
 SWEEPS["q3lr_d12"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=2, seeds=[0, 1], widths_by_n={
     32: [12, 16, 24], 40: [16, 24, 32], 48: [24, 32, 48], 56: [32, 48, 64]})
+# head_dim 2 failed the baseline at every width (adjacency rows find neighbours through q.k, which
+# needs wider heads), so the depth-12 baseline keeps head_dim 8, as at depth 6. Widths bracket the
+# depth-6 m* (22.5, 34, 45, 60) from below.
+SWEEPS["q3lr_d12h8"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=8, seeds=[0, 1], widths_by_n={
+    32: [8, 16, 24], 40: [16, 24, 32], 48: [24, 32, 48], 56: [32, 48, 64]})
 
 
 def set_seed(seed):
