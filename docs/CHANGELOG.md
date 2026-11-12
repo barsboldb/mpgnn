@@ -4,6 +4,35 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-11-12
+
+### Baseline at depth 12 (head_dim 8): m* ~ n^1.9, same as depth 6; the edge-bias gap is the encoding, not depth
+
+Colab T4, commit bd32857, `q3lr_d12h8`, 24 runs (complete). The adjacency-rows baseline (q3lr
+protocol) at the same depth as the edge-bias curve, head_dim 8 (head_dim 2 failed at every width,
+2026-11-09). Final test pair, seeds 0 / 1:
+
+| n | widths: test pair (seed 0 / 1) | m* depth 12 | m* depth 6 (q3lr) | edge bias, depth 12 |
+|---|---|---|---|---|
+| 32 | 8: 0.743 / 0.755, 16: 0.903 / 0.894, 24: 0.976 / 0.972 | 21.1 | 22.5 | 4.6 |
+| 40 | 16: 0.833 / 0.772, 24: 0.904 / 0.930, 32: 0.946 / 0.967 | 28.1 / > 32 | 34.1 | 4.5 |
+| 48 | 24: 0.826 / 0.832, 32: 0.916 / 0.877, 48: 0.967 / 0.966 | 43.2 | 44.8 | 4.5 |
+| 56 | 32: 0.820 / 0.823, 48: 0.912 / 0.886, 64: 0.954 / 0.950 | 63.1 | 60.0 | 5.6 |
+
+`--scaling`, test pair: slope 1.95 pooled (fit 1.88), against 1.74 at depth 6. Doubling the depth
+saves ~6 % of width at n = 32 and nothing at n = 56. Accuracy rises smoothly with width (no
+all-or-nothing runs as with edge bias).
+
+At one fixed depth the two encodings now differ by 5x (n = 32) to 11x (n = 56) in m*, and only the
+baseline grows with n. This closes the open caveat of the 2026-11-10 report (edge bias at depth 12
+compared with a baseline at depth 6).
+
+Operations: T4 data generation is too slow (2 cores; an n = 32 set takes ~4 h), so the datasets
+were built locally and uploaded in 50 MB chunks. Shards now keep the train set on the GPU only
+(bd32857); a CPU copy per worker nearly filled the T4's 12.7 GB RAM. One VM was lost before
+training (11-11) and one container was reset by a broad `pkill -f`. ~11 units used in all;
+balance 6.11. (`results/width/q3lr_d12h8.shard*of4.jsonl`)
+
 ## 2026-11-10
 
 ### n = 128 at depth 12, head_dim 2: m* ~ 6-8.5, so edge-bias m* stays flat from n = 32 to 128
