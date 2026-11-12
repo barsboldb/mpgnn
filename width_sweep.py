@@ -961,7 +961,11 @@ def run_sweep(name, smoke=False, shard=(0, 1)):
         if (s, n, size) not in splits:
             splits.clear()             # one dataset in memory at a time (n=128 is large)
             print(f"  loading data for seed {s}, n={n}, {size} train graphs...")
-            splits[(s, n, size)] = make_splits(c, s)
+            # keep the train set on the GPU only: a CPU copy per worker filled a T4 VM's 12.7 GB
+            # RAM with 4 workers (q3lr_d12h8, 2026-11-12); train_one's .to(DEVICE) is then a no-op
+            (Atr, Rtr), va, te = make_splits(c, s)
+            splits[(s, n, size)] = ((Atr.to(DEVICE), Rtr.to(DEVICE)), va, te)
+            del Atr, Rtr
         r = train_one(c, w, lr, s, splits[(s, n, size)])
         r["sweep"], r["config"] = name, {k2: v for k2, v in c.items() if k2 not in
                                          ("widths", "lrs", "seeds", "train_sizes", "ns", "depths")}
