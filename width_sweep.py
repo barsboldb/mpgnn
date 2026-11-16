@@ -378,6 +378,11 @@ SWEEPS["q3lr_d12"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=2, seeds=[0, 1],
 SWEEPS["ebd12hd2_L"] = dict(SWEEPS["eb_adj"], ns=[72, 96, 128], depths=[12], head_dim=2, seeds=[2, 3],
                             widths_by_n={72: [4, 6, 8], 96: [4, 6, 8], 128: [4]}, save_models="ebd12hd2")
 SWEEPS["ebd12hd2_128w4"] = dict(SWEEPS["ebd12hd2_L"], ns=[128], seeds=[0, 1])
+# Random IDs with edge bias at depth 12 (2026-11-16): the graph only in the attention, none in the
+# input. At depth 6 its m* rose (<= 8 at n = 40, ~14 at 48 / 56, > 24 at 72), but depth 6 later
+# proved too shallow for edge bias. Same graphs as ebd12hd2_s; bias start 4 as in eb_rid.
+SWEEPS["ebd12rid"] = dict(SWEEPS["eb_rid"], depths=[12], head_dim=2, save_models="ebd12rid",
+                          widths_by_n={32: [4, 6, 8], 40: [4, 6, 8], 48: [4, 8, 12], 56: [4, 8, 12]})
 SWEEPS["q3lr_d12h8"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=8, seeds=[0, 1], widths_by_n={
     32: [8, 16, 24], 40: [16, 24, 32], 48: [24, 32, 48], 56: [32, 48, 64]})
 
