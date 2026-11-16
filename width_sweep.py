@@ -372,6 +372,12 @@ SWEEPS["q3lr_d12"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=2, seeds=[0, 1],
 # head_dim 2 failed the baseline at every width (adjacency rows find neighbours through q.k, which
 # needs wider heads), so the depth-12 baseline keeps head_dim 8, as at depth 6. Widths bracket the
 # depth-6 m* (22.5, 34, 45, 60) from below.
+# Edge-bias curve at large n, more seeds (2026-11-16). n = 72 / 96 had 2 seeds that disagree at
+# m = 4-6, and n = 128 was never run at m = 4. Seeds 2-3 at n = 72 / 96, and m = 4 at n = 128 for
+# all four seeds; read with --also ebd12hd2_72 ebd12hd2_96 ebd12hd2_128.
+SWEEPS["ebd12hd2_L"] = dict(SWEEPS["eb_adj"], ns=[72, 96, 128], depths=[12], head_dim=2, seeds=[2, 3],
+                            widths_by_n={72: [4, 6, 8], 96: [4, 6, 8], 128: [4]}, save_models="ebd12hd2")
+SWEEPS["ebd12hd2_128w4"] = dict(SWEEPS["ebd12hd2_L"], ns=[128], seeds=[0, 1])
 SWEEPS["q3lr_d12h8"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=8, seeds=[0, 1], widths_by_n={
     32: [8, 16, 24], 40: [16, 24, 32], 48: [24, 32, 48], 56: [32, 48, 64]})
 
