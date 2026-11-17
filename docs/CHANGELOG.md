@@ -4,6 +4,33 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-11-17
+
+### Edge bias at depth 12 with 4 seeds: m* stays ~6 from n = 72 to 128 (slope ~0); width 4 fails at every n >= 56
+
+Kaggle T4 x2, commit 32d7c31, `ebd12hd2_L` (seeds 2 / 3 at n = 72, 96 and m = 4 at n = 128, 14
+runs) + `ebd12hd2_128w4` (m = 4 at n = 128, seeds 0 / 1, 2 runs), all complete. With the earlier
+`ebd12hd2_72`, `ebd12hd2_96`, `ebd12hd2_128` every cell now has 4 seeds. Final test pair, seeds
+0 / 1 / 2 / 3:
+
+| n | m = 4 | m = 6 | m = 8 | m = 12 | m* pooled | m* seed-mean | per seed |
+|---|---|---|---|---|---|---|---|
+| 72 | .764 / .764 / .765 / .873 | .893 / .905 / .974 / .998 | .999 / 1.00 / .998 / 1.00 | | 6.3 | 6.2 | 7.1, 6.9, 5.7, 5.1 |
+| 96 | .915 / .768 / .863 / .768 | .996 / .862 / .912 / .986 | .975 / .994 / .999 / .981 | | 6.2 | 6.0 | 4.7, 7.2, 6.6, 5.6 |
+| 128 | .770 / .842 / .812 / .781 | .971 / .944 / .959 / .990 | .889 / .943 / .922 / .994 | .990 / .996 / .999 / .987 | 5.8 | 7.2 | 5.7, 8.2, 9.3, 5.5 |
+
+`--scaling` (test pair): slope -0.15 pooled, 0.25 seed-mean over n = 72-128; with `ebd12hd2_s`
+(n = 32-56, 2 seeds) the pooled slope over n = 32-128 is 0.14. Against ~n^1.9 for the baseline at
+the same depth (2026-11-12), edge-bias m* is flat within seed noise.
+
+Seed noise is large near the threshold: at n = 128, m = 8 is worse than m = 6 for 3 of 4 seeds, and
+single m = 4 runs reach 0.87 / 0.92 at n = 72 / 96. The width at which all 4 seeds pass is 8, 8, 12
+for n = 72, 96, 128, so a slow rise cannot be ruled out, but the seed-mean m* moves only 6.2 -> 7.2
+while n nearly doubles. Width 4 (2 heads) fails at every n >= 56 (best 0.915), while at n = 32-48 one seed of two
+reached 0.99-1.00; the floor sits between 4 and 6.
+
+(`results/width/ebd12hd2_L.shard*of4.jsonl`, `results/width/ebd12hd2_128w4.shard*of4.jsonl`)
+
 ## 2026-11-12
 
 ### Baseline at depth 12 (head_dim 8): m* ~ n^1.9, same as depth 6; the edge-bias gap is the encoding, not depth
