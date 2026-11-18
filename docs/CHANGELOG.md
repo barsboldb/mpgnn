@@ -4,6 +4,37 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-11-18
+
+### Graph only in the attention bias (random-ID tokens, depth 12): solves every n at width 6-12, but more runs get stuck
+
+Kaggle T4 x2, commit 510bec1, `ebd12rid`, 24 runs (complete). Same model as `ebd12hd2_s` (edge
+bias, depth 12, head_dim 2), but the vertex tokens are random IDs (id_dim 64, bias_init 4) instead
+of adjacency rows, so the graph enters only through the attention bias. Final test pair, seeds
+0 / 1, against `ebd12hd2_s` (adjacency-row tokens + edge bias):
+
+| n | random-ID tokens (ebd12rid) | adjacency-row tokens (ebd12hd2_s) |
+|---|---|---|
+| 32 | 4: .745 / .746, 6: 1.00 / .746, 8: 1.00 / .918 | 2: .745 / .746, 4: .989 / .746, 6: 1.00 / 1.00 |
+| 40 | 4: .750 / .750, 6: 1.00 / 1.00, 8: 1.00 / 1.00 | 2: .750 / .750, 4: 1.00 / .750, 6: 1.00 / .999 |
+| 48 | 4: .755 / .755, 8: 1.00 / .755, 12: .996 / .993 | 2: .755 / .755, 4: .755 / .993, 6: .997 / .998 |
+| 56 | 4: .759 / .759, 8: .996 / .759, 12: 1.00 / 1.00 | 2: .759 / .759, 4: .759 / .759, 6: .993 / .990 |
+
+Runs are all-or-nothing: each one either reaches ~1.00 or stays at the trivial predictor (test
+pair = share of disconnected pairs, 0.745-0.759, loss ~0.55). The smallest width where both seeds
+solve is > 8, 6, 12, 12 for n = 32-56 with random IDs, against 6 at every n with adjacency rows.
+At least one seed solves at width 6-8 for every n, so the bias alone carries enough of the graph
+for the task at small width; the gap is in how often training escapes the trivial predictor, not
+in capacity. One run (n = 56, m = 8, seed 1) reached 0.967 mid-training and fell back to the
+trivial predictor by the end.
+
+`--scaling` (test pair): m* 7.6, 5.5, 10.3, 10.2, slope 0.76 pooled. Because the runs are
+all-or-nothing, the interpolated m* mostly reflects which widths happened to get a lucky seed; with
+2 seeds the rise from n = 40 to 48 cannot be separated from seed noise. Width 4 (2 heads) never
+solves with random IDs; with adjacency rows it did at n = 32-48 (one seed of two).
+
+(`results/width/ebd12rid.shard*of4.jsonl`)
+
 ## 2026-11-17
 
 ### Edge bias at depth 12 with 4 seeds: m* stays ~6 from n = 72 to 128 (slope ~0); width 4 fails at every n >= 56
