@@ -6,6 +6,27 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-19
 
+### Baseline at depth 12, n = 72, 48k steps: still no width up to 144 passes; the limit moves from fitting to generalization
+
+Colab L4, commit 45d62c2 (sweep from 6ae45c5), `q3lr_d12h8_72s`, 4 runs (complete, ~4.4 h, ~8.5
+units). Same as `q3lr_d12h8_72` but with 48k steps (48 epochs) at m = 112 / 144. Final pair
+accuracy, test (train), seeds 0 / 1:
+
+| m | 24k steps | 48k steps |
+|---|---|---|
+| 112 | 0.913 (0.941) / 0.926 (0.945) | 0.917 (0.964) / 0.928 (0.971) |
+| 144 | 0.814 (0.837) / 0.892 (0.927) | 0.854 (0.939) / 0.936 (0.979) |
+
+- Doubling the steps raises train pair to 0.94-0.98, but test barely moves (+0.00-0.04) and
+  plateaus by mid-training (best 0.924-0.939). The train-test gap grows to 0.04-0.09: at 48k steps
+  the limit is generalization from 128k graphs, as for depth 6 at n = 72 (2026-11-04), no longer
+  fitting.
+- m*(72) > 144 therefore holds under both budgets. It is a lower bound for this data size, not
+  an artefact of under-training. Against edge bias at the same depth and head size (<= 8 at
+  n = 72, `ebd12h8_s` / `ebd12_72`), the gap is > 18x.
+
+(`results/width/q3lr_d12h8_72s.shard*of4.jsonl`)
+
 ### Edge bias at the baseline's head size (head_dim 8, depth 12): m* <= 8 up to n = 72, ~11-15 at n = 128; slope 0.49 against the baseline's 1.95
 
 Colab L4, commit 45d62c2 (sweep from e81ae9e), `ebd12h8_s`, 32 runs (complete, 8 workers, ~1.75 h,
