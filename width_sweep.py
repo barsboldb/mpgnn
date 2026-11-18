@@ -383,6 +383,7 @@ SWEEPS["ebd12hd2_128w4"] = dict(SWEEPS["ebd12hd2_L"], ns=[128], seeds=[0, 1])
 # proved too shallow for edge bias. Same graphs as ebd12hd2_s; bias start 4 as in eb_rid.
 SWEEPS["ebd12rid"] = dict(SWEEPS["eb_rid"], depths=[12], head_dim=2, save_models="ebd12rid",
                           widths_by_n={32: [4, 6, 8], 40: [4, 6, 8], 48: [4, 8, 12], 56: [4, 8, 12]})
+SWEEPS["ebd12rid_s23"] = dict(SWEEPS["ebd12rid"], seeds=[2, 3])
 SWEEPS["q3lr_d12h8"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=8, seeds=[0, 1], widths_by_n={
     32: [8, 16, 24], 40: [16, 24, 32], 48: [24, 32, 48], 56: [32, 48, 64]})
 
