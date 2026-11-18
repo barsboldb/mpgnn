@@ -24,7 +24,7 @@ best epoch):
 runs, so the 2-seed claim "width 4 never solves with random IDs" (2026-11-18) was seed luck.
 
 - The width at which every seed reaches 0.95 at some epoch is 8, 8, 12, 12 for n = 32-56. The
-  width at which at least half pass at the end is 6, 6, 8, 8. Either way it grows by ~1.5x while
+  width at which at least half pass at the end is 6, 4, 8, 8. Either way it grows by ~1.5x while
   n grows 1.75x, far below the baseline's n^1.9 (m* 21 -> 63).
 - Several runs reached ~1.00 and then collapsed by the end of training: n = 48, m = 8, seed 2
   (1.00 -> 0.755, back to the trivial predictor) and n = 32, m = 8, seed 2 (1.00 -> 0.886). Final
