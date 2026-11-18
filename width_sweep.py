@@ -386,6 +386,7 @@ SWEEPS["ebd12rid"] = dict(SWEEPS["eb_rid"], depths=[12], head_dim=2, save_models
 SWEEPS["ebd12rid_s23"] = dict(SWEEPS["ebd12rid"], seeds=[2, 3])
 SWEEPS["q3lr_d12h8"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=8, seeds=[0, 1], widths_by_n={
     32: [8, 16, 24], 40: [16, 24, 32], 48: [24, 32, 48], 56: [32, 48, 64]})
+SWEEPS["q3lr_d12h8_72"] = dict(SWEEPS["q3lr_d12h8"], ns=[72], widths_by_n={72: [80, 112, 144]})
 
 
 def set_seed(seed):
