@@ -388,6 +388,16 @@ SWEEPS["ebd12hd2_128w4"] = dict(SWEEPS["ebd12hd2_L"], ns=[128], seeds=[0, 1])
 SWEEPS["ebd12rid"] = dict(SWEEPS["eb_rid"], depths=[12], head_dim=2, save_models="ebd12rid",
                           widths_by_n={32: [4, 6, 8], 40: [4, 6, 8], 48: [4, 8, 12], 56: [4, 8, 12]})
 SWEEPS["ebd12rid_s23"] = dict(SWEEPS["ebd12rid"], seeds=[2, 3])
+# Why do random-ID runs collapse (2026-11-19)? 10 of 48 ebd12rid runs were above 0.95 after epoch 1
+# and all fell when warm-up ended (1200 steps, LR at its 1e-3 peak); adjacency-row runs (bias start
+# 2) never did. Is it the start value or the LR peak? Vary each alone and together at the cell that
+# passes 2 of 4 seeds (n = 48 / 56, m = 8).
+# Reference: ebd12rid + ebd12rid_s23 (start 4, 5 % warm-up). _b2: start 2. _wu: 20 % warm-up
+# (4800 steps). _b2wu: both. 4 seeds each, 8 runs per sweep.
+_ridx = dict(SWEEPS["ebd12rid"], ns=[48, 56], seeds=[0, 1, 2, 3], widths_by_n={48: [8], 56: [8]})
+SWEEPS["ebd12rid_b2"] = dict(_ridx, bias_init=2.0, save_models="ebd12rid_b2")
+SWEEPS["ebd12rid_wu"] = dict(_ridx, warmup_frac=0.2, save_models="ebd12rid_wu")
+SWEEPS["ebd12rid_b2wu"] = dict(_ridx, bias_init=2.0, warmup_frac=0.2, save_models="ebd12rid_b2wu")
 SWEEPS["q3lr_d12h8"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=8, seeds=[0, 1], widths_by_n={
     32: [8, 16, 24], 40: [16, 24, 32], 48: [24, 32, 48], 56: [32, 48, 64]})
 SWEEPS["q3lr_d12h8_72"] = dict(SWEEPS["q3lr_d12h8"], ns=[72], widths_by_n={72: [80, 112, 144]})
