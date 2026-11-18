@@ -4,6 +4,33 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-11-19
+
+### Baseline at depth 12, n = 72: no width up to 144 reaches 0.95 (m* > 144); the larger models underfit within 24k steps
+
+Colab L4, commit 10d80e0, `q3lr_d12h8_72`, 6 runs (complete, ~3 h, ~6 units). Adjacency-rows
+baseline, q3lr protocol, depth 12, head_dim 8, extending `q3lr_d12h8` (n = 32-56) to n = 72. The
+n^1.9 fit predicted m* ~ 100. Final pair accuracy, test (train), seeds 0 / 1:
+
+| m | params | seed 0 | seed 1 |
+|---|---|---|---|
+| 80 | 0.95M | 0.865 (0.887) | 0.878 (0.923) |
+| 112 | 1.84M | 0.913 (0.941) | 0.926 (0.945) |
+| 144 | 3.04M | 0.814 (0.837) | 0.892 (0.927) |
+
+- No run passes, so m*(72) > 144 at this protocol. Taken at face value, that is a slope of > 3.3
+  from n = 56 (m* 63) to 72, against 1.9 below. It is a lower bound, not a fitted point.
+- Unlike n <= 56 (and n = 72 at depth 6, where the gap was the data, 2026-11-04), the problem here
+  is fitting: train pair is only 0.84-0.95 and test follows it within ~0.03. Test pair is still
+  rising at the last epoch for every run, and m = 144 is behind m = 112, so the 24k-step budget
+  binds before width does.
+- Depth 6 at the same n reached 0.947 / 0.912 at m = 96 (train 0.97). At n = 72 the depth-12
+  baseline trains worse than depth 6, while at n <= 56 the two needed the same width.
+- Edge bias at depth 12 solves n = 72 at m = 6-8 (2026-11-17). The gap at n = 72 is therefore
+  > 20x in width, against 11x at n = 56.
+
+(`results/width/q3lr_d12h8_72.shard*of3.jsonl`)
+
 ## 2026-11-18
 
 ### Graph only in the attention bias (random-ID tokens, depth 12): solves every n at width 6-12, but more runs get stuck
