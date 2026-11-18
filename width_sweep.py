@@ -367,6 +367,10 @@ SWEEPS["ebd12hd2_128"] = dict(SWEEPS["eb_adj"], ns=[128], depths=[12], head_dim=
                               widths_by_n={128: [6, 8, 12, 16]}, save_models="ebd12hd2")
 SWEEPS["ebd12hd2_s"] = dict(SWEEPS["eb_adj"], depths=[12], head_dim=2, save_models="ebd12hd2",
                             widths_by_n={n: [2, 4, 6] for n in (32, 40, 48, 56)})
+# Same architecture as the baseline: edge bias at depth 12 with head_dim 8 (q3lr_d12h8), n = 32-56;
+# ebd12_72 / _96 / _128 cover n >= 72. Width 4 is one 4-dim head (below one head_dim).
+SWEEPS["ebd12h8_s"] = dict(SWEEPS["eb_adj"], depths=[12], head_dim=8,
+                           widths_by_n={n: [4, 8, 12, 16] for n in (32, 40, 48, 56)})
 SWEEPS["q3lr_d12"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=2, seeds=[0, 1], widths_by_n={
     32: [12, 16, 24], 40: [16, 24, 32], 48: [24, 32, 48], 56: [32, 48, 64]})
 # head_dim 2 failed the baseline at every width (adjacency rows find neighbours through q.k, which
