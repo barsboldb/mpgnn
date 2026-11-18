@@ -6,6 +6,36 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-19
 
+### Random-ID edge bias with 4 seeds: the needed width rises only from ~6 to ~8-12 over n = 32-56; failures are training collapses
+
+Kaggle T4 x2, commit 4798949, `ebd12rid_s23` (seeds 2 / 3 of `ebd12rid`, 24 runs, complete).
+Final test pair, seeds 0 / 1 / 2 / 3, and how many of the 4 pass 0.95 at the end (and at their
+best epoch):
+
+| n | m = 4 | m = 6 / 8 | m = 8 / 12 | widest: pass (best) |
+|---|---|---|---|---|
+| 32 | .745 / .746 / .981 / .925 | 6: 1.00 / .746 / 1.00 / .995 | 8: 1.00 / .918 / .886 / 1.00 | 8: 2/4 (4/4) |
+| 40 | .750 / .750 / 1.00 / 1.00 | 6: 1.00 / 1.00 / .997 / .942 | 8: 1.00 / 1.00 / .999 / .992 | 8: 4/4 (4/4) |
+| 48 | .755 / .755 / .755 / .863 | 8: 1.00 / .755 / .755 / .999 | 12: .996 / .993 / .998 / .866 | 12: 3/4 (4/4) |
+| 56 | .759 / .759 / .824 / .870 | 8: .996 / .759 / .932 / .999 | 12: 1.00 / 1.00 / .991 / .981 | 12: 4/4 (4/4) |
+
+`--scaling` (test pair, 4 seeds): m* 7.3, 5.3, 11.1, 9.3, slope 0.76 pooled; seed-mean 4.8, 8.8,
+8.2 over n = 40-56. Seeds 2 / 3 do better than 0 / 1: width 4 now solves n = 32 / 40 in 3 of 4
+runs, so the 2-seed claim "width 4 never solves with random IDs" (2026-11-18) was seed luck.
+
+- The width at which every seed reaches 0.95 at some epoch is 8, 8, 12, 12 for n = 32-56. The
+  width at which at least half pass at the end is 6, 6, 8, 8. Either way it grows by ~1.5x while
+  n grows 1.75x, far below the baseline's n^1.9 (m* 21 -> 63).
+- Several runs reached ~1.00 and then collapsed by the end of training: n = 48, m = 8, seed 2
+  (1.00 -> 0.755, back to the trivial predictor) and n = 32, m = 8, seed 2 (1.00 -> 0.886). Final
+  accuracy therefore understates what the model can do; the failures are optimization (stuck or
+  collapsing), not missing capacity.
+- With adjacency-row tokens (`ebd12hd2_s`, 2 seeds), 6 sufficed at every n. Putting the graph
+  only in the bias costs ~1.5-2x in width at n = 48-56 and makes training less reliable, but keeps
+  the width nearly flat in n.
+
+(`results/width/ebd12rid_s23.shard*of6.jsonl`)
+
 ### Baseline at depth 12, n = 72: no width up to 144 reaches 0.95 (m* > 144); the larger models underfit within 24k steps
 
 Colab L4, commit 10d80e0, `q3lr_d12h8_72`, 6 runs (complete, ~3 h, ~6 units). Adjacency-rows
