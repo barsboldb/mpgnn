@@ -6,6 +6,37 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-19
 
+### Edge bias at the baseline's head size (head_dim 8, depth 12): m* <= 8 up to n = 72, ~11-15 at n = 128; slope 0.49 against the baseline's 1.95
+
+Colab L4, commit 45d62c2 (sweep from e81ae9e), `ebd12h8_s`, 32 runs (complete, 8 workers, ~1.75 h,
+~3.5 units). Edge bias on adjacency rows at depth 12 with head_dim 8, the baseline's head size,
+so the two curves now differ only in the encoding. With `ebd12_72`, `_96`, `_128`, `_128x` (same
+settings, n >= 72) the curve covers n = 32-128. Final test pair, seeds 0 / 1:
+
+| n | m = 4 (one 4-dim head) | m = 8 (one head) | m = 12 | m = 16 |
+|---|---|---|---|---|
+| 32 | .984 / .746 | 1.00 / 1.00 | 1.00 / .996 | 1.00 / 1.00 |
+| 40 | .843 / .750 | .988 / .961 | 1.00 / 1.00 | 1.00 / 1.00 |
+| 48 | .755 / .753 | .998 / 1.00 | 1.00 / .999 | .998 / .994 |
+| 56 | .759 / .759 | .986 / 1.00 | .992 / .998 | .994 / 1.00 |
+
+Earlier, n >= 72 (seeds 0 / 1, and 2 / 3 at n = 128): m = 8 passes both seeds at n = 72
+(.990 / .995); at n = 96 m = 8 gives .949 / .988 and m = 12 .959 / .815, every seed passes at
+24; at n = 128 every seed of 4 passes only at m = 16 (.976 / .966 / .965 / .964).
+
+`--scaling` (test pair, pooled): m* 6.2, 7.1, 7.0, 7.0, 8.0, 8.0, 14.6 for n = 32-128, slope 0.49.
+Below n = 96 the value is really "<= 8": width 8 is a single head and passes every seed, and the
+only smaller grid point (4) has a smaller head, so the interpolated 6-7 is not a measured width.
+The rise to ~15 comes from n = 96-128, where m = 8-12 runs are noisy (seed-mean m* 11.3 at 128).
+
+Against the baseline at the same depth and head size (q3lr_d12h8, m* 21 -> 63 over n = 32-56,
+> 144 at 72), the gap is 3x at n = 32, 9x at n = 56 and > 18x at n = 72. The head_dim caveat of
+the 11-19 report is closed: at head_dim 8 the edge-bias exponent is ~0.5, at head_dim 2 ~0.15,
+both far below 1.95. Head_dim 2 is narrower in total width (6 vs ~8-15) because it gives more
+heads at the same m.
+
+(`results/width/ebd12h8_s.shard*of8.jsonl`)
+
 ### Random-ID edge bias with 4 seeds: the needed width rises only from ~6 to ~8-12 over n = 32-56; failures are training collapses
 
 Kaggle T4 x2, commit 4798949, `ebd12rid_s23` (seeds 2 / 3 of `ebd12rid`, 24 runs, complete).
