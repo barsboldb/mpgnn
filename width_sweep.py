@@ -417,6 +417,20 @@ SWEEPS["ebd12rid_b2c"] = dict(SWEEPS["ebd12rid"], seeds=[0, 1, 2, 3], bias_init=
 # with 48k steps; the other seed of each cell (left the baseline by epoch 4) is the control.
 SWEEPS["ebd12rid_b2long"] = dict(SWEEPS["ebd12rid_b2c"], ns=[32, 56], seeds=[0, 1], steps=48000,
                                  save_models="ebd12rid_b2long", widths_by_n={32: [8], 56: [12]})
+# Overnight batch (2026-11-20, Colab).
+# q3n72big_s2: a third seed for the n = 72 baseline point (the n <= 56 points have 3 seeds).
+# ebd12rid_b2L / _b2_128: random IDs at bias start 2 beyond n = 56, to compare with the
+# adjacency-row + bias curve that runs to n = 128 (ebd12hd2_*). 4 seeds; n = 128 apart (4 GB / worker).
+# ebd12_Lx / _Lw4: head_dim 8 edge bias at n = 72 / 96 had 2 seeds and no width below 8 (m* "<= 8");
+# seeds 2-3 at m = 4-12 and m = 4 for seeds 0-1; read with --also ebd12_72 ebd12_96.
+SWEEPS["q3n72big_s2"] = dict(SWEEPS["q3n72big"], seeds=[2], widths_by_n={72: [64, 96, 128]})
+SWEEPS["ebd12rid_b2L"] = dict(SWEEPS["ebd12rid_b2c"], ns=[72, 96], save_models="ebd12rid_b2L",
+                              widths_by_n={72: [6, 8, 12], 96: [6, 8, 12]})
+SWEEPS["ebd12rid_b2_128"] = dict(SWEEPS["ebd12rid_b2c"], ns=[128], save_models="ebd12rid_b2L",
+                                 widths_by_n={128: [8, 12, 16]})
+SWEEPS["ebd12_Lx"] = dict(SWEEPS["ebd12_72"], ns=[72, 96], seeds=[2, 3],
+                          widths_by_n={72: [4, 8, 12], 96: [4, 8, 12]})
+SWEEPS["ebd12_Lw4"] = dict(SWEEPS["ebd12_Lx"], seeds=[0, 1], widths_by_n={72: [4], 96: [4]})
 SWEEPS["q3lr_d12h8"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=8, seeds=[0, 1], widths_by_n={
     32: [8, 16, 24], 40: [16, 24, 32], 48: [24, 32, 48], 56: [32, 48, 64]})
 SWEEPS["q3lr_d12h8_72"] = dict(SWEEPS["q3lr_d12h8"], ns=[72], widths_by_n={72: [80, 112, 144]})
