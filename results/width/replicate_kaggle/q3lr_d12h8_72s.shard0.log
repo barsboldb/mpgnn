@@ -1,0 +1,3 @@
+Device cuda | sweep q3lr_d12h8_72s shard 0/4: 1 runs to go (0 on disk)
+  loading data for seed 0, n=72, 128000 train graphs...
+  [1/1] n=72  L=12 N=128000 m=112  H=14  lr=0.001   seed=0  train=0.559 val=0.500 test@bestval=0.500 test@final=0.465  (19579.8s)

@@ -6,6 +6,36 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-19
 
+### Kaggle repeat of `ebd12h8_s` and `q3lr_d12h8_72s` (same seeds): conclusions hold; the same seed does not reproduce a run across machines
+
+Kaggle T4, commit 45d62c2. The notebook was still set to the two sweeps already run on Colab, so
+this is an unplanned second run with identical configs and seeds 0 / 1. `ebd12h8_s`: 32 of 32
+runs. `q3lr_d12h8_72s`: 2 of 4 (m = 112, 5.4 h each; the two m = 144 runs did not finish). Kept
+apart from the Colab files so `--scaling` does not pool them.
+
+`ebd12h8_s`, final test pair, seeds 0 / 1, Kaggle (Colab in the entry below):
+
+| n | m = 4 | m = 8 | m = 12 | m = 16 |
+|---|---|---|---|---|
+| 32 | 1.00 / .746 | 1.00 / .990 | 1.00 / 1.00 | 1.00 / 1.00 |
+| 40 | .992 / .750 | 1.00 / .984 | 1.00 / .999 | 1.00 / 1.00 |
+| 48 | .755 / .990 | 1.00 / .991 | .999 / .995 | 1.00 / .998 |
+| 56 | .759 / .759 | .997 / .881 | .991 / .982 | 1.00 / .998 |
+
+- 4 of 32 cells differ by more than 0.02 between the two machines at the same seed: (40, m 4, s0)
+  .992 vs .843, (40, 8, s1) .984 vs .961, (48, 4, s1) .990 vs .753, (56, 8, s1) .881 vs 1.00.
+  A seed fixes the data and the initial weights but not the GPU arithmetic, so near the threshold
+  a "seed" is one draw, not a reproducible run.
+- m = 12 and 16 pass on every seed on both machines (16 of 16 each). m = 8 passes 15 of 16; the
+  one miss is n = 56 seed 1 on Kaggle (.881). m = 4 (a 4-dim head) passes 4 of 16.
+- Seed-mean m*, n = 32 / 40 / 48 / 56: Kaggle 6.2 / 6.3 / 6.2 / 8.8, Colab 6.2 / 7.3 / 7.0 / 7.0,
+  all four runs per cell 6.2 / 6.9 / 6.7 / 7.6. "<= 8 up to n = 48, ~8 at 56" is the honest
+  reading; the gap to the baseline (21-63) is unchanged.
+- `q3lr_d12h8_72s`, m = 112, test (train) pair: .890 (.956) / .921 (.959) against Colab's
+  .917 (.964) / .928 (.971). m*(72) > 144 stands.
+
+(`results/width/replicate_kaggle/`)
+
 ### Baseline at depth 12, n = 72, 48k steps: still no width up to 144 passes; the limit moves from fitting to generalization
 
 Colab L4, commit 45d62c2 (sweep from 6ae45c5), `q3lr_d12h8_72s`, 4 runs (complete, ~4.4 h, ~8.5
