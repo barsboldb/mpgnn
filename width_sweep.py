@@ -412,6 +412,11 @@ SWEEPS["ebd12rid_b2wu"] = dict(_ridx, bias_init=2.0, warmup_frac=0.2, save_model
 SWEEPS["ebd12rid_b2c"] = dict(SWEEPS["ebd12rid"], seeds=[0, 1, 2, 3], bias_init=2.0,
                               save_models="ebd12rid_b2c",
                               widths_by_n={32: [4, 6, 8], 40: [4, 6, 8], 48: [4, 12], 56: [4, 12]})
+# Two ebd12rid_b2c runs missed 0.95 without collapsing: (n 32, m 8, seed 1) and (n 56, m 12,
+# seed 0) sat on the baseline guess until epoch 16-17 of 24 and ended at 0.87 / 0.91. Same cells
+# with 48k steps; the other seed of each cell (left the baseline by epoch 4) is the control.
+SWEEPS["ebd12rid_b2long"] = dict(SWEEPS["ebd12rid_b2c"], ns=[32, 56], seeds=[0, 1], steps=48000,
+                                 save_models="ebd12rid_b2long", widths_by_n={32: [8], 56: [12]})
 SWEEPS["q3lr_d12h8"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=8, seeds=[0, 1], widths_by_n={
     32: [8, 16, 24], 40: [16, 24, 32], 48: [24, 32, 48], 56: [32, 48, 64]})
 SWEEPS["q3lr_d12h8_72"] = dict(SWEEPS["q3lr_d12h8"], ns=[72], widths_by_n={72: [80, 112, 144]})
