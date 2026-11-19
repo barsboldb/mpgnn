@@ -298,6 +298,13 @@ SWEEPS["eb_rid"] = dict(SWEEPS["eb_adj"], tokens="rid", id_dim=64, bias_init=4.0
 SWEEPS["q3n72data"] = dict(SWEEPS["q3n72"], train=256000, train_sizes=[256000],
                            widths_by_n={72: [96]})
 SWEEPS["eb_rid72"] = dict(SWEEPS["eb_rid"], ns=[72], widths_by_n={72: [12, 16, 24]})
+# Baseline m* at n = 72 (2026-11-19): a fifth size for the n^1.74 line, which stops at n = 56.
+# Wider alone does not decide it: m = 128 was no better than 96 (q3n72) and at depth 12 m = 144
+# was worse than 112, with train 0.97-0.99 against test 0.91-0.95, so 128k graphs are the limit.
+# q3n72data (256k graphs, 24k steps = 12 epochs) closed the gap at m = 96 but left train at
+# 0.955-0.974. q3n72big: 256k graphs and 48k steps (24 epochs, as at n <= 56), widths around the
+# line's prediction (59.6 * (72 / 56)^1.74 ~ 92) and up to 192 in case the curve steepens.
+SWEEPS["q3n72big"] = dict(SWEEPS["q3n72data"], steps=48000, widths_by_n={72: [64, 96, 128, 192]})
 # Edge bias below the width floor (2026-11-05). eb_adj passed 0.95 at m = 8 (one head) for every
 # n <= 48 and eb_rid for n <= 40, so most crossings sat on the grid floor and no exponent could be
 # fitted. head_dim 2 makes m = 2 / 4 / 6 / 8 into 1 / 2 / 3 / 4 heads. Models are saved to test
