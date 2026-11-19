@@ -398,6 +398,13 @@ _ridx = dict(SWEEPS["ebd12rid"], ns=[48, 56], seeds=[0, 1, 2, 3], widths_by_n={4
 SWEEPS["ebd12rid_b2"] = dict(_ridx, bias_init=2.0, save_models="ebd12rid_b2")
 SWEEPS["ebd12rid_wu"] = dict(_ridx, warmup_frac=0.2, save_models="ebd12rid_wu")
 SWEEPS["ebd12rid_b2wu"] = dict(_ridx, bias_init=2.0, warmup_frac=0.2, save_models="ebd12rid_b2wu")
+# Result (2026-11-19): start 2 passes 8 / 8, start 4 4 / 8, 20 % warm-up 4 / 8, both 7 / 8. The
+# start value causes the collapses, and the random-ID curve (start 4) was confounded with the
+# adjacency-token one (start 2). ebd12rid_b2c: the rest of the ebd12rid grid at start 2, 4 seeds,
+# 40 runs; m*(n) from `ebd12rid_b2c --scaling --also ebd12rid_b2`.
+SWEEPS["ebd12rid_b2c"] = dict(SWEEPS["ebd12rid"], seeds=[0, 1, 2, 3], bias_init=2.0,
+                              save_models="ebd12rid_b2c",
+                              widths_by_n={32: [4, 6, 8], 40: [4, 6, 8], 48: [4, 12], 56: [4, 12]})
 SWEEPS["q3lr_d12h8"] = dict(SWEEPS["q3lr"], depths=[12], head_dim=8, seeds=[0, 1], widths_by_n={
     32: [8, 16, 24], 40: [16, 24, 32], 48: [24, 32, 48], 56: [32, 48, 64]})
 SWEEPS["q3lr_d12h8_72"] = dict(SWEEPS["q3lr_d12h8"], ns=[72], widths_by_n={72: [80, 112, 144]})

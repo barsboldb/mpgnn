@@ -6,6 +6,37 @@ Record of findings, bugs, and decisions made during experiments.
 
 ## 2026-11-19
 
+### Random-ID collapse test: starting the bias at 2 instead of 4 makes m = 8 pass on 8 of 8 runs; a longer warm-up does not help
+
+Kaggle T4, commit c10768e, `ebd12rid_b2` / `_wu` / `_b2wu`, 24 runs (complete). Random-ID tokens
+with edge bias, depth 12, head_dim 2, m = 8, n = 48 / 56, seeds 0-3. Reference is `ebd12rid` +
+`_s23` (bias start 4, 5 % warm-up). Final test pair, seeds 0 / 1 / 2 / 3:
+
+| bias start | warm-up | n = 48 | n = 56 | pass |
+|---|---|---|---|---|
+| 4 | 5 % (reference) | 1.00 / .755 / .755 / .999 | .996 / .759 / .932 / .999 | 4 / 8 |
+| 2 | 5 % | .978 / .963 / 1.00 / .999 | .999 / .999 / 1.00 / .984 | 8 / 8 |
+| 4 | 20 % | .994 / 1.00 / .994 / .754 | .997 / .888 / .759 / .929 | 4 / 8 |
+| 2 | 20 % | .993 / .984 / .995 / .998 | .999 / .759 / 1.00 / .950 | 7 / 8 |
+
+- Bias start 2 with the standard warm-up passes every run, and no run falls after first reaching
+  0.95. With start 4, three of the 8 reference runs reach >= 0.95 and then drop to the trivial
+  0.75 (one recovers).
+- A 20 % warm-up alone does not help (4 / 8). The collapse only moves later: three runs reach
+  0.95-1.00 at epoch 2-3 and fall back at epoch 4, while the learning rate is still rising. With
+  start 2 the long warm-up is slightly worse than the short one (7 / 8; one run never leaves 0.76,
+  three fall and recover).
+- The earlier comparison was confounded: every adjacency-token edge-bias sweep (`ebd12hd2_*`,
+  `ebd12h8_s`) starts the bias at 2, the random-ID sweeps at 4 (`eb_rid`, chosen on depth-6
+  probes). At the same start, random IDs pass m = 8 at n = 48 / 56 like adjacency tokens, so the
+  "~1.5-2x width cost and less reliable training" of the entry below is mostly this setting, not
+  the encoding.
+- Limits: only m = 8 at two n, 8 runs per row (8 / 8 against 4 / 8 is suggestive, not a tight
+  estimate), and the full m* curve with start 2 was not rerun, so m*(n) for random IDs is still
+  the start-4 curve (7.3, 5.3, 11.1, 9.3).
+
+(`results/width/ebd12rid_b2.shard*of2.jsonl`, `ebd12rid_wu.*`, `ebd12rid_b2wu.*`)
+
 ### Kaggle repeat of `ebd12h8_s` and `q3lr_d12h8_72s` (same seeds): conclusions hold; the same seed does not reproduce a run across machines
 
 Kaggle T4, commit 45d62c2. The notebook was still set to the two sweeps already run on Colab, so
