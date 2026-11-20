@@ -4,6 +4,64 @@ Record of findings, bugs, and decisions made during experiments.
 
 ---
 
+## 2026-11-20
+
+### Overnight Colab batch: baseline m*(72) = 107, random IDs at bias start 2 need the same width as adjacency rows up to n = 72, head_dim 8 edge bias jumps at n = 96
+
+Colab L4, commits 4041622 / a2e69b1 / 94bdf3b. Final test pair accuracy, threshold 0.95.
+
+**Baseline at n = 72** (`q3n72big` + `q3n72big_s2`, depth 6, 256k graphs, 48k steps = 24 epochs):
+
+| seed | m = 64 | 96 | 128 | 192 | generalize m* | fit m* |
+|---|---|---|---|---|---|---|
+| 0 | .891 | .948 | .952 | .963 | 112.4 | 88.1 |
+| 1 | .895 | .953 | .966 | .987 | 94.2 | 81.9 |
+| 2 | .921 | .932 | .962 | - | 114.4 | 64.0 |
+
+- Seed-mean m* 107.0 against 92 predicted by the n^1.74 line (+16 %). A least-squares fit over the
+  five means (22.4, 33.1, 44.7, 59.6, 107.0) gives 1.90. The point uses 2x the graphs and steps of
+  the others, so it is a check that growth does not slow, not a like-for-like fifth point.
+- Fit width (78.0) is still 29 below the generalize width: 256k graphs do not fully close the gap.
+- The first launch ran 8 workers on one L4; three ran out of GPU memory and were rerun with 3.
+
+**Random IDs + edge bias at bias start 2** (`ebd12rid_b2c` + `_b2` + `_b2L`, depth 12, head_dim 2,
+4 seeds; seeds passing):
+
+| n | m = 4 | 6 | 8 | 12 | pooled m* |
+|---|---|---|---|---|---|
+| 32 | 1/4 | 4/4 | 3/4 | | 5.2 |
+| 40 | 1/4 | 4/4 | 4/4 | | 5.3 |
+| 48 | 1/4 | | 4/4 | 4/4 | 7.0 |
+| 56 | 0/4 | | 4/4 | 3/4 | 6.7 |
+| 72 | | 3/4 | 2/4 | 4/4 | 6.0 |
+| 96 | | 1/4 | 1/4 | 4/4 | 10.0 |
+
+- Pooled slope 0.50 over n = 32-96 (start 4: 0.68 over n = 32-56). Adjacency rows + bias at the
+  same head_dim: 5.1-6.4, so the two need about the same width up to n = 72.
+- Only 1 of 72 runs is above 0.95 after epoch 1 (start 4: 10 of 48). Of the 56 runs at m >= 6, 11
+  fail: 5 leave the trivial predictor late (epoch 15-20 of 24) and end at 0.83-0.91; 2 reach 0.99
+  and fall (n = 72 and 96, m = 8, seed 2); 2 never leave; 2 leave early and stall at 0.85-0.89.
+- `ebd12rid_b2long` (48k steps, 4 runs): the two late starters at n <= 56 (n 32 m 8 seed 1; n 56
+  m 12 seed 0) reach 1.000 / 0.998. The leaving time is not fixed by the seed: a control that left
+  at epoch 4 with 24k steps left at epoch 13-15 with 48k.
+- `ebd12rid_b2_128` (n = 128) is incomplete, 6 of 12 runs: the laptop slept and Colab reclaimed the
+  VM. m = 8: 1/2, m = 12: 2/3, m = 16: 1/1.
+
+**Head_dim 8 edge bias at n = 72 / 96** (`ebd12_Lx`, `ebd12_Lw4` with `ebd12_72` / `_96`):
+
+| n | m = 4 | 8 | 12 | 16 | 24 | pooled m* |
+|---|---|---|---|---|---|---|
+| 72 | 0/4 | 4/4 | 4/4 | 2/2 | 2/2 | 7.1 |
+| 96 | 0/4 | 1/4 | 2/4 | 1/2 | 2/2 | 15.1 |
+
+- The earlier "<= 8" at n = 96 was a two-seed result; with four seeds m* is 15.1, close to the
+  14.7 at n = 128. Pooled slope over n = 32-128 is 0.67 (was 0.49); all of it is the step between
+  n = 72 and 96.
+
+Figures: `reports/figures/width_report_1120_plot.py` (d12b-mstar / d12b-seeds, random IDs at start 2).
+
+---
+
 ## 2026-11-19
 
 ### Random-ID collapse test: starting the bias at 2 instead of 4 makes m = 8 pass on 8 of 8 runs; a longer warm-up does not help

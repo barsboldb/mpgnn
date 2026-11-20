@@ -1,0 +1,52 @@
+/usr/local/lib/python3.13/dist-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+Device cuda | sweep q3n72big shard 6/8: 1 runs to go (0 on disk)
+  loading data for seed 1, n=72, 256000 train graphs...
+[W1119 13:10:07.210158058 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 2097152 bytes (free: 3276800, total: 23659151360).
+[W1119 13:10:07.210287072 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 2097152 bytes (free: 3276800, total: 23659151360).
+Traceback (most recent call last):
+  File "/content/mpgnn/width_sweep.py", line 1235, in <module>
+    run_sweep(a.sweep, smoke=a.smoke, shard=(i, k))
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/content/mpgnn/width_sweep.py", line 1011, in run_sweep
+    r = train_one(c, w, lr, s, splits[(s, n, size)])
+  File "/content/mpgnn/width_sweep.py", line 930, in train_one
+    loss = F.binary_cross_entropy_with_logits(model(Ab), Rtr_d[idx].float())
+                                              ~~~~~^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1783, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1794, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/content/mpgnn/src/connectivity.py", line 205, in forward
+    h = blk(h, None, attn_mask)
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1783, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1794, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/content/mpgnn/src/transformer.py", line 77, in forward
+    a, _ = self.attn(h, h, h, key_padding_mask=key_padding_mask,
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                     attn_mask=am, need_weights=False)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1783, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1794, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/activation.py", line 1495, in forward
+    attn_output, attn_output_weights = F.multi_head_attention_forward(
+                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        query,
+        ^^^^^^
+    ...<17 lines>...
+        is_causal=is_causal,
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/functional.py", line 7104, in multi_head_attention_forward
+    attn_output = scaled_dot_product_attention(
+        q, k, v, attn_mask, dropout_p, is_causal
+    )
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.00 MiB. GPU 0 has a total capacity of 22.03 GiB of which 3.12 MiB is free. Process 5561 has 3.15 GiB memory in use. Including non-PyTorch memory, this process has 2.81 GiB memory in use. Process 5556 has 3.15 GiB memory in use. Process 5550 has 3.00 GiB memory in use. Process 5546 has 3.60 GiB memory in use. Process 5531 has 3.00 GiB memory in use. Process 5533 has 1.42 GiB memory in use. Process 5538 has 1.42 GiB memory in use. Of the allocated memory 2.58 GiB is allocated by PyTorch, and 14.29 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)

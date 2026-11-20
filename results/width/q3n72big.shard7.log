@@ -1,0 +1,6 @@
+/usr/local/lib/python3.13/dist-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+Device cuda | sweep q3n72big shard 7/8: 1 runs to go (0 on disk)
+  loading data for seed 1, n=72, 256000 train graphs...
+[W1119 13:10:07.209698037 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 2097152 bytes (free: 3276800, total: 23659151360).
+  [1/1] n=72  L=6  N=256000 m=192  H=24  lr=0.001   seed=1  train=0.814 val=0.772 test@bestval=0.782 test@final=0.782  (9362.9s)

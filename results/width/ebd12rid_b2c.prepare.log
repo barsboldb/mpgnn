@@ -1,0 +1,23 @@
+/usr/local/lib/python3.13/dist-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ebd12rid_b2c: preparing 16 datasets with 12 processes -> /content/width_cache
+  waiting for swap_n32_cf0.25_d6_N400_s5555_u8 (0 min)
+  waiting for swap_n40_cf0.25_d6_N400_s5555_u8 (0 min)
+  ready: n=56 train=128000 seed=0  (7s)
+  ready: n=56 train=128000 seed=1  (7s)
+  ready: n=48 train=128000 seed=1  (9s)
+  ready: n=48 train=128000 seed=0  (9s)
+  waiting for swap_n40_cf0.25_d6_N400_s9999_u8 (0 min)
+  ready: n=40 train=128000 seed=1  (19s)
+  ready: n=40 train=128000 seed=0  (26s)
+  waiting for swap_n32_cf0.25_d6_N400_s9999_u8 (0 min)
+  ready: n=32 train=128000 seed=1  (155s)
+  ready: n=32 train=128000 seed=0  (166s)
+  ready: n=56 train=128000 seed=3  (1069s)
+  ready: n=56 train=128000 seed=2  (1073s)
+  ready: n=48 train=128000 seed=2  (1514s)
+  ready: n=48 train=128000 seed=3  (1519s)
+  ready: n=40 train=128000 seed=3  (3084s)
+  ready: n=40 train=128000 seed=2  (3097s)
+  ready: n=32 train=128000 seed=2  (16473s)
+  ready: n=32 train=128000 seed=3  (16553s)

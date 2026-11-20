@@ -1,0 +1,34 @@
+/usr/local/lib/python3.13/dist-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+Device cuda | sweep ebd12rid_b2c shard 1/6: 7 runs to go (0 on disk)
+  loading data for seed 0, n=32, 128000 train graphs...
+  [1/7] n=32  L=12 N=128000 m=6    H=3   lr=0.001   seed=0  train=1.000 val=1.000 test@bestval=0.995 test@final=1.000  (1939.8s)
+  loading data for seed 0, n=48, 128000 train graphs...
+  [2/7] n=48  L=12 N=128000 m=12   H=6   lr=0.001   seed=0  train=0.964 val=0.973 test@bestval=0.963 test@final=0.958  (1785.2s)
+  loading data for seed 1, n=40, 128000 train graphs...
+  [3/7] n=40  L=12 N=128000 m=4    H=2   lr=0.001   seed=1  train=0.500 val=0.500 test@bestval=0.500 test@final=0.500  (1471.2s)
+  loading data for seed 1, n=56, 128000 train graphs...
+  [4/7] n=56  L=12 N=128000 m=12   H=6   lr=0.001   seed=1  train=0.993 val=0.998 test@bestval=0.993 test@final=0.995  (1162.5s)
+  loading data for seed 2, n=40, 128000 train graphs...
+  [5/7] n=40  L=12 N=128000 m=8    H=4   lr=0.001   seed=2  train=0.996 val=1.000 test@bestval=1.000 test@final=0.998  (1140.9s)
+  loading data for seed 3, n=32, 128000 train graphs...
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (0 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (10 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (20 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (30 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (40 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (50 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (60 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (70 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (80 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (90 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (100 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (110 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (120 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (130 min)
+  waiting for swap_n32_cf0.25_d6_N128000_s3_u8 (140 min)
+  waiting for swap_n32_cf0.25_d6_N400_s5558_u8 (0 min)
+  waiting for swap_n32_cf0.25_d6_N400_s10002_u8 (0 min)
+  [6/7] n=32  L=12 N=128000 m=6    H=3   lr=0.001   seed=3  train=1.000 val=1.000 test@bestval=0.995 test@final=1.000  (1179.1s)
+  loading data for seed 3, n=48, 128000 train graphs...
+  [7/7] n=48  L=12 N=128000 m=12   H=6   lr=0.001   seed=3  train=1.000 val=1.000 test@bestval=1.000 test@final=1.000  (1538.8s)
