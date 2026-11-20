@@ -71,7 +71,7 @@
 == Үр дүн 1: шаардагдах өргөн $n^(1.74)$-ээр өссөн
 
 #grid(columns: (1.15fr, 1fr), column-gutter: 1em, align: horizon,
-  fig("figures/width-q3lr-curves.png"),
+  fig("figures/thesis/width-q3lr-curves.png"),
   [
     #tbl(
       columns: 3, align: center,
@@ -108,7 +108,7 @@
 == Үр дүн 2: алхмыг бэлнээр өгөхөд өргөн ба өсөлт буурсан
 
 #grid(columns: (1.1fr, 1fr), column-gutter: 1em, align: horizon,
-  fig("figures/width-encodings.png"),
+  fig("figures/thesis/width-encodings.png"),
   [
     #tbl(
       columns: 4, align: (left, center, center, center),
@@ -143,7 +143,7 @@
 == Үр дүн 3: ирмэгийг анхаарлын хазайлтаар өгөхөд өргөн $n$-ээс бараг хамаараагүй
 
 #grid(columns: (1.2fr, 1fr), column-gutter: 1em, align: horizon,
-  fig("figures/d12b-mstar.png"),
+  fig("figures/thesis/d12-mstar.png"),
   [
     $ s_(i j) = (q_i^top k_j) / sqrt(d_h) + b dot (A + I)_(i j) $
     #tbl(
@@ -161,7 +161,7 @@
 == Граф зөвхөн хазайлтаар орсон үед
 
 #grid(columns: (1.05fr, 1fr), column-gutter: 1em, align: horizon,
-  fig("figures/d12-collapse.png"),
+  fig("figures/thesis/d12-collapse.png"),
   [
     - Токен нь графын тухай мэдээлэлгүй *санамсаргүй ID*. Гэсэн ч шаардагдах өргөн
       #good[5–10] ($n = 32$–96, $n^(0.50)$) буюу хөршийн мөртэй үеийнхтэй ойролцоо
